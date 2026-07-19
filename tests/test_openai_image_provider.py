@@ -12,10 +12,12 @@ from conftest import HALO_SPEC
 from facetta.image_agent import (
     CheckSeverity,
     ImageOperation,
+    ImagePlanValidationError,
     ImageQualityReport,
     ImageRoute,
     JewelryImageAgent,
     OpenAIImageProvider,
+    ProviderImage,
     ProviderCallError,
     QualityCheck,
     QualityVerdict,
@@ -26,6 +28,8 @@ from facetta.image_agent.openai_provider import (
     OPENAI_EDIT_URL,
     OPENAI_GENERATION_URL,
 )
+from facetta.image_agent.providers import RoutedImageProvider
+from facetta.image_agent.prompts import compile_initial_prompt
 from facetta.spec import Spec
 
 HALO = Spec.model_validate(HALO_SPEC)
@@ -86,6 +90,39 @@ class SequenceEvaluator:
             ),),
             score=96 if passed else 50,
         )
+
+
+def test_routed_provider_can_use_low_quality_for_interactive_previews(
+    monkeypatch,
+):
+    created: list[str] = []
+
+    class CapturingOpenAIProvider:
+        def __init__(self, *, quality: str):
+            created.append(quality)
+
+        def execute(self, *_args, **_kwargs):
+            return ProviderImage(image_bytes=_png((10, 20, 30)), cached=False)
+
+    monkeypatch.setattr(
+        'facetta.image_agent.openai_provider.OpenAIImageProvider',
+        CapturingOpenAIProvider,
+    )
+    plan = build_image_plan(
+        ImageOperation.CONCEPT_GENERATE,
+        'one restrained oval sapphire engagement ring',
+    )
+
+    result = RoutedImageProvider(openai_quality='low').execute(
+        plan,
+        ImageRoute.OPENAI_GENERATE,
+        'compiled contract',
+        source_image=None,
+        mask_bytes=None,
+    )
+
+    assert created == ['low']
+    assert result.image_bytes == _png((10, 20, 30))
 
 
 def test_generation_uses_gpt_image_json_contract_and_decodes_base64(
@@ -186,6 +223,264 @@ def test_masked_edit_translates_alpha_and_freezes_outside_pixels(
     )
     assert cached.cached is True
     assert len(calls) == 1
+
+
+def test_camera_guided_edit_sends_identity_then_camera_reference(
+    monkeypatch, tmp_path,
+):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-only")
+    identity = _png((10, 20, 30))
+    camera_reference = _png((180, 170, 160))
+    calls = []
+
+    def post(url, **kwargs):
+        calls.append((url, kwargs))
+        return FakeResponse(_png((40, 50, 60)))
+
+    plan = build_image_plan(
+        ImageOperation.REFERENCE_RENDER,
+        "preserve the exact design and match only the reference camera",
+        source_image=identity,
+        quality_source_image=identity,
+        camera_reference_image=camera_reference,
+        style_constraints=(
+            "Image 1 is identity authority; Image 2 is camera-only guidance",
+        ),
+    )
+    prompt = compile_initial_prompt(plan)
+    provider = OpenAIImageProvider(
+        post=post,
+        cache_dir=tmp_path,
+        size="96x96",
+    )
+    result = provider.execute(
+        plan,
+        ImageRoute.OPENAI_EDIT,
+        prompt,
+        source_image=identity,
+        mask_bytes=None,
+        camera_reference_image=camera_reference,
+    )
+
+    assert result.image_bytes == _png((40, 50, 60))
+    assert calls[0][0] == OPENAI_EDIT_URL
+    files = calls[0][1]["files"]
+    assert [field for field, _value in files] == ["image[]", "image[]"]
+    assert [value[0] for _field, value in files] == [
+        "source.png",
+        "camera-reference.png",
+    ]
+    sent_identity = Image.open(io.BytesIO(files[0][1][1])).convert("RGB")
+    sent_camera = Image.open(io.BytesIO(files[1][1][1])).convert("RGB")
+    assert sent_identity.size == sent_camera.size == (96, 96)
+    assert sent_identity.getpixel((0, 0)) == (10, 20, 30)
+    assert sent_camera.getpixel((0, 0)) == (180, 170, 160)
+    assert "Image 1 is identity authority" in calls[0][1]["data"]["prompt"]
+
+    cached = provider.execute(
+        plan,
+        ImageRoute.OPENAI_EDIT,
+        prompt,
+        source_image=identity,
+        mask_bytes=None,
+        camera_reference_image=camera_reference,
+    )
+    assert cached.cached is True
+    assert len(calls) == 1
+
+
+def test_camera_guided_edit_cache_is_bound_to_the_camera_reference(
+    monkeypatch, tmp_path,
+):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-only")
+    identity = _png((10, 20, 30))
+    camera_a = _png((180, 170, 160))
+    camera_b = _png((160, 150, 140))
+    calls = []
+
+    def post(_url, **kwargs):
+        calls.append(kwargs)
+        return FakeResponse(_png((40, 50, 60)))
+
+    provider = OpenAIImageProvider(
+        post=post,
+        cache_dir=tmp_path,
+        size="96x96",
+    )
+    for camera_reference in (camera_a, camera_b):
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            "preserve identity and match only this camera",
+            source_image=identity,
+            quality_source_image=identity,
+            camera_reference_image=camera_reference,
+        )
+        provider.execute(
+            plan,
+            ImageRoute.OPENAI_EDIT,
+            compile_initial_prompt(plan),
+            source_image=identity,
+            mask_bytes=None,
+            camera_reference_image=camera_reference,
+        )
+
+    assert len(calls) == 2
+
+
+def test_camera_guided_edit_rejects_mismatched_reference_dimensions(
+    monkeypatch, tmp_path,
+):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-only")
+    identity = _png((10, 20, 30), size=(96, 96))
+    camera_reference = _png((180, 170, 160), size=(64, 64))
+    calls = []
+
+    plan = build_image_plan(
+        ImageOperation.REFERENCE_RENDER,
+        "preserve identity and match only this camera",
+        source_image=identity,
+        quality_source_image=identity,
+        camera_reference_image=camera_reference,
+    )
+    provider = OpenAIImageProvider(
+        post=lambda *_args, **_kwargs: calls.append(True),
+        cache_dir=tmp_path,
+        size="96x96",
+    )
+
+    with pytest.raises(ProviderCallError) as caught:
+        provider.execute(
+            plan,
+            ImageRoute.OPENAI_EDIT,
+            compile_initial_prompt(plan),
+            source_image=identity,
+            mask_bytes=None,
+            camera_reference_image=camera_reference,
+        )
+
+    assert caught.value.code == "openai_camera_reference_size_mismatch"
+    assert calls == []
+
+
+def test_camera_reference_hash_is_verified_before_provider_execution():
+    identity = _png((10, 20, 30))
+    planned_reference = _png((180, 170, 160))
+    wrong_reference = _png((1, 2, 3))
+    plan = build_image_plan(
+        ImageOperation.REFERENCE_RENDER,
+        "match only the comparison camera",
+        source_image=identity,
+        quality_source_image=identity,
+        camera_reference_image=planned_reference,
+    )
+
+    class Provider:
+        def execute(self, *_args, **_kwargs):
+            raise AssertionError("provider must not run for a hash mismatch")
+
+    with pytest.raises(ImagePlanValidationError, match="camera reference"):
+        JewelryImageAgent(Provider()).run(
+            plan,
+            source_image=identity,
+            quality_source_image=identity,
+            camera_reference_image=wrong_reference,
+        )
+
+
+def test_camera_guided_agent_forwards_both_roles_in_one_bounded_attempt():
+    identity = _png((10, 20, 30))
+    camera_reference = _png((180, 170, 160))
+    calls = []
+    plan = build_image_plan(
+        ImageOperation.REFERENCE_RENDER,
+        "preserve identity and match only this camera",
+        source_image=identity,
+        quality_source_image=identity,
+        camera_reference_image=camera_reference,
+    )
+
+    class Provider:
+        def execute(
+            self,
+            _plan,
+            route,
+            _prompt,
+            *,
+            source_image,
+            mask_bytes,
+            camera_reference_image,
+        ):
+            calls.append((
+                route,
+                source_image,
+                mask_bytes,
+                camera_reference_image,
+            ))
+            return ProviderImage(image_bytes=_png((40, 50, 60)))
+
+    result = JewelryImageAgent(
+        Provider(),
+        SequenceEvaluator(QualityVerdict.PASS),
+        attempt_routes=(ImageRoute.OPENAI_EDIT,),
+    ).run(
+        plan,
+        source_image=identity,
+        quality_source_image=identity,
+        camera_reference_image=camera_reference,
+    )
+
+    assert result.accepted is True
+    assert calls == [(
+        ImageRoute.OPENAI_EDIT,
+        identity,
+        None,
+        camera_reference,
+    )]
+    assert len(result.run.attempts) == 1
+
+
+def test_camera_reference_is_forwarded_unchanged_across_qa_retry():
+    identity = _png((10, 20, 30))
+    camera_reference = _png((180, 170, 160))
+    received_camera_references: list[bytes] = []
+    plan = build_image_plan(
+        ImageOperation.REFERENCE_RENDER,
+        "preserve identity and match only this camera",
+        source_image=identity,
+        quality_source_image=identity,
+        camera_reference_image=camera_reference,
+    )
+
+    class Provider:
+        def execute(
+            self,
+            _plan,
+            _route,
+            _prompt,
+            *,
+            source_image,
+            mask_bytes,
+            camera_reference_image,
+        ):
+            assert source_image == identity
+            assert mask_bytes is None
+            received_camera_references.append(camera_reference_image)
+            return ProviderImage(image_bytes=_png((40, 50, 60)))
+
+    result = JewelryImageAgent(
+        Provider(),
+        SequenceEvaluator(QualityVerdict.FAIL, QualityVerdict.PASS),
+        attempt_routes=(ImageRoute.OPENAI_EDIT, ImageRoute.OPENAI_EDIT),
+    ).run(
+        plan,
+        source_image=identity,
+        quality_source_image=identity,
+        camera_reference_image=camera_reference,
+    )
+
+    assert result.accepted is True
+    assert received_camera_references == [camera_reference, camera_reference]
+    assert len(result.run.attempts) == 2
 
 
 def test_source_sized_masked_edit_scales_for_api_then_restores_exact_frozen_pixels(

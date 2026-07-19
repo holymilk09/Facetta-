@@ -23,6 +23,7 @@ from facetta.image_agent.localization import (
     derive_ring_setting_mask,
     derive_ring_shank_mask,
 )
+from facetta.image_agent.drift import inside_mask_region_effects
 from facetta.ring_evals import (
     CANONICAL_RING_EDITS,
     RING_GOLDEN_CASES,
@@ -124,6 +125,46 @@ def test_center_stone_footprint_detects_setting_edit_redesign():
     assert unchanged["stable"] is True
     assert drifted["checked"] is True
     assert drifted["stable"] is False
+
+
+def test_every_disconnected_marked_region_must_change_visibly():
+    source = Image.new("RGB", (80, 40), (240, 240, 240))
+    candidate = source.copy()
+    candidate_draw = ImageDraw.Draw(candidate)
+    candidate_draw.rectangle((5, 5, 24, 24), fill=(120, 170, 220))
+    mask = Image.new("L", source.size, 0)
+    mask_draw = ImageDraw.Draw(mask)
+    mask_draw.rectangle((5, 5, 24, 24), fill=255)
+    mask_draw.rectangle((55, 5, 74, 24), fill=255)
+
+    def encoded(image: Image.Image) -> bytes:
+        output = io.BytesIO()
+        image.save(output, format="PNG")
+        return output.getvalue()
+
+    incomplete = inside_mask_region_effects(
+        encoded(source),
+        encoded(candidate),
+        encoded(mask),
+        expected_region_count=2,
+    )
+    assert incomplete["checked"] is True
+    assert incomplete["region_count"] == 2
+    assert incomplete["region_count_matches"] is True
+    assert incomplete["every_region_changed"] is False
+    assert [region["change_visible"] for region in incomplete["regions"]] == [
+        True,
+        False,
+    ]
+
+    candidate_draw.rectangle((55, 5, 74, 24), fill=(220, 160, 120))
+    complete = inside_mask_region_effects(
+        encoded(source),
+        encoded(candidate),
+        encoded(mask),
+        expected_region_count=2,
+    )
+    assert complete["every_region_changed"] is True
 
 
 class _Provider:

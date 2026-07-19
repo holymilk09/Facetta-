@@ -29,7 +29,7 @@ GATE_RUN_KIND = "provider_free_frozen_corpus_gate"
 WORKLOAD_SCHEMA = "facetta-frozen-capture-workload.v1"
 FROZEN_INTEGRITY_SOURCE_COUNT = 144
 FROZEN_QUALITY_SOURCE_COUNT = 58
-FROZEN_EVALUATION_SEQUENCE_COUNT = 1_044
+FROZEN_EVALUATION_SEQUENCE_COUNT = 1_102
 
 
 def canonical_founder_approval_payload(approval: Json) -> bytes:
@@ -170,7 +170,7 @@ def _workload_counts(workload: Json) -> tuple[int, int, int, list[str]]:
     if quality_count != FROZEN_QUALITY_SOURCE_COUNT:
         errors.append("frozen workload must contain exactly 58 quality sources")
     if assignment_count != FROZEN_EVALUATION_SEQUENCE_COUNT:
-        errors.append("frozen workload must contain exactly 1,044 quality assignments")
+        errors.append("frozen workload must contain exactly 1,102 quality assignments")
     return integrity_count, quality_count, assignment_count, errors
 
 

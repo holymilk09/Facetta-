@@ -7,6 +7,7 @@ from statistics import mean
 from typing import Literal
 
 from facetta.concept import DesignRead, complete_design
+from facetta.creative_symmetry import with_jewelry_symmetry_contract
 from facetta.json_types import JsonObject
 from facetta.spec import Spec
 from facetta.validation import validate_spec
@@ -88,6 +89,7 @@ class CanonicalRingEdit:
     category: EditCategory = "band_geometry"
     allowed_delta_prefixes: tuple[str, ...] = ()
     frozen_facts: tuple[str, ...] = ()
+    requires_spec_delta: bool = True
 
 
 CANONICAL_RING_EDITS: tuple[CanonicalRingEdit, ...] = (
@@ -183,8 +185,11 @@ CANONICAL_RING_EDITS: tuple[CanonicalRingEdit, ...] = (
     CanonicalRingEdit(
         "leaf-motif-shape", "round-leaf-yellow-4-imported",
         "the mirrored diamond leaf elements on both shoulders",
-        "reshape all 12 marquise diamond leaf elements into pear-cut diamond "
-        "leaf elements without changing their count, dimensions, positions, or metalwork",
+        with_jewelry_symmetry_contract(
+            "reshape all 12 marquise diamond leaf elements into pear-cut diamond "
+            "leaf elements without changing their count, dimensions, positions, "
+            "or metalwork"
+        ),
         category="motif_shape",
         allowed_delta_prefixes=(
             "side_stones.0.cut", "side_stones.0.carat"),
@@ -193,10 +198,27 @@ CANONICAL_RING_EDITS: tuple[CanonicalRingEdit, ...] = (
             "center stone, setting, lower shank, metal, camera, lighting, and background",
         )),
     CanonicalRingEdit(
+        "intentional-shoulder-asymmetry", "round-leaf-yellow-4-imported",
+        "the three outermost diamond leaf elements on the left shoulder only",
+        with_jewelry_symmetry_contract(
+            "intentionally reshape only the three outermost marquise diamond leaf "
+            "elements on the left shoulder into pear-cut diamond leaves. Keep every "
+            "element on the right shoulder unchanged. The unequal left/right motif "
+            "treatment is deliberate designer-requested asymmetry"
+        ),
+        category="motif_shape",
+        frozen_facts=(
+            "all right-shoulder leaf elements and their marquise cuts",
+            "all remaining leaf count, dimensions, positions, and metalwork",
+            "center stone, setting, lower shank, metal, camera, lighting, and background",
+        ),
+        requires_spec_delta=False),
+    CanonicalRingEdit(
         "background-only", "marquise-solitaire-yellow-4", "the background",
         "change only the background to warm ivory", visual_only=True,
         category="presentation",
-        frozen_facts=("the complete validated ring specification",)),
+        frozen_facts=("the complete validated ring specification",),
+        requires_spec_delta=False),
     CanonicalRingEdit(
         "impossible-band-width", "round-solitaire-yellow-4-narrow", "the band",
         "set the band width to 20 mm", expected_valid=False,
@@ -366,6 +388,12 @@ def apply_canonical_ring_edit(
         data["side_stones"][0]["cut"] = "pear"
         data["side_stones"][0]["carat"] = _stone_carat(
             data["side_stones"][0])
+        candidate = Spec.model_validate(data)
+    elif edit.id == "intentional-shoulder-asymmetry":
+        # The canonical ring schema stores a repeated inventory group, not
+        # per-side visual variants.  Keep the validated product facts fixed;
+        # the reviewed source region and explicit instruction authorize this
+        # image-only structural asymmetry for the temporary candidate.
         candidate = Spec.model_validate(data)
     elif edit.id == "background-only":
         candidate = Spec.model_validate(data)

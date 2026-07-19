@@ -228,6 +228,7 @@ class OpenAIImageProvider:
         *,
         source_image: bytes | None,
         mask_bytes: bytes | None,
+        camera_reference_image: bytes | None = None,
     ) -> ProviderImage:
         expected_route = openai_route_for_plan(plan)
         if route is not expected_route:
@@ -255,10 +256,40 @@ class OpenAIImageProvider:
                 code="invalid_openai_generation_input",
                 retryable=False,
             )
+        if route is ImageRoute.OPENAI_GENERATE and camera_reference_image:
+            raise ProviderCallError(
+                "OpenAI generation route cannot receive a camera reference",
+                code="invalid_openai_generation_input",
+                retryable=False,
+            )
         if route is ImageRoute.OPENAI_EDIT and not source_image:
             raise ProviderCallError(
                 "OpenAI edit route requires a source image",
                 code="missing_openai_source_image",
+                retryable=False,
+            )
+        if camera_reference_image is not None and not camera_reference_image:
+            raise ProviderCallError(
+                "OpenAI camera reference must not be empty",
+                code="invalid_openai_camera_reference",
+                retryable=False,
+            )
+        if camera_reference_image is not None and mask_bytes is not None:
+            raise ProviderCallError(
+                "camera-reference repair cannot be combined with a local mask",
+                code="openai_camera_reference_mask_unsupported",
+                retryable=False,
+            )
+        expected_camera_hash = plan.camera_reference_hash
+        observed_camera_hash = (
+            hashlib.sha256(camera_reference_image).hexdigest()
+            if camera_reference_image is not None
+            else None
+        )
+        if expected_camera_hash != observed_camera_hash:
+            raise ProviderCallError(
+                "OpenAI camera reference does not match the image plan",
+                code="openai_camera_reference_hash_mismatch",
                 retryable=False,
             )
 
@@ -274,6 +305,7 @@ class OpenAIImageProvider:
                 hashlib.sha256(source_image).hexdigest()
                 if source_image else None
             ),
+            "camera_reference_hash": observed_camera_hash,
             "mask_hash": (
                 hashlib.sha256(mask_bytes).hexdigest()
                 if mask_bytes else None
@@ -329,6 +361,30 @@ class OpenAIImageProvider:
                 files: list[tuple[str, tuple[str, bytes, str]]] = [
                     ("image[]", ("source.png", source_png, "image/png")),
                 ]
+                if camera_reference_image is not None:
+                    camera_reference = _source_image(camera_reference_image)
+                    if camera_reference.size != source_raster.size:
+                        raise ProviderCallError(
+                            "OpenAI camera reference dimensions must match the "
+                            "identity source",
+                            code="openai_camera_reference_size_mismatch",
+                            retryable=False,
+                        )
+                    provider_camera_reference = (
+                        camera_reference
+                        if camera_reference.size == provider_size
+                        else camera_reference.resize(
+                            provider_size, Image.Resampling.LANCZOS
+                        )
+                    )
+                    files.append((
+                        "image[]",
+                        (
+                            "camera-reference.png",
+                            _png_bytes(provider_camera_reference),
+                            "image/png",
+                        ),
+                    ))
                 if mask_bytes is not None:
                     internal_mask = _internal_mask(
                         mask_bytes, source_raster.size

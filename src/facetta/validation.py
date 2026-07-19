@@ -33,7 +33,13 @@ HALO_MARGIN_MM = 0.3   # gap between center stone girdle and melee
 STONE_GAP_MM = 0.2     # minimum gap between adjacent surround stones
 STATION_GAP_MM = 1.0   # minimum metal between bangle station stones
 
-RING_TEMPLATES = ("solitaire_prong", "halo_prong", "leaf_shoulder_prong")
+RING_TEMPLATES = (
+    "solitaire_prong",
+    "halo_prong",
+    "leaf_shoulder_prong",
+    "three_stone_prong",
+    "multi_stone_prong",
+)
 BRACELET_TEMPLATES = ("love_bangle", "cuff", "link_bracelet")
 UNMOUNTED_TEMPLATES = ("loose_stone",)  # no setting/metal — the stone is the piece
 BROOCH_TEMPLATES = ("leaf_spray_brooch",)

@@ -154,6 +154,8 @@ export interface PreviewCheck {
   id: string;
   label: string;
   verdict: PreviewVerdict;
+  /** Warning failures are designer-reviewable; hard failures are never saveable. */
+  severity: 'hard' | 'warning';
   detail: string | null;
 }
 

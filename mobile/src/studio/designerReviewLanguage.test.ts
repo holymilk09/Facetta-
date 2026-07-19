@@ -10,7 +10,7 @@ import {
 test('designer review states never expose raw evaluator verdicts', () => {
   assert.deepEqual(
     ['pass', 'warn', 'reject', 'fail'].map((value) => designerReviewState(value as any)),
-    ['Design preserved', 'Review recommended', 'Could not preserve design', 'Could not preserve design'],
+    ['Design preserved', 'Needs review', 'Could not preserve design', 'Could not preserve design'],
   );
 });
 

@@ -234,7 +234,48 @@ def test_exact_view_survives_restart_is_owner_scoped_and_accepts_derived_once(
         assert bytes(accepted.image) == b""
         assert derived is not None and derived.capability == "LINE_ART"
         assert derived.parent_asset_id == "ast_exact"
+        assert derived.design_id is None
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 1
         assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 1
+        assert job is not None and job.status == "succeeded"
+        assert (job.completed_outputs, job.charged_outputs) == (1, 1)
+
+
+def test_exact_view_mixed_warning_checks_remain_reviewable_and_charge_only_on_accept(
+    exact_candidates,
+):
+    client, Session, spec, version = exact_candidates
+    warning_qa = {
+        "verdict": "warn",
+        "accepted": False,
+        "review_required": True,
+        "checks": [{
+            "code": "geometry_identity",
+            "passed": True,
+            "severity": "hard",
+            "message": "the jewelry geometry matched",
+        }, {
+            "code": "unintended_drift",
+            "passed": False,
+            "severity": "warning",
+            "message": "expected photo-to-line-art presentation change",
+        }],
+    }
+    candidate = _view_candidate(
+        Session, spec, version, suffix="warning", qa=warning_qa,
+    )
+    with Session() as db:
+        job = db.get(StudioJobRecord, "job_view_warning")
+        assert job is not None and job.status == "reviewing"
+        assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+    path, payload = _view_decision(candidate, "accept")
+    accepted = client.post(path, json=payload)
+    assert accepted.status_code == 201, accepted.text
+    assert accepted.json()["project"]["active_asset_id"] == "ast_exact"
+    with Session() as db:
+        job = db.get(StudioJobRecord, "job_view_warning")
+        record = db.get(StudioViewCandidateRecord, candidate.candidate_id)
+        assert record is not None and record.status == "accepted"
         assert job is not None and job.status == "succeeded"
         assert (job.completed_outputs, job.charged_outputs) == (1, 1)
 
@@ -501,7 +542,49 @@ def test_exact_present_groups_one_to_four_charge_only_the_accepted_output(
                 StudioPresentationCandidateJobLink.studio_job_id == job_id
             )) == count
         assert db.scalar(select(func.count()).select_from(ImageAsset)) == 2
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 1
+        derived = db.get(ImageAsset, accepted.json()["asset_id"])
+        assert derived is not None and derived.design_id is None
+        assert derived.parent_asset_id == "ast_exact"
         assert db.scalar(select(func.count()).select_from(ImageRunReview)) == count
+
+
+def test_exact_view_and_present_fail_if_selected_source_bytes_change(
+    exact_candidates,
+):
+    client, Session, spec, version = exact_candidates
+    view = _view_candidate(Session, spec, version, suffix="source_tamper")
+    _job_id, presentations = _presentation_group(
+        Session, spec, version, 1, "source_tamper",
+    )
+
+    with Session() as db:
+        # ImageAsset rejects canonical ORM updates. Bypass that guard here to
+        # simulate storage corruption and prove the decision-time hash pin is
+        # still an independent fail-closed boundary.
+        db.execute(
+            text("UPDATE image_assets SET image=:image WHERE id=:id"),
+            {"image": _png(222), "id": "ast_exact"},
+        )
+        db.commit()
+
+    view_path, view_body = _view_decision(view, "accept")
+    view_response = client.post(view_path, json=view_body)
+    assert view_response.status_code == 409
+    assert view_response.json()["code"] == "stale_asset_revision"
+
+    present_path, present_body = _present_decision(presentations[0], "accept")
+    present_response = client.post(present_path, json=present_body)
+    assert present_response.status_code == 409
+    assert present_response.json()["code"] == "stale_asset_revision"
+
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 1
+        view_job = db.get(StudioJobRecord, "job_view_source_tamper")
+        present_job = db.get(StudioJobRecord, "job_present_source_tamper")
+        assert view_job is not None and view_job.charged_outputs == 0
+        assert present_job is not None and present_job.charged_outputs == 0
 
 
 def test_activity_expiry_settles_present_group_to_exact_accepted_subset(
@@ -632,9 +715,17 @@ def test_failed_hard_qa_cannot_be_accepted_or_charged(exact_candidates):
     _client, Session, spec, version = exact_candidates
     exact_hash = spec_visual_hash(Spec.model_validate(spec))
     failed_qa = {
-        "verdict": "fail",
+        # Even a malformed overall WARN can never make a hard failed check
+        # reviewable or chargeable.
+        "verdict": "warn",
+        "accepted": False,
         "review_required": True,
         "checks": [{
+            "code": "presentation_change",
+            "passed": False,
+            "severity": "warning",
+            "message": "line-art presentation differs from the source photo",
+        }, {
             "code": "identity_drift",
             "passed": False,
             "severity": "hard",

@@ -14,8 +14,15 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from conftest import EXAMPLE_SPEC, audited_import_spec
+from facetta import studio_preview_candidates as preview_seam
 from facetta.api import studio as studio_api
 from facetta.api.studio import get_studio_visual_preview_generator
+from facetta.auth import AuthenticatedPrincipal, require_principal_boundary
+from facetta.creative_symmetry import (
+    JEWELRY_SYMMETRY_CONTRACT,
+    JEWELRY_SYMMETRY_REPAIR_CONTRACT,
+    SIX_LEAF_RUBY_PATTERN_CONTRACT,
+)
 from facetta.db import (
     ApprovalChecklist,
     Base,
@@ -28,6 +35,7 @@ from facetta.db import (
     Project,
     ProjectRevisionRecord,
     PreviewCandidateRecord,
+    StudioContinuationPromptRecord,
     get_db,
     StudioJobRecord,
     utcnow,
@@ -42,6 +50,12 @@ from facetta.image_agent import (
     QualityCheck,
     QualityVerdict,
     build_image_plan,
+)
+from facetta.jewelry_intent import (
+    BRAIDED_WHITE_GOLD_CHAIN_CONTRACT,
+    SEQUENTIAL_JEWELRY_EDIT_CONTRACT,
+    SMALL_DIAMOND_VISUAL_CONTRACT,
+    with_sequential_jewelry_edit_contract,
 )
 from facetta.main import app
 from facetta.spec import Spec
@@ -450,6 +464,304 @@ def test_preview_does_not_mutate_canonical_history_and_apply_is_atomic(
     assert client.get(body["candidate"]["preview_url"]).status_code == 410
 
 
+def test_normalized_visual_preview_contract_is_owned_cas_guarded_and_idempotent(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    before = _counts(Session)
+    created = _preview(client)
+    assert created.status_code == 201, created.text
+    legacy = created.json()
+    candidate_id = legacy["candidate"]["candidate_id"]
+
+    # Creating and reopening a normalized candidate never appends canonical
+    # image/spec/revision truth.
+    listed = client.get("/studio/projects/ast_selected/preview-candidates")
+    assert listed.status_code == 200, listed.text
+    candidates = listed.json()["candidates"]
+    assert [item["kind"] for item in candidates] == ["visual"]
+    assert candidates[0]["candidate_id"] == candidate_id
+    assert candidates[0]["available_decisions"] == [
+        "apply", "save_as_variation", "discard",
+    ]
+    assert candidates[0]["preview_url"].endswith("?owner=usr_studio")
+    image = client.get(candidates[0]["preview_url"])
+    assert image.status_code == 200 and image.content == CANDIDATE
+    reopened = client.get(
+        f"/studio/preview-candidates/{candidate_id}",
+        params={"owner": "usr_studio"},
+    )
+    assert reopened.status_code == 200, reopened.text
+    assert reopened.json()["source_sha256"] == hashlib.sha256(SOURCE).hexdigest()
+    assert _counts(Session) == {**before, "runs": 1}
+
+    foreign = client.get(
+        f"/studio/preview-candidates/{candidate_id}",
+        params={"owner": "usr_someone_else"},
+    )
+    assert foreign.status_code == 404
+
+    stale = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_studio",
+            "decision": "apply",
+            "expected_active_asset_id": "ast_not_the_source",
+        },
+    )
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["code"] == "preview_candidate_lineage_mismatch"
+    assert _counts(Session) == {**before, "runs": 1}
+
+    applied = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_studio",
+            "decision": "apply",
+            "expected_active_asset_id": "ast_selected",
+        },
+    )
+    assert applied.status_code == 200, applied.text
+    result = applied.json()
+    assert result["kind"] == "visual" and result["status"] == "applied"
+    assert result["terminal_asset_id"] is not None
+
+    replay = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_studio",
+            "decision": "apply",
+            "expected_active_asset_id": "ast_selected",
+        },
+    )
+    assert replay.status_code == 200, replay.text
+    assert replay.json() == result
+    after = _counts(Session)
+    assert after == {
+        **before,
+        "assets": before["assets"] + 1,
+        "runs": before["runs"] + 1,
+        "reviews": before["reviews"] + 1,
+        "records": before["records"] + 1,
+    }
+
+
+def test_normalized_visual_preview_rejects_tampered_qa_without_canonical_write(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    created = _preview(client).json()
+    candidate_id = created["candidate"]["candidate_id"]
+    with Session() as db:
+        record = db.get(PreviewCandidateRecord, candidate_id)
+        assert record is not None
+        record.payload = {
+            **record.payload,
+            "qa": {
+                "verdict": "fail",
+                "accepted": False,
+                "review_required": False,
+                "checks": [{
+                    "code": "outside_drift",
+                    "passed": False,
+                    "severity": "hard",
+                }],
+            },
+        }
+        db.commit()
+
+    rejected = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_studio",
+            "decision": "apply",
+            "expected_active_asset_id": "ast_selected",
+        },
+    )
+    assert rejected.status_code == 410, rejected.text
+    assert rejected.json()["code"] == "preview_candidate_unavailable"
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord)) == 0
+        durable = db.get(PreviewCandidateRecord, candidate_id)
+        assert durable is not None and durable.status == "expired"
+        assert bytes(durable.image) == b""
+
+
+def test_normalized_visual_stale_discard_is_terminal_without_canonical_write(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    created = _preview(client).json()
+    candidate_id = created["candidate"]["candidate_id"]
+    _advance_active_visual(Session)
+    before_discard = _counts(Session)
+
+    discarded = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_studio",
+            "decision": "discard",
+            "expected_active_asset_id": "ast_selected",
+        },
+    )
+    assert discarded.status_code == 200, discarded.text
+    assert discarded.json()["status"] == "discarded"
+    after_discard = _counts(Session)
+    assert after_discard == {
+        **before_discard,
+        "reviews": before_discard["reviews"] + 1,
+    }
+    with Session() as db:
+        project = db.get(Project, "ast_selected")
+        durable = db.get(PreviewCandidateRecord, candidate_id)
+        assert project is not None
+        assert project.selected_candidate_asset_id == "ast_newer"
+        assert durable is not None and durable.status == "discarded"
+        assert bytes(durable.image) == b""
+
+
+def test_normalized_visual_variation_replay_binds_exact_label(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    preview = _preview(client).json()
+    candidate_id = preview["candidate"]["candidate_id"]
+    run_id = preview["image_run_id"]
+    request = {
+        "created_by": "usr_studio",
+        "decision": "save_as_variation",
+        "expected_active_asset_id": "ast_selected",
+        "variation_label": "Warm rose study",
+    }
+    saved = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json=request,
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["status"] == "saved_as_variation"
+    replay = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json=request,
+    )
+    assert replay.status_code == 200 and replay.json() == saved.json()
+    legacy_replay = client.post(
+        f"/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/"
+        "save-as-variation",
+        json={"created_by": "usr_studio", "label": "Warm rose study"},
+    )
+    assert legacy_replay.status_code == 201, legacy_replay.text
+    assert legacy_replay.json()["project"]["root_id"] == (
+        saved.json()["result_project_id"]
+    )
+    legacy_conflict = client.post(
+        f"/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/"
+        "save-as-variation",
+        json={"created_by": "usr_studio", "label": "Another name"},
+    )
+    assert legacy_conflict.status_code == 409, legacy_conflict.text
+    assert legacy_conflict.json()["code"] == (
+        "preview_candidate_variation_conflict"
+    )
+
+    for conflicting_label, expected_status in (
+        ("Another name", 409),
+        (None, 422),
+    ):
+        conflicting = client.post(
+            f"/studio/preview-candidates/{candidate_id}/decision",
+            json={**request, "variation_label": conflicting_label},
+        )
+        assert conflicting.status_code == expected_status, conflicting.text
+    contradictory = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_studio",
+            "decision": "discard",
+            "expected_active_asset_id": "ast_selected",
+        },
+    )
+    assert contradictory.status_code == 409, contradictory.text
+    with Session() as db:
+        durable = db.get(PreviewCandidateRecord, candidate_id)
+        assert durable is not None
+        assert durable.payload["resolved_variation_label"] == "Warm rose study"
+
+
+def test_normalized_visual_authenticated_foreign_candidate_is_not_enumerable(
+    studio_preview_client,
+):
+    client, _Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    candidate_id = _preview(client).json()["candidate"]["candidate_id"]
+    app.dependency_overrides[require_principal_boundary] = lambda: (
+        AuthenticatedPrincipal(subject="usr_someone_else")
+    )
+
+    foreign = client.get(f"/studio/preview-candidates/{candidate_id}")
+    assert foreign.status_code == 404, foreign.text
+    foreign_image = client.get(
+        f"/studio/preview-candidates/{candidate_id}/image"
+    )
+    assert foreign_image.status_code == 404, foreign_image.text
+
+
+def test_normalized_visual_apply_rolls_back_job_credit_and_canonical_rows(
+    studio_preview_client,
+    monkeypatch,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    job_id = _running_refine_job(client)
+    candidate_id = _preview(client, studio_job_id=job_id).json()["candidate"][
+        "candidate_id"
+    ]
+    before = _counts(Session)
+    monkeypatch.setattr(
+        preview_seam,
+        "remove_studio_visual_candidate",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("resolution failed")
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="resolution failed"):
+        client.post(
+            f"/studio/preview-candidates/{candidate_id}/decision",
+            json={
+                "created_by": "usr_studio",
+                "decision": "apply",
+                "expected_active_asset_id": "ast_selected",
+            },
+        )
+    assert _counts(Session) == before
+    with Session() as db:
+        durable = db.get(PreviewCandidateRecord, candidate_id)
+        job = db.get(StudioJobRecord, job_id)
+        assert durable is not None and durable.status == "reviewing"
+        assert durable.terminal_asset_id is None
+        assert job is not None and job.status == "reviewing"
+        assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+
+
 def test_applied_pre_spec_child_is_the_only_confirmable_design_v1_source(
     studio_preview_client, monkeypatch,
 ):
@@ -615,6 +927,113 @@ def test_visual_discard_atomically_cancels_bound_job_without_charge(
         assert candidate is not None and candidate.status == "discarded"
         assert db.scalar(select(func.count()).select_from(
             ProjectRevisionRecord)) == 0
+
+
+def test_continuation_prompts_keep_raw_order_and_exact_apply_discard_outcomes(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    internal_suffix = (
+        "PRESERVE EVERY UNMARKED PIXEL AND KEEP ALL OTHER DETAILS FIXED."
+    )
+    first_words = "Mirror the necklace links from left to right."
+    first_job_id = _running_refine_job(client)
+    first = _preview(
+        client,
+        studio_job_id=first_job_id,
+        instruction=f"{first_words} {internal_suffix}",
+        raw_user_instruction=first_words,
+        input_mode="symmetry",
+    )
+    assert first.status_code == 201, first.text
+    first_body = first.json()
+    first_prompt = first_body["continuation_prompt"]
+    assert first_prompt["sequence"] == 1
+    assert first_prompt["prompt"] == first_words
+    assert internal_suffix not in first_prompt["prompt"]
+    assert first_prompt["state"] == "preview_ready"
+
+    first_discard = client.post(
+        f"/studio/image-runs/{first_body['image_run_id']}/visual-candidates/"
+        f"{first_body['candidate']['candidate_id']}/discard",
+        json={
+            "created_by": "usr_studio",
+            "expected_active_asset_id": "ast_selected",
+        },
+    )
+    assert first_discard.status_code == 200, first_discard.text
+
+    second_words = "Change the center stone to a deep green tsavorite."
+    second_job_id = _running_refine_job(client)
+    second = _preview(
+        client,
+        studio_job_id=second_job_id,
+        instruction=f"{second_words} {internal_suffix}",
+        raw_user_instruction=second_words,
+        input_mode="describe",
+    )
+    assert second.status_code == 201, second.text
+    second_body = second.json()
+    second_prompt = second_body["continuation_prompt"]
+    assert second_prompt["sequence"] == 2
+    assert second_prompt["source_asset_id"] == "ast_selected"
+
+    second_accept = client.post(
+        f"/studio/image-runs/{second_body['image_run_id']}/visual-candidates/"
+        f"{second_body['candidate']['candidate_id']}/accept",
+        json={
+            "created_by": "usr_studio",
+            "expected_active_asset_id": "ast_selected",
+        },
+    )
+    assert second_accept.status_code == 201, second_accept.text
+    applied_asset_id = second_accept.json()["new_asset_id"]
+
+    history = client.get(
+        "/studio/projects/ast_selected/continuation-prompts"
+    )
+    assert history.status_code == 200, history.text
+    prompts = history.json()["prompts"]
+    assert [item["sequence"] for item in prompts] == [1, 2]
+    assert [item["prompt"] for item in prompts] == [first_words, second_words]
+    assert [item["state"] for item in prompts] == ["discarded", "applied"]
+    assert prompts[0]["applied_asset_id"] is None
+    assert prompts[1]["applied_asset_id"] == applied_asset_id
+    assert all(internal_suffix not in item["prompt"] for item in prompts)
+
+    with Session() as db:
+        records = list(db.scalars(select(
+            StudioContinuationPromptRecord
+        ).order_by(StudioContinuationPromptRecord.sequence)))
+        assert [record.source_asset_id for record in records] == [
+            "ast_selected", "ast_selected",
+        ]
+        assert all(
+            record.source_sha256 == hashlib.sha256(SOURCE).hexdigest()
+            for record in records
+        )
+        first_job = db.get(StudioJobRecord, first_job_id)
+        second_job = db.get(StudioJobRecord, second_job_id)
+        assert first_job is not None and first_job.status == "canceled"
+        assert (first_job.completed_outputs, first_job.charged_outputs) == (0, 0)
+        assert second_job is not None and second_job.status == "succeeded"
+        assert (second_job.completed_outputs, second_job.charged_outputs) == (1, 1)
+        project = db.get(Project, "ast_selected")
+        child = db.get(ImageAsset, applied_asset_id)
+        revision = db.scalar(select(ProjectRevisionRecord).where(
+            ProjectRevisionRecord.asset_id == applied_asset_id,
+        ))
+        assert project is not None
+        assert project.selected_candidate_asset_id == applied_asset_id
+        assert child is not None and child.parent_asset_id == "ast_selected"
+        assert child.instruction == second_words
+        assert revision is not None
+        assert revision.raw_intent["continuation_prompt_id"] == records[1].id
+        assert revision.raw_intent["instruction"] == second_words
+        assert internal_suffix not in revision.raw_intent["instruction"]
 
 
 def test_visual_reserved_job_rejects_public_terminal_transition(
@@ -813,9 +1232,27 @@ def test_visual_provider_failure_atomically_fails_bound_job_without_charge(
         lambda: fail_provider
     )
     job_id = _running_refine_job(client)
-    failed = _preview(client, studio_job_id=job_id)
+    raw_words = "Make the chain links slightly narrower."
+    failed = _preview(
+        client,
+        studio_job_id=job_id,
+        instruction=(
+            f"{raw_words} PRESERVE EVERY OTHER ACCEPTED DESIGN DETAIL."
+        ),
+        raw_user_instruction=raw_words,
+        input_mode="point",
+    )
     assert failed.status_code == 502, failed.text
     assert failed.json()["code"] == "image_provider_failed"
+    history = client.get(
+        "/studio/projects/ast_selected/continuation-prompts"
+    )
+    assert history.status_code == 200, history.text
+    prompt = history.json()["prompts"][0]
+    assert prompt["prompt"] == raw_words
+    assert prompt["input_mode"] == "point"
+    assert prompt["state"] == "failed"
+    assert "PRESERVE EVERY OTHER" not in prompt["prompt"]
     with Session() as db:
         job = db.get(StudioJobRecord, job_id)
         run = db.scalar(select(ImageRun))
@@ -826,6 +1263,9 @@ def test_visual_provider_failure_atomically_fails_bound_job_without_charge(
         assert job.charged_outputs == 0
         assert job.error_code == "image_provider_failed"
         assert run is not None and run.status == "failed"
+        persisted_prompt = db.scalar(select(StudioContinuationPromptRecord))
+        assert persisted_prompt is not None
+        assert persisted_prompt.prompt == raw_words
         assert db.scalar(select(func.count()).select_from(
             PreviewCandidateRecord)) == 0
 
@@ -916,6 +1356,79 @@ def test_visual_candidate_store_failure_preserves_failed_evidence_and_job(
         assert runs[0].status == "failed"
         assert db.scalar(select(func.count()).select_from(
             PreviewCandidateRecord)) == 0
+
+
+@pytest.mark.parametrize(
+    ("contract_failure", "expected_status", "expected_code"),
+    [
+        ("unreviewable_result", 422, "visual_preview_failed_quality"),
+        ("wrong_source", 500, "visual_preview_lineage_incomplete"),
+    ],
+)
+def test_visual_result_contract_failure_is_evidence_only_and_zero_charge(
+    studio_preview_client,
+    contract_failure,
+    expected_status,
+    expected_code,
+):
+    """A malformed generator return cannot become a preview or billable work.
+
+    The normal image-agent raises hard QA failures. This regression covers a
+    provider adapter or future orchestrator that instead returns an internally
+    inconsistent result, so the HTTP seam remains fail-closed independently.
+    """
+
+    client, Session = studio_preview_client
+
+    def malformed_result(source, instruction, scope, mask, variant):
+        result = _generator([])(source, instruction, scope, mask, variant)
+        if contract_failure == "wrong_source":
+            return result.model_copy(update={
+                "plan": result.plan.model_copy(update={
+                    "source_hash": hashlib.sha256(b"another revision").hexdigest(),
+                }),
+            })
+        failed_quality = ImageQualityReport(
+            verdict=QualityVerdict.FAIL,
+            checks=(QualityCheck(
+                code="source_design_preserved",
+                passed=False,
+                severity=CheckSeverity.HARD,
+                message="the result drifted from the source design",
+            ),),
+            score=10,
+        )
+        return result.model_copy(update={
+            "quality": failed_quality,
+            "accepted": False,
+            "review_required": False,
+        })
+
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: malformed_result
+    )
+    job_id = _running_refine_job(client)
+    before = _counts(Session)
+
+    failed = _preview(client, studio_job_id=job_id)
+
+    assert failed.status_code == expected_status, failed.text
+    assert failed.json()["code"] == expected_code
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        runs = list(db.scalars(select(ImageRun)))
+        assert job is not None and job.status == "failed"
+        assert job.error_code == expected_code
+        assert job.reservation_kind is None
+        assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+        assert len(runs) == 1 and runs[0].status == "failed"
+        assert runs[0].accepted_asset_id is None
+        assert db.scalar(select(func.count()).select_from(
+            PreviewCandidateRecord)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord)) == before["records"]
+        assert db.scalar(select(func.count()).select_from(
+            ImageAsset)) == before["assets"]
 
 
 def test_stale_visual_request_fails_reserved_job_before_provider_work(
@@ -1153,13 +1666,39 @@ def test_visual_preview_saves_directly_as_independent_variation(
         assert durable is not None
         assert durable.status == "saved_as_variation"
         assert durable.terminal_asset_id == sibling_id
+        assert durable.payload["resolved_variation_label"] == "Warm metal"
         assert review is not None and review.accepted_asset_id == sibling_id
-    repeated = client.post(
+    normalized_replay = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_studio",
+            "decision": "save_as_variation",
+            "expected_active_asset_id": "ast_selected",
+            "variation_label": "Warm metal",
+        },
+    )
+    assert normalized_replay.status_code == 200, normalized_replay.text
+    assert normalized_replay.json()["result_project_id"] == sibling_id
+    normalized_conflict = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_studio",
+            "decision": "save_as_variation",
+            "expected_active_asset_id": "ast_selected",
+            "variation_label": "Duplicate",
+        },
+    )
+    assert normalized_conflict.status_code == 409, normalized_conflict.text
+    assert normalized_conflict.json()["code"] == (
+        "preview_candidate_variation_conflict"
+    )
+    exact_legacy_replay = client.post(
         f"/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/"
         "save-as-variation",
-        json={"created_by": "usr_studio", "label": "Duplicate"},
+        json={"created_by": "usr_studio", "label": "Warm metal"},
     )
-    assert repeated.status_code == 410
+    assert exact_legacy_replay.status_code == 201, exact_legacy_replay.text
+    assert exact_legacy_replay.json()["project"]["root_id"] == sibling_id
 
 
 def test_bound_visual_save_as_variation_charges_exactly_one_output(
@@ -1388,6 +1927,406 @@ def test_marked_region_uses_exact_saved_markup_parent(studio_preview_client):
     assert response.status_code == 201, response.text
     assert calls[0]["mask"] is not None
     assert calls[0]["scope"] == "marked_region"
+
+
+def test_marked_region_plan_authorizes_only_explicit_local_geometry(monkeypatch):
+    plans = []
+    sentinel = object()
+
+    class FakeAgent:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def run(self, plan, *, source_image, mask_bytes):
+            plans.append(plan)
+            assert source_image == SOURCE
+            assert mask_bytes == SOURCE
+            return sentinel
+
+    monkeypatch.setattr(studio_api, "JewelryImageAgent", FakeAgent)
+    monkeypatch.setattr(
+        studio_api,
+        "RoutedImageProvider",
+        lambda **_kwargs: object(),
+    )
+
+    result = studio_api.generate_studio_visual_preview(
+        SOURCE,
+        (
+            "OVERALL DESIGNER REQUEST: Keep the band unchanged. "
+            "1. Inside 'left stone': Make the stone pale blue. "
+            "2. Inside 'right prongs': Make the prongs finer."
+        ),
+        "marked_region",
+        SOURCE,
+        0,
+    )
+
+    assert result is sentinel
+    assert len(plans) == 1
+    plan = plans[0]
+    assert plan.normalized_intent["localization"]["mode"] == (
+        "designer_marked_pre_spec_region"
+    )
+    assert plan.normalized_intent["localization"][
+        "authorized_change_domains"
+    ] == ["appearance", "local_geometry"]
+    assert plan.normalized_intent["localization"]["marked_region_count"] == 2
+    assert plan.region_description == "designer-marked edit regions"
+    assert "local color, surface, finish, or visible contour" in plan.intent
+    assert "Make the stone pale blue" in plan.intent
+    assert "Make the prongs finer" in plan.intent
+    assert "all unrequested construction and setting details" in plan.frozen
+    assert "all construction and setting details" not in plan.frozen
+    assert "no unrelated drift" in plan.expected_output
+
+
+def test_preservation_language_does_not_authorize_local_geometry(monkeypatch):
+    plans = []
+
+    class FakeAgent:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def run(self, plan, *, source_image, mask_bytes):
+            plans.append(plan)
+            return object()
+
+    monkeypatch.setattr(studio_api, "JewelryImageAgent", FakeAgent)
+    monkeypatch.setattr(
+        studio_api,
+        "RoutedImageProvider",
+        lambda **_kwargs: object(),
+    )
+
+    studio_api.generate_studio_visual_preview(
+        SOURCE,
+        "1. Inside 'right prongs': Keep the prongs unchanged.",
+        "marked_region",
+        SOURCE,
+        0,
+    )
+
+    localization = plans[0].normalized_intent["localization"]
+    assert localization["authorized_change_domains"] == ["appearance"]
+    assert localization["marked_region_count"] == 1
+
+
+def test_prong_color_request_does_not_authorize_geometry():
+    domains, count = studio_api._marked_region_contract(
+        "1. Inside 'right prongs': Change the prongs to pale blue."
+    )
+
+    assert domains == ("appearance",)
+    assert count == 1
+
+
+def test_described_plan_allows_named_changes_and_freezes_unmentioned(monkeypatch):
+    plans = []
+
+    class FakeAgent:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def run(self, plan, *, source_image, mask_bytes):
+            plans.append(plan)
+            return object()
+
+    monkeypatch.setattr(studio_api, "JewelryImageAgent", FakeAgent)
+    monkeypatch.setattr(
+        studio_api,
+        "RoutedImageProvider",
+        lambda **_kwargs: object(),
+    )
+
+    studio_api.generate_studio_visual_preview(
+        SOURCE,
+        (
+            "Change the six ruby surrounds to alternating diamond and "
+            "tsavorite leaves, and make the gold links satin."
+        ),
+        "appearance",
+        None,
+        0,
+    )
+
+    assert len(plans) == 1
+    assert "PRE-SPEC DESCRIBED VISUAL REFINEMENT" in plans[0].intent
+    assert "Apply every explicitly requested visible change together" in (
+        plans[0].intent
+    )
+    assert "alternating diamond and tsavorite leaves" in plans[0].intent
+    assert "all unmentioned jewelry geometry and silhouette" in plans[0].frozen
+    assert "all unmentioned topology, component count, proportions, and placement" in (
+        plans[0].frozen
+    )
+    assert any(
+        "all unmentioned stones, settings, metal and pave treatments" in item
+        for item in plans[0].frozen
+    )
+    assert JEWELRY_SYMMETRY_CONTRACT in plans[0].intent
+
+
+def test_described_six_leaf_ruby_pattern_authorizes_exact_requested_delta(
+    monkeypatch,
+):
+    plans = []
+
+    class FakeAgent:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def run(self, plan, *, source_image, mask_bytes):
+            plans.append(plan)
+            return object()
+
+    monkeypatch.setattr(studio_api, "JewelryImageAgent", FakeAgent)
+    monkeypatch.setattr(
+        studio_api,
+        "RoutedImageProvider",
+        lambda **_kwargs: object(),
+    )
+
+    studio_api.generate_studio_visual_preview(
+        SOURCE,
+        (
+            "Surrounding the ruby is 6 leaves half are white diamonds and "
+            "other is tsavorite, so its a pattern."
+        ),
+        "appearance",
+        None,
+        0,
+    )
+
+    assert len(plans) == 1
+    plan = plans[0]
+    assert "PRE-SPEC DESCRIBED VISUAL REFINEMENT" in plan.intent
+    assert SIX_LEAF_RUBY_PATTERN_CONTRACT in plan.intent
+    assert "three leaves use white-diamond treatment" in plan.intent
+    assert "three leaves use tsavorite treatment" in plan.intent
+    assert "all unmentioned topology, component count" in plan.frozen
+    assert "exact topology, component count" not in plan.frozen
+
+
+def test_sequential_chain_edit_reaches_plan_with_prior_leaf_pattern_locked(
+    monkeypatch,
+):
+    plans = []
+
+    class FakeAgent:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def run(self, plan, *, source_image, mask_bytes):
+            plans.append(plan)
+            return object()
+
+    monkeypatch.setattr(studio_api, "JewelryImageAgent", FakeAgent)
+    monkeypatch.setattr(
+        studio_api,
+        "RoutedImageProvider",
+        lambda **_kwargs: object(),
+    )
+
+    instruction = with_sequential_jewelry_edit_contract(
+        "Make the chain white-gold intertwined and braided.",
+        accepted_instructions=(
+            "Ruby on a gold necklace.",
+            (
+                "Add leaf design surrounding the ruby, 3 leaves each side; "
+                "small white diamonds and the other half green tsavorites."
+            ),
+        ),
+    )
+    studio_api.generate_studio_visual_preview(
+        SOURCE,
+        instruction,
+        "appearance",
+        None,
+        0,
+    )
+
+    assert len(plans) == 1
+    intent = plans[0].intent
+    assert SEQUENTIAL_JEWELRY_EDIT_CONTRACT in intent
+    assert SMALL_DIAMOND_VISUAL_CONTRACT in intent
+    assert BRAIDED_WHITE_GOLD_CHAIN_CONTRACT in intent
+    assert SIX_LEAF_RUBY_PATTERN_CONTRACT in intent
+    assert "three-per-side bilateral arrangement" in intent
+    assert "all unmentioned stones, settings, metal" in " ".join(
+        plans[0].frozen
+    )
+
+
+def test_endpoint_supplies_accepted_visual_history_without_persisting_contracts(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    calls: list[dict] = []
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator(calls)
+    )
+    leaf_instruction = (
+        "Add leaf design surrounding the ruby, 3 leaves each side; small "
+        "white diamonds and the other half green tsavorites."
+    )
+    with Session() as db:
+        leaf = ImageAsset(
+            id="ast_leaf",
+            root_id="ast_selected",
+            parent_asset_id="ast_selected",
+            design_version=None,
+            capability="GLOBAL_RESTYLE",
+            source_kind="photograph",
+            instruction=leaf_instruction,
+            image=_png((190, 30, 45)),
+            media_type="image/png",
+            created_by="usr_studio",
+        )
+        db.add(leaf)
+        db.flush()
+        db.get(Project, "ast_selected").selected_candidate_asset_id = leaf.id
+        db.commit()
+
+    chain_instruction = "Make the chain white-gold intertwined and braided."
+    response = _preview(
+        client,
+        expected_active_asset_id="ast_leaf",
+        instruction=chain_instruction,
+    )
+
+    assert response.status_code == 201, response.text
+    provider_instruction = calls[0]["instruction"]
+    assert "ACCEPTED SOURCE CONTEXT" in provider_instruction
+    assert "Initial direction" in provider_instruction
+    assert leaf_instruction in provider_instruction
+    assert chain_instruction in provider_instruction
+    assert BRAIDED_WHITE_GOLD_CHAIN_CONTRACT in provider_instruction
+    with Session() as db:
+        record = db.scalar(select(PreviewCandidateRecord).where(
+            PreviewCandidateRecord.id
+            == response.json()["candidate"]["candidate_id"],
+        ))
+        assert record is not None
+        assert record.payload["requested_change"] == (
+            f"OVERALL DESIGNER REQUEST: {chain_instruction}"
+        )
+        assert "ACCEPTED SOURCE CONTEXT" not in record.payload[
+            "requested_change"
+        ]
+
+
+def test_explicit_symmetry_repair_binds_hard_gate_and_preserves_center(monkeypatch):
+    plans = []
+
+    class FakeAgent:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def run(self, plan, *, source_image, mask_bytes):
+            plans.append(plan)
+            return object()
+
+    monkeypatch.setattr(studio_api, "JewelryImageAgent", FakeAgent)
+    monkeypatch.setattr(
+        studio_api,
+        "RoutedImageProvider",
+        lambda **_kwargs: object(),
+    )
+
+    studio_api.generate_studio_visual_preview(
+        SOURCE,
+        (
+            "Make the left and right sides symmetrical around the centerline. "
+            "Mirror corresponding jewelry elements link by link."
+        ),
+        "appearance",
+        None,
+        0,
+    )
+
+    assert len(plans) == 1
+    plan = plans[0]
+    assert JEWELRY_SYMMETRY_CONTRACT in plan.intent
+    assert JEWELRY_SYMMETRY_REPAIR_CONTRACT in plan.intent
+    assert any("exact center element" in item for item in plan.frozen)
+    assert any("camera, crop, scale" in item for item in plan.frozen)
+    assert "matching corresponding left/right jewelry elements" in (
+        plan.expected_output
+    )
+
+
+def test_multiple_marked_changes_reach_one_temporary_preview_without_history(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    calls: list[dict] = []
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator(calls)
+    )
+    marked = Image.open(io.BytesIO(SOURCE)).convert("RGB")
+    draw = ImageDraw.Draw(marked)
+    draw.rectangle((4, 4, 14, 14), outline=(255, 0, 0), width=3)
+    draw.rectangle((30, 30, 42, 42), outline=(255, 0, 0), width=3)
+    output = io.BytesIO()
+    marked.save(output, format="PNG")
+    with Session() as db:
+        db.add(ImageAsset(
+            id="ast_multi_markup",
+            root_id="ast_selected",
+            parent_asset_id="ast_selected",
+            design_version=None,
+            capability="MARKUP_NOTES",
+            image=output.getvalue(),
+            media_type="image/png",
+            created_by="usr_studio",
+        ))
+        db.commit()
+    before = _counts(Session)
+
+    response = _preview(
+        client,
+        scope="marked_region",
+        markup_asset_id="ast_multi_markup",
+        instruction="Keep the ring identity and camera unchanged.",
+        annotations=[
+            {
+                "region_description": "left shoulder",
+                "change_instruction": "make the surface satin",
+            },
+            {
+                "region_description": "center stone",
+                "change_instruction": "shift the visible color toward teal",
+            },
+        ],
+    )
+
+    assert response.status_code == 201, response.text
+    assert len(calls) == 1
+    assert calls[0]["mask"] is not None
+    assert calls[0]["scope"] == "marked_region"
+    assert "OVERALL DESIGNER REQUEST" in calls[0]["instruction"]
+    assert "APPLY ALL MARKED CHANGES IN ONE PREVIEW" in calls[0]["instruction"]
+    assert "Inside 'left shoulder': make the surface satin" in calls[0]["instruction"]
+    assert "Inside 'center stone': shift the visible color toward teal" in calls[0]["instruction"]
+    body = response.json()
+    with Session() as db:
+        project = db.get(Project, "ast_selected")
+        candidate = db.get(
+            PreviewCandidateRecord, body["candidate"]["candidate_id"])
+        assert project is not None
+        assert project.selected_candidate_asset_id == "ast_selected"
+        assert candidate is not None and candidate.status == "reviewing"
+        requested_change = candidate.payload["requested_change"]
+        assert requested_change.count(
+            "Keep the ring identity and camera unchanged."
+        ) == 1
+        assert requested_change.count("make the surface satin") == 1
+        assert requested_change.count("shift the visible color toward teal") == 1
+        assert requested_change.index("make the surface satin") < (
+            requested_change.index("shift the visible color toward teal")
+        )
+    assert _counts(Session) == {**before, "runs": before["runs"] + 1}
 
 
 def test_pre_spec_branch_and_restore_assets_cannot_gain_approval_authority(

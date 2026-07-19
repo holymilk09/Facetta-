@@ -16,8 +16,8 @@ from facetta.config import env_value, load_env_file
 load_env_file()
 
 from facetta.api import (  # noqa: E402 - env must load before router imports
-    assets, catalog, designs, library, projects, share, specs, stones, studio,
-    studio_facts, trusted, users, vocabulary,
+    assets, catalog, designs, library, organization, projects, share, specs,
+    stones, studio, studio_facts, trusted, users, vocabulary,
 )
 from facetta.auth import (  # noqa: E402
     require_authenticated_principal,
@@ -220,6 +220,26 @@ PRODUCTION_STUDIO_FACT_OPERATIONS: frozenset[RouteOperation] = frozenset({
     ("POST", "/studio/projects/{project_root_id}/facts/revise"),
 })
 
+PRODUCTION_ORGANIZATION_OPERATIONS: frozenset[RouteOperation] = frozenset({
+    ("GET", "/studio/collections"),
+    ("GET", "/studio/collection-memberships"),
+    ("POST", "/studio/collections"),
+    ("PATCH", "/studio/collections/{collection_id}"),
+    ("DELETE", "/studio/collections/{collection_id}"),
+    ("PUT", "/studio/design-families/{family_id}/favorite"),
+    ("DELETE", "/studio/design-families/{family_id}/favorite"),
+    ("PUT", "/studio/design-families/{family_id}/tags"),
+    ("GET", "/studio/design-families/{family_id}/collections"),
+    (
+        "PUT",
+        "/studio/design-families/{family_id}/collections/{collection_id}",
+    ),
+    (
+        "DELETE",
+        "/studio/design-families/{family_id}/collections/{collection_id}",
+    ),
+})
+
 
 def _operation_filtered_router(
     source: APIRouter,
@@ -324,6 +344,11 @@ def create_app() -> FastAPI:
         _operation_filtered_router(
             studio_facts.router, PRODUCTION_STUDIO_FACT_OPERATIONS,
         ) if production else studio_facts.router
+    )
+    application.include_router(
+        _operation_filtered_router(
+            organization.router, PRODUCTION_ORGANIZATION_OPERATIONS,
+        ) if production else organization.router
     )
     application.include_router(
         _operation_filtered_router(

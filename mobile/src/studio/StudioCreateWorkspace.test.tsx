@@ -1,13 +1,16 @@
 /// <reference types="jest" />
 
 import React from 'react';
+import { Dimensions, Platform } from 'react-native';
 import {
   act, fireEvent, render, screen, waitFor, within,
 } from '@testing-library/react-native';
 
 import type { StudioGateway } from './gateway';
 import {
-  EMPTY_STUDIO_CREATE_DRAFT, StudioCreateWorkspace, type StudioCreateDraft,
+  composeCreateBalanceInstruction, composeCreateInstruction, draftAfterGeneration,
+  EMPTY_STUDIO_CREATE_DRAFT, StudioCreateWorkspace, uploadOnlyInstruction,
+  type StudioCreateDraft,
   type StudioCreateReference,
 } from './StudioCreateWorkspace';
 import type { AssetSummary, ProjectDetail } from '../trusted/types';
@@ -95,9 +98,7 @@ function DraftClearingCreate({
       draft={draft}
       onDraftChange={setDraft}
       onGenerationSucceeded={(success) => {
-        setDraft((current) => (
-          current === success.submittedDraft ? EMPTY_STUDIO_CREATE_DRAFT : current
-        ));
+        setDraft((current) => draftAfterGeneration(current, success.submittedDraft));
         onGenerationSucceeded(success);
       }}
       onSave={onSave}
@@ -124,6 +125,268 @@ const loadReferencePreview = async (label: string): Promise<void> => {
     fireEvent(screen.getByLabelText(label), 'load');
   });
 };
+
+test('presents sentence or rough visual source as the only primary starting choices', async () => {
+  const onRequestReference = jest.fn();
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
+    } as CreateGateway}
+    owner="designer_1"
+    onRequestReference={onRequestReference}
+    onSave={jest.fn()}
+  />);
+
+  expect(screen.getByText('Start your jewelry design')).toBeTruthy();
+  expect(screen.getByText(/choose one starting point.+sentence.+visual source/i)).toBeTruthy();
+  expect(screen.getByText('Describe it in one sentence')).toBeTruthy();
+  expect(screen.getByText('OR')).toBeTruthy();
+  expect(screen.getByText('Upload a visual source')).toBeTruthy();
+  expect(screen.getByText(/rough pencil sketches are welcome.+Facetta will interpret/i)).toBeTruthy();
+  expect(screen.getByText('OUTPUT OPTIONS · OPTIONAL')).toBeTruthy();
+  expect(screen.getByText('How many variations?')).toBeTruthy();
+  expect(screen.getByText(/keep 1 for a single result.+up to 4 design alternatives/i)).toBeTruthy();
+  const quantity = screen.getByLabelText('Number of variations');
+  expect(within(quantity).getByLabelText('1 variation').props.accessibilityState).toEqual({
+    checked: true,
+  });
+  expect(screen.getByText('15 credits per variation · 1 variation = 15 credits')).toBeTruthy();
+  expect(screen.getByText('Generate')).toBeTruthy();
+  expect(screen.queryByText('Create 1 direction')).toBeNull();
+  expect(onRequestReference).not.toHaveBeenCalled();
+});
+
+test('defines a clear upload-only instruction for every explicit source kind', () => {
+  expect(uploadOnlyInstruction('drawing')).toMatch(/drawing.+preserving.+silhouette/i);
+  expect(uploadOnlyInstruction('photograph')).toMatch(/photograph.+preserving.+visible piece/i);
+  expect(uploadOnlyInstruction('finished_render')).toMatch(/finished render.+preserving.+silhouette/i);
+  expect(new Set([
+    uploadOnlyInstruction('drawing'),
+    uploadOnlyInstruction('photograph'),
+    uploadOnlyInstruction('finished_render'),
+  ]).size).toBe(3);
+});
+
+test('updates the disclosed total before requesting extra variations', async () => {
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
+    } as CreateGateway}
+    owner="designer_1"
+    onSave={jest.fn()}
+  />);
+
+  const quantity = screen.getByLabelText('Number of variations');
+  await fireEvent.press(within(quantity).getByLabelText('3 variations'));
+
+  expect(within(quantity).getByLabelText('3 variations').props.accessibilityState).toEqual({
+    checked: true,
+  });
+  expect(screen.getByText('15 credits per variation · 3 variations = 45 credits')).toBeTruthy();
+  expect(screen.getByText('Generate')).toBeTruthy();
+});
+
+test('keeps the submitted two-variation quantity and estimate visible with its review set', async () => {
+  const originalPlatform = Platform.OS;
+  const originalWindow = Dimensions.get('window');
+  const originalScreen = Dimensions.get('screen');
+  Object.defineProperty(Platform, 'OS', { configurable: true, value: 'web' });
+  Dimensions.set({
+    window: { ...originalWindow, width: 1440, height: 900 },
+    screen: { ...originalScreen, width: 1440, height: 900 },
+  });
+
+  try {
+    await renderCreate(<DraftClearingCreate
+      gateway={{
+        createFromPrompt: jest.fn(async () => ({
+          data: creativeProject(2), error: null, status: 201,
+        })),
+        createFromDrawing: jest.fn(),
+        completeCreativeDirectionReview: jest.fn(),
+      } as CreateGateway}
+      onGenerationSucceeded={jest.fn()}
+      onSave={jest.fn()}
+    />);
+
+    await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'Two ring directions.');
+    await fireEvent.press(screen.getByLabelText('2 variations'));
+    await fireEvent.press(screen.getByText('Generate'));
+
+    expect(await screen.findByLabelText('Direction 2')).toBeTruthy();
+    expect(screen.getByLabelText('Design sentence').props.value).toBe('');
+    expect(screen.getByLabelText('2 variations').props.accessibilityState).toEqual({
+      checked: true,
+    });
+    expect(screen.getByText('15 credits per variation · 2 variations = 30 credits')).toBeTruthy();
+  } finally {
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: originalPlatform });
+    await act(async () => {
+      Dimensions.set({ window: originalWindow, screen: originalScreen });
+    });
+  }
+});
+
+test('resets the variation quantity to one only after clearing review for a new request', async () => {
+  const originalPlatform = Platform.OS;
+  const originalWindow = Dimensions.get('window');
+  const originalScreen = Dimensions.get('screen');
+  Object.defineProperty(Platform, 'OS', { configurable: true, value: 'web' });
+  Dimensions.set({
+    window: { ...originalWindow, width: 1440, height: 900 },
+    screen: { ...originalScreen, width: 1440, height: 900 },
+  });
+
+  try {
+    await renderCreate(<DraftClearingCreate
+      gateway={{
+        createFromPrompt: jest.fn(async () => ({
+          data: creativeProject(2), error: null, status: 201,
+        })),
+        createFromDrawing: jest.fn(),
+        completeCreativeDirectionReview: jest.fn(),
+      } as CreateGateway}
+      onGenerationSucceeded={jest.fn()}
+      onSave={jest.fn()}
+    />);
+
+    await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'Two ring directions.');
+    await fireEvent.press(screen.getByLabelText('2 variations'));
+    await fireEvent.press(screen.getByText('Generate'));
+    expect(await screen.findByLabelText('Direction 2')).toBeTruthy();
+
+    await fireEvent.press(screen.getByText('Clear canvas'));
+    await fireEvent.press(screen.getAllByText('Clear canvas').at(-1)!);
+
+    expect(await screen.findByText('Your designs will appear here.')).toBeTruthy();
+    expect(screen.getByLabelText('1 variation').props.accessibilityState).toEqual({ checked: true });
+    expect(screen.getByText('15 credits per variation · 1 variation = 15 credits')).toBeTruthy();
+    expect(screen.queryByLabelText('Direction 2')).toBeNull();
+  } finally {
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: originalPlatform });
+    await act(async () => {
+      Dimensions.set({ window: originalWindow, screen: originalScreen });
+    });
+  }
+});
+
+test('submits one variation by default', async () => {
+  const createFromPrompt = jest.fn(async () => ({
+    data: creativeProject(1), error: null, status: 201,
+  }));
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt, createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
+    } as CreateGateway}
+    owner="designer_1"
+    onSave={jest.fn()}
+  />);
+
+  await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'A simple gold ring.');
+  await fireEvent.press(screen.getByText('Generate'));
+
+  await waitFor(() => expect(createFromPrompt).toHaveBeenCalledWith({
+    prompt: composeCreateBalanceInstruction('A simple gold ring.', 'symmetrical', false),
+    variation_count: 1,
+    comparison_views: ['three_quarter'],
+    owner: 'designer_1',
+    title: 'A simple gold ring.',
+  }));
+});
+
+test('defaults text-only creation to a compact symmetrical balance choice', async () => {
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
+    } as CreateGateway}
+    owner="designer_1"
+    onSave={jest.fn()}
+  />);
+
+  expect(screen.getByText('Symmetrical · No extra choices')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('Optional guidance'));
+  const balanceOptions = screen.getByLabelText('Design balance');
+  expect(within(balanceOptions).getByLabelText('Symmetrical').props.accessibilityState)
+    .toEqual({ checked: true });
+  expect(within(balanceOptions).getByLabelText('Asymmetrical').props.accessibilityState)
+    .toEqual({ checked: false });
+  expect(screen.getByText(/mirrors corresponding design and material details/i)).toBeTruthy();
+});
+
+test('threads an explicit asymmetrical choice into text-only creation', async () => {
+  const createFromPrompt = jest.fn(async () => ({
+    data: creativeProject(1), error: null, status: 201,
+  }));
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt, createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
+    } as CreateGateway}
+    owner="designer_1"
+    onSave={jest.fn()}
+  />);
+
+  await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'A ruby collar.');
+  await fireEvent.press(screen.getByLabelText('Optional guidance'));
+  await fireEvent.press(screen.getByLabelText('Asymmetrical'));
+  expect(screen.getByText('Asymmetrical · No extra choices')).toBeTruthy();
+  await fireEvent.press(screen.getByText('Generate'));
+
+  await waitFor(() => expect(createFromPrompt).toHaveBeenCalledWith(
+    expect.objectContaining({
+      prompt: composeCreateBalanceInstruction('A ruby collar.', 'asymmetrical', false),
+    }),
+  ));
+});
+
+test('uses concise loading copy for the default generation request', async () => {
+  const originalPlatform = Platform.OS;
+  const originalWindow = Dimensions.get('window');
+  const originalScreen = Dimensions.get('screen');
+  Object.defineProperty(Platform, 'OS', { configurable: true, value: 'web' });
+  Dimensions.set({
+    window: { ...originalWindow, width: 1440, height: 900 },
+    screen: { ...originalScreen, width: 1440, height: 900 },
+  });
+  const pending = deferred<any>();
+
+  try {
+    const view = await renderCreate(<StudioCreateWorkspace
+      gateway={{
+        createFromPrompt: jest.fn(() => pending.promise), createFromDrawing: jest.fn(),
+        completeCreativeDirectionReview: jest.fn(),
+      } as CreateGateway}
+      owner="designer_1"
+      onSave={jest.fn()}
+    />);
+
+    await fireEvent.changeText(view.getByLabelText('Design sentence'), 'A simple gold ring.');
+    let createCompletion!: Promise<void>;
+    await act(() => {
+      createCompletion = fireEvent.press(view.getByText('Generate'));
+    });
+
+    expect(view.getByText('Generating…')).toBeTruthy();
+    expect(view.getByText('Generating your design.')).toBeTruthy();
+    expect(view.getByText('Facetta is preparing the requested result.')).toBeTruthy();
+    expect(view.queryByText(/taking shape/i)).toBeNull();
+
+    await act(async () => {
+      pending.resolve({ data: creativeProject(1), error: null, status: 201 });
+      await createCompletion;
+    });
+    await view.unmount();
+  } finally {
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: originalPlatform });
+    await act(async () => {
+      Dimensions.set({ window: originalWindow, screen: originalScreen });
+    });
+  }
+});
 
 test('keeps every other previewed direction automatically and recomputes siblings when selection changes', async () => {
   const createFromPrompt = jest.fn(async () => ({
@@ -159,17 +422,20 @@ test('keeps every other previewed direction automatically and recomputes sibling
 
   expect(screen.queryByText(/factory facts/i)).toBeNull();
   expect(screen.queryByText(/structured specification/i)).toBeNull();
-  expect(screen.queryByText('How many directions?')).toBeNull();
-  expect(screen.queryByText('Optional references')).toBeNull();
+  expect(screen.getByText('How many variations?')).toBeTruthy();
+  expect(screen.getByLabelText('Optional guidance').props.accessibilityState)
+    .toEqual({ expanded: false });
   await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'A sculptural aquamarine collar.');
-  await fireEvent.press(screen.getByLabelText('References and output options'));
-  await fireEvent.press(screen.getByLabelText('4 creative directions'));
-  expect(screen.getByText('4 requested outputs × 15 credits = estimated 60 credits')).toBeTruthy();
-  await fireEvent.press(screen.getByText('Create 4 directions'));
+  await fireEvent.press(screen.getByLabelText('4 variations'));
+  expect(screen.getByText('15 credits per variation · 4 variations = 60 credits')).toBeTruthy();
+  await fireEvent.press(screen.getByText('Generate'));
 
   await waitFor(() => expect(createFromPrompt).toHaveBeenCalledWith({
-    prompt: 'A sculptural aquamarine collar.',
+    prompt: composeCreateBalanceInstruction(
+      'A sculptural aquamarine collar.', 'symmetrical', false,
+    ),
     variation_count: 4,
+    comparison_views: ['three_quarter'],
     owner: 'designer_1',
     title: 'A sculptural aquamarine collar.',
   }));
@@ -179,21 +445,26 @@ test('keeps every other previewed direction automatically and recomputes sibling
   expect(screen.queryByLabelText('Keep all other directions')).toBeNull();
   expect(screen.queryByLabelText('Only keep my Original')).toBeNull();
   expect(screen.queryByLabelText('Choose directions individually')).toBeNull();
-  expect(screen.getByText('Leave in Activity & start another')).toBeTruthy();
+  expect(screen.getByText('Start over')).toBeTruthy();
   expect(screen.getByLabelText('Direction 1 preview').props.source.headers).toEqual({
     Authorization: 'Bearer first-party-token',
   });
   expect(screen.getByText(/visual directions.+not measurements or production instructions/i)).toBeTruthy();
-  expect(screen.getByText('Continue with Direction 1')).toBeTruthy();
-  expect(within(screen.getByLabelText('Direction 2')).queryByText('Inspect detail')).toBeNull();
+  expect(screen.getByText('Save & refine Direction 1')).toBeTruthy();
+  expect(within(screen.getByLabelText('Direction 2')).getByText('Enlarge')).toBeTruthy();
   expect(completeCreativeDirectionReview).not.toHaveBeenCalled();
   expect(onSave).not.toHaveBeenCalled();
   await loadDirection(1);
   await loadDirection(2);
   await loadDirection(3);
   await loadDirection(4);
+  await fireEvent.press(screen.getByLabelText('Inspect Direction 2 in detail'));
+  expect(screen.getByLabelText('Close image inspector')).toBeTruthy();
+  expect(screen.getByLabelText('Direction 1').props.accessibilityState.checked).toBe(true);
+  await fireEvent.press(screen.getByLabelText('Close image inspector'));
   await fireEvent.press(screen.getByLabelText('Direction 3'));
-  expect(screen.getByText('Continue with Direction 3')).toBeTruthy();
+  expect(screen.getByText('Save & refine Direction 3')).toBeTruthy();
+  expect(screen.queryByLabelText('Close image inspector')).toBeNull();
   expect(within(screen.getByLabelText('Direction 1')).getByText('Will save as a variation'))
     .toBeTruthy();
   expect(screen.getByLabelText('Direction 1').props.accessibilityHint)
@@ -201,7 +472,7 @@ test('keeps every other previewed direction automatically and recomputes sibling
   expect(within(screen.getByLabelText('Direction 3')).getByText('Selected to refine'))
     .toBeTruthy();
   await loadDirection(3);
-  await fireEvent.press(screen.getByText('Continue with Direction 3'));
+  await fireEvent.press(screen.getByText('Save & refine Direction 3'));
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledTimes(1));
   expect(completeCreativeDirectionReview).toHaveBeenCalledWith({
     projectId: 'project_1', selectedCandidateId: 'candidate_3',
@@ -217,6 +488,67 @@ test('keeps every other previewed direction automatically and recomputes sibling
   }));
   expect(onSave.mock.calls[0][0]).not.toHaveProperty('sentence');
   expect(onSave.mock.calls[0][0]).not.toHaveProperty('references');
+});
+
+test('selects Direction 2 without enlarging it and keeps enlargement an explicit separate action', async () => {
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
+    } as CreateGateway}
+    owner="designer_1"
+    resumeProject={creativeProject(2)}
+    onSave={jest.fn()}
+  />);
+
+  expect(screen.getByLabelText('Direction 1').props.accessibilityState.checked).toBe(true);
+  expect(screen.getByLabelText('Direction 2').props.accessibilityState.checked).toBe(false);
+  expect(within(screen.getByLabelText('Direction 1')).getByText('✓ Selected')).toBeTruthy();
+
+  await fireEvent.press(screen.getByLabelText('Direction 2'));
+
+  expect(screen.getByLabelText('Direction 1').props.accessibilityState.checked).toBe(false);
+  expect(screen.getByLabelText('Direction 2').props.accessibilityState.checked).toBe(true);
+  expect(within(screen.getByLabelText('Direction 2')).getByText('✓ Selected')).toBeTruthy();
+  expect(within(screen.getByLabelText('Direction 1')).queryByText('✓ Selected')).toBeNull();
+  expect(screen.getByText('Save & refine Direction 2')).toBeTruthy();
+  expect(screen.queryByText('DETAIL INSPECTION')).toBeNull();
+
+  await fireEvent.press(screen.getByLabelText('Direction 2 preview'));
+  expect(screen.queryByText('DETAIL INSPECTION')).toBeNull();
+  expect(screen.getByLabelText('Direction 2').props.accessibilityState.checked).toBe(true);
+
+  await fireEvent.press(screen.getByLabelText('Inspect Direction 2 in detail'));
+  expect(screen.getByText('DETAIL INSPECTION')).toBeTruthy();
+  expect(screen.getByLabelText('Direction 2').props.accessibilityState.checked).toBe(true);
+});
+
+test('requires confirmation before clearing a review and keeps it after cancellation', async () => {
+  const gateway = {
+    createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+    completeCreativeDirectionReview: jest.fn(),
+  } as CreateGateway;
+  await renderCreate(<StudioCreateWorkspace
+    gateway={gateway}
+    owner="designer_1"
+    resumeProject={creativeProject(2)}
+    onSave={jest.fn()}
+  />);
+
+  await fireEvent.press(screen.getByLabelText('Direction 2'));
+  await fireEvent.press(screen.getByText('Start over'));
+  expect(screen.getByText('Clear these results?')).toBeTruthy();
+  expect(gateway.completeCreativeDirectionReview).not.toHaveBeenCalled();
+
+  await fireEvent.press(screen.getByText('Keep results'));
+  expect(screen.queryByText('Clear these results?')).toBeNull();
+  expect(screen.getByLabelText('Direction 2').props.accessibilityState.checked).toBe(true);
+
+  await fireEvent.press(screen.getByText('Start over'));
+  await fireEvent.press(screen.getByText('Clear canvas'));
+  expect(screen.queryByLabelText('Direction 2')).toBeNull();
+  expect(screen.getByLabelText('Design sentence')).toBeTruthy();
+  expect(gateway.completeCreativeDirectionReview).not.toHaveBeenCalled();
 });
 
 test('does not expose retention administration during direction selection', async () => {
@@ -248,7 +580,7 @@ test('does not expose retention administration during direction selection', asyn
   await loadDirection(1);
   await loadDirection(2);
   await loadDirection(3);
-  await fireEvent.press(screen.getByText('Continue with Direction 1'));
+  await fireEvent.press(screen.getByText('Save & refine Direction 1'));
 
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledWith({
     projectId: 'project_1', selectedCandidateId: 'candidate_1', retained: [
@@ -288,7 +620,7 @@ test('an unavailable unselected preview does not block a loaded selected directi
   });
   await loadDirection(3);
   expect(screen.queryByText(/could not be displayed/i)).toBeNull();
-  const continueButton = screen.getByText('Continue with Direction 1');
+  const continueButton = screen.getByText('Save & refine Direction 1');
   expect(continueButton.parent?.props.accessibilityState.disabled).toBe(false);
   await fireEvent.press(continueButton);
 
@@ -331,7 +663,7 @@ test('legacy review sets retain at most three previewed siblings without blockin
     .toBe('Will save as a variation');
   expect(screen.getByLabelText('Direction 5').props.accessibilityHint)
     .toBe('Preserved in review set');
-  await fireEvent.press(screen.getByText('Continue with Direction 1'));
+  await fireEvent.press(screen.getByText('Save & refine Direction 1'));
 
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledWith({
     projectId: 'project_1', selectedCandidateId: 'candidate_1', retained: [
@@ -359,11 +691,11 @@ test('a deferred generation clears only its exact submitted draft', async () => 
   await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'First submitted direction.');
   let createCompletion!: Promise<void>;
   await act(() => {
-    createCompletion = fireEvent.press(screen.getByText('Create 2 directions'));
+    createCompletion = fireEvent.press(screen.getByText('Generate'));
   });
   await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'A newer unsent direction.');
   await act(async () => {
-    pending.resolve({ data: creativeProject(2), error: null, status: 201 });
+    pending.resolve({ data: creativeProject(1), error: null, status: 201 });
     await createCompletion;
   });
 
@@ -373,7 +705,8 @@ test('a deferred generation clears only its exact submitted draft', async () => 
     projectId: 'project_1',
     submittedDraft: expect.objectContaining({ sentence: 'First submitted direction.' }),
   }));
-  await fireEvent.press(screen.getByText('Leave in Activity & start another'));
+  await fireEvent.press(screen.getByText('Start over'));
+  await fireEvent.press(screen.getByText('Clear canvas'));
   expect(screen.getByLabelText('Design sentence').props.value).toBe('A newer unsent direction.');
 });
 
@@ -394,11 +727,11 @@ test('a generation resolving after unmount cannot reset parent Create state', as
   await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'Direction before navigation.');
   let createCompletion!: Promise<void>;
   await act(() => {
-    createCompletion = fireEvent.press(screen.getByText('Create 2 directions'));
+    createCompletion = fireEvent.press(screen.getByText('Generate'));
   });
   await view.unmount();
   await act(async () => {
-    pending.resolve({ data: creativeProject(2), error: null, status: 201 });
+    pending.resolve({ data: creativeProject(1), error: null, status: 201 });
     await createCompletion;
   });
 
@@ -422,9 +755,9 @@ test('a deferred direction commit cannot navigate after its review unmounts', as
   await loadDirection(1);
   let commitCompletion!: Promise<void>;
   await act(() => {
-    commitCompletion = fireEvent.press(screen.getByText('Continue with Direction 1'));
+    commitCompletion = fireEvent.press(screen.getByText('Save & refine Direction 1'));
   });
-  expect(screen.getByText('Leave in Activity & start another').parent?.props.accessibilityState)
+  expect(screen.getByText('Start over').parent?.props.accessibilityState)
     .toEqual({ disabled: true });
   expect(screen.getByLabelText('Direction 1').props.accessibilityState)
     .toEqual({ checked: true, disabled: true });
@@ -469,7 +802,7 @@ test('a deferred direction commit cannot save into a new owner session', async (
   await loadDirection(1);
   let commitCompletion!: Promise<void>;
   await act(() => {
-    commitCompletion = fireEvent.press(screen.getByText('Continue with Direction 1'));
+    commitCompletion = fireEvent.press(screen.getByText('Save & refine Direction 1'));
   });
   await view.rerender(review('designer_2'));
   await act(async () => {
@@ -522,7 +855,7 @@ test('reopens a durable reviewing Create job with automatic sibling retention', 
   await loadDirection(2);
   await loadDirection(3);
   await fireEvent.press(screen.getByLabelText('Direction 2'));
-  await fireEvent.press(screen.getByText('Continue with Direction 2'));
+  await fireEvent.press(screen.getByText('Save & refine Direction 2'));
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledWith({
     projectId: 'project_1', selectedCandidateId: 'candidate_2', retained: [
       { candidateId: 'candidate_1', label: 'Direction 1' },
@@ -535,6 +868,132 @@ test('reopens a durable reviewing Create job with automatic sibling retention', 
   }));
   expect(Object.keys(onSave.mock.calls[0][0]).sort()).toEqual(['project', 'selectedAssetId']);
   expect(onSave.mock.calls[0][0].project.active_asset_id).toBe('candidate_2');
+});
+
+test('saves the selected direction for later without opening the refine callback', async () => {
+  const completeCreativeDirectionReview = jest.fn(async ({ selectedCandidateId }) => ({
+    data: {
+      project: {
+        ...creativeProject(2),
+        selected_candidate_asset_id: selectedCandidateId,
+        active_asset_id: selectedCandidateId,
+      },
+      retained_variations: [],
+    },
+    error: null,
+    status: 200,
+  }));
+  const onSave = jest.fn();
+  const onSaveForLater = jest.fn();
+
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview,
+    } as CreateGateway}
+    owner="designer_1"
+    resumeProject={creativeProject(2)}
+    onSave={onSave}
+    onSaveForLater={onSaveForLater}
+  />);
+
+  await loadDirection(1);
+  await loadDirection(2);
+  await fireEvent.press(screen.getByLabelText('Direction 2'));
+  await fireEvent.press(screen.getByText('Save for later'));
+
+  await waitFor(() => expect(onSaveForLater).toHaveBeenCalledWith(expect.objectContaining({
+    selectedAssetId: 'candidate_2',
+  })));
+  expect(completeCreativeDirectionReview).toHaveBeenCalledTimes(1);
+  expect(onSave).not.toHaveBeenCalled();
+});
+
+test('switches every direction through the same paired comparison angle', async () => {
+  const project = creativeProject(2);
+  const candidatesWithViews = project.creative_candidates!.map((item, index) => ({
+    ...item,
+    views: [
+      {
+        asset_id: item.asset_id,
+        view: 'primary' as const,
+        media_type: 'image/png',
+        sha256: `primary-${index}`,
+        image_url: item.image_url!,
+      },
+      {
+        asset_id: `${item.asset_id}_three_quarter`,
+        view: 'three_quarter' as const,
+        media_type: 'image/png',
+        sha256: `three-quarter-${index}`,
+        image_url: `https://facetta.test/candidate-${index + 1}-three-quarter.png`,
+      },
+    ],
+  }));
+  project.creative_candidates = candidatesWithViews;
+  project.assets = candidatesWithViews;
+
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
+    } as CreateGateway}
+    owner="designer_1"
+    resumeProject={project}
+    onSave={jest.fn()}
+  />);
+
+  expect(screen.getByText('Compare every direction in the same view')).toBeTruthy();
+  expect(screen.getByLabelText('Main view').props.accessibilityState.checked).toBe(true);
+  expect(screen.getByLabelText('Direction 1 preview').props.source.uri).toBe(
+    'https://facetta.test/candidate-1.png',
+  );
+  expect(screen.getByLabelText('Direction 2 preview').props.source.uri).toBe(
+    'https://facetta.test/candidate-2.png',
+  );
+
+  await fireEvent.press(screen.getByLabelText('3/4 view'));
+
+  expect(screen.getByLabelText('Direction 1 preview').props.source.uri).toBe(
+    'https://facetta.test/candidate-1-three-quarter.png',
+  );
+  expect(screen.getByLabelText('Direction 2 preview').props.source.uri).toBe(
+    'https://facetta.test/candidate-2-three-quarter.png',
+  );
+});
+
+test('does not offer a mismatched angle comparison when one direction lacks the shared slot', async () => {
+  const project = creativeProject(2);
+  project.creative_candidates = project.creative_candidates!.map((item, index) => ({
+    ...item,
+    views: index === 0 ? [{
+      asset_id: `${item.asset_id}_three_quarter`,
+      view: 'three_quarter' as const,
+      media_type: 'image/png',
+      sha256: 'three-quarter-only-first',
+      image_url: 'https://facetta.test/candidate-1-three-quarter.png',
+    }] : [],
+  }));
+  project.assets = [...project.creative_candidates];
+
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
+    } as CreateGateway}
+    owner="designer_1"
+    resumeProject={project}
+    onSave={jest.fn()}
+  />);
+
+  expect(screen.queryByText('Compare every direction in the same view')).toBeNull();
+  expect(screen.queryByLabelText('3/4 view')).toBeNull();
+  expect(screen.getByLabelText('Direction 1 preview').props.source.uri).toBe(
+    'https://facetta.test/candidate-1.png',
+  );
+  expect(screen.getByLabelText('Direction 2 preview').props.source.uri).toBe(
+    'https://facetta.test/candidate-2.png',
+  );
 });
 
 test('does not create an immutable revision until its selected preview renders', async () => {
@@ -553,7 +1012,7 @@ test('does not create an immutable revision until its selected preview renders',
     onSave={jest.fn()}
   />);
 
-  const continueButton = screen.getByText('Continue with Direction 1');
+  const continueButton = screen.getByText('Save & refine Direction 1');
   expect(continueButton.parent?.props.accessibilityState.disabled).toBe(true);
   fireEvent.press(continueButton);
   expect(completeCreativeDirectionReview).not.toHaveBeenCalled();
@@ -567,7 +1026,7 @@ test('does not create an immutable revision until its selected preview renders',
 
   await loadDirection(1);
   await act(async () => {
-    fireEvent.press(screen.getByText('Continue with Direction 1'));
+    fireEvent.press(screen.getByText('Save & refine Direction 1'));
   });
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledTimes(1));
 });
@@ -606,7 +1065,7 @@ test('keeps the complete review staged after an atomic commit error and retries 
 
   await loadDirection(3);
   await fireEvent.press(screen.getByLabelText('Direction 3'));
-  const continueLabel = 'Continue with Direction 3';
+  const continueLabel = 'Save & refine Direction 3';
   await fireEvent.press(screen.getByText(continueLabel));
 
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledTimes(1));
@@ -646,20 +1105,22 @@ test('starting another brief clears the previous review error and collapses adva
     onSave={jest.fn()}
   />);
 
-  await fireEvent.press(screen.getByLabelText('References and output options'));
-  expect(screen.getByText('Optional references')).toBeTruthy();
-  await fireEvent.press(screen.getByText('Create 2 directions'));
+  await fireEvent.press(screen.getByLabelText('Optional guidance'));
+  expect(screen.getAllByText('Optional guidance')).toHaveLength(1);
+  await fireEvent.press(screen.getByText('Generate'));
   await loadDirection(1);
-  await fireEvent.press(screen.getByText('Continue with Direction 1'));
+  await fireEvent.press(screen.getByText('Save & refine Direction 1'));
   expect(await screen.findByText('Facetta could not connect. Check your connection and try again.'))
     .toBeTruthy();
 
-  await fireEvent.press(screen.getByText('Leave in Activity & start another'));
+  await fireEvent.press(screen.getByText('Start over'));
+  expect(screen.getByText('Clear these results?')).toBeTruthy();
+  await fireEvent.press(screen.getByText('Clear canvas'));
 
   expect(screen.queryByText('Facetta could not connect. Check your connection and try again.'))
     .toBeNull();
-  expect(screen.queryByText('Optional references')).toBeNull();
-  expect(screen.getByLabelText('References and output options').props.accessibilityState)
+  expect(screen.getAllByText('Optional guidance')).toHaveLength(1);
+  expect(screen.getByLabelText('Optional guidance').props.accessibilityState)
     .toEqual({ expanded: false });
 });
 
@@ -676,16 +1137,18 @@ test('keeps an already-created direction set when the designer starts another br
     onSave={jest.fn()}
   />);
 
-  await fireEvent.press(screen.getByText('Create 2 directions'));
+  await fireEvent.press(screen.getByLabelText('2 variations'));
+  await fireEvent.press(screen.getByText('Generate'));
   expect(await screen.findByText(/full generated set stays preserved in this review/i)).toBeTruthy();
   await loadDirection(1);
-  expect(screen.getByText('Continue with Direction 1')).toBeTruthy();
-  await fireEvent.press(screen.getByText('Leave in Activity & start another'));
+  expect(screen.getByText('Save & refine Direction 1')).toBeTruthy();
+  await fireEvent.press(screen.getByText('Start over'));
+  await fireEvent.press(screen.getByText('Clear canvas'));
   expect(await screen.findByLabelText('Design sentence')).toBeTruthy();
   expect(screen.queryByText(/full generated set stays preserved in this review/i)).toBeNull();
-  await fireEvent.press(screen.getByText('Create 2 directions'));
+  await fireEvent.press(screen.getByText('Generate'));
   await loadDirection(1);
-  expect(await screen.findByText('Continue with Direction 1')).toBeTruthy();
+  expect(await screen.findByText('Save & refine Direction 1')).toBeTruthy();
   expect(screen.queryByLabelText('Keep all other directions')).toBeNull();
 });
 
@@ -699,7 +1162,7 @@ test('sends every enabled role with the master geometry input', async () => {
     imageBase64: 'bWF0ZXJpYWw=', mediaType: 'image/jpeg',
   };
   const createProjectFromDrawing = jest.fn(async () => ({
-    data: creativeProject(2), error: null, status: 201,
+    data: creativeProject(1), error: null, status: 201,
   }));
   const createFromPrompt = jest.fn();
   const onRequestReference = jest.fn(async (role) => role === 'master_geometry' ? master : material);
@@ -714,19 +1177,28 @@ test('sends every enabled role with the master geometry input', async () => {
     onSave: jest.fn(),
   }));
 
-  await fireEvent.press(screen.getByText('Add a drawing, photo, or render'));
+  await fireEvent.press(screen.getByText('Add a rough sketch, photo, or render'));
   expect(screen.getByText('What did you upload?')).toBeTruthy();
+  await loadReferencePreview('Visual source preview');
+  await fireEvent.changeText(
+    screen.getByLabelText('Design sentence'),
+    'Preserve the silhouette and make it feel lighter.',
+  );
+  expect(screen.getByText('Generate').parent?.props.accessibilityState).toEqual({ disabled: true });
+  expect(screen.getByText('Drawing').parent?.props.accessibilityState).toEqual({ checked: false });
+  expect(screen.getByText('Photograph').parent?.props.accessibilityState).toEqual({ checked: false });
+  expect(screen.getByText('Finished render').parent?.props.accessibilityState).toEqual({ checked: false });
   await fireEvent.press(screen.getByText('Drawing'));
-  await fireEvent.press(screen.getByLabelText('References and output options'));
-  await fireEvent.press(screen.getByLabelText('Add Material & style reference'));
-  await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'Preserve the silhouette and make it feel lighter.');
+  await fireEvent.press(screen.getByLabelText('Optional guidance'));
+  await fireEvent.press(screen.getByLabelText('Material & finish options'));
+  await fireEvent.press(screen.getByLabelText('Add image for Material & finish'));
 
-  expect(screen.getByText('Create 2 directions').parent?.props.accessibilityState).toEqual({ disabled: true });
+  expect(screen.getByText('Generate').parent?.props.accessibilityState).toEqual({ disabled: true });
   expect(screen.getByText('Checking attached references before creation…')).toBeTruthy();
   expect(screen.getByLabelText('Visual source preview').props.source.uri).toBe(
     'data:image/png;base64,bWFzdGVy',
   );
-  expect(screen.getByLabelText('Material & style reference preview').props.source.uri).toBe(
+  expect(screen.getByLabelText('Material & finish reference preview').props.source.uri).toBe(
     'data:image/jpeg;base64,bWF0ZXJpYWw=',
   );
 
@@ -737,27 +1209,29 @@ test('sends every enabled role with the master geometry input', async () => {
   expect(createProjectFromDrawing).not.toHaveBeenCalled();
   await fireEvent.press(screen.getByLabelText('Close image inspector'));
 
-  await fireEvent.press(screen.getByLabelText('Inspect Material & style · Brushed gold reference in detail'));
-  expect(screen.getByText('Material & style · Brushed gold reference')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('Inspect Material & finish · Brushed gold reference in detail'));
+  expect(screen.getByText('Material & finish · Brushed gold reference')).toBeTruthy();
   await fireEvent.press(screen.getByLabelText('Close image inspector'));
   expect(createProjectFromDrawing).not.toHaveBeenCalled();
 
-  await loadReferencePreview('Visual source preview');
-  await loadReferencePreview('Material & style reference preview');
-  expect(screen.getByText('Create 2 directions').parent?.props.accessibilityState).toEqual({ disabled: false });
-  await fireEvent.press(screen.getByText('Create 2 directions'));
+  await loadReferencePreview('Material & finish reference preview');
+  expect(screen.getByText('Generate').parent?.props.accessibilityState).toEqual({ disabled: false });
+  await fireEvent.press(screen.getByText('Generate'));
 
   await waitFor(() => expect(createProjectFromDrawing).toHaveBeenCalledWith({
     image_base64: 'bWFzdGVy',
     source_kind: 'drawing',
     media_type: 'image/png',
-    instruction: 'Preserve the silhouette and make it feel lighter.',
+    instruction: composeCreateBalanceInstruction(
+      'Preserve the silhouette and make it feel lighter.', 'symmetrical', true,
+    ),
     references: [{
       role: 'material_style',
       image_base64: 'bWF0ZXJpYWw=',
       media_type: 'image/jpeg',
     }],
-    variation_count: 2,
+    variation_count: 1,
+    comparison_views: ['three_quarter'],
     owner: 'designer_1',
     title: 'Preserve the silhouette and make it feel lighter.',
   }));
@@ -771,7 +1245,7 @@ test('accepts role-labeled advisory guidance after a sentence without requiring 
     imageBase64: 'bWF0ZXJpYWw=', mediaType: 'image/jpeg',
   };
   const createFromPrompt = jest.fn(async () => ({
-    data: creativeProject(2), error: null, status: 201,
+    data: creativeProject(1), error: null, status: 201,
   }));
   const createFromDrawing = jest.fn();
   const onRequestReference = jest.fn(async () => material);
@@ -784,36 +1258,36 @@ test('accepts role-labeled advisory guidance after a sentence without requiring 
     onSave={jest.fn()}
   />);
 
-  await fireEvent.press(screen.getByLabelText('References and output options'));
-  const addMaterial = screen.getByLabelText('Add Material & style reference');
-  expect(addMaterial.props.accessibilityState).toEqual({ disabled: true });
-  expect(screen.getAllByText('Add an idea first')).toHaveLength(3);
-  expect(screen.getByText('2 directions · No supporting references')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('Optional guidance'));
+  await fireEvent.press(screen.getByLabelText('Material & finish options'));
+  const addMaterial = screen.getByLabelText('Add image for Material & finish');
+  expect(addMaterial.props.accessibilityState?.disabled).not.toBe(true);
+  expect(screen.getByText('Symmetrical · No extra choices')).toBeTruthy();
 
   await fireEvent.changeText(
     screen.getByLabelText('Design sentence'),
     'A broad sculptural gold cuff with one clean opening.',
   );
-  expect(screen.getByLabelText('Add Material & style reference').props.accessibilityState).toEqual({
-    disabled: false,
-  });
-  await fireEvent.press(screen.getByLabelText('Add Material & style reference'));
+  await fireEvent.press(screen.getByLabelText('Add image for Material & finish'));
   expect(onRequestReference).toHaveBeenCalledWith('material_style');
-  expect(screen.getByText('2 directions · 1 supporting reference')).toBeTruthy();
+  expect(screen.getByText('Symmetrical · 1 extra choice')).toBeTruthy();
   expect(screen.queryByText('Master geometry required')).toBeNull();
   expect(screen.queryByText('Add a design idea')).toBeNull();
-  expect(screen.getByText('Create 2 directions').parent?.props.accessibilityState).toEqual({ disabled: true });
+  expect(screen.getByText('Generate').parent?.props.accessibilityState).toEqual({ disabled: true });
 
-  await loadReferencePreview('Material & style reference preview');
-  await fireEvent.press(screen.getByText('Create 2 directions'));
+  await loadReferencePreview('Material & finish reference preview');
+  await fireEvent.press(screen.getByText('Generate'));
   await waitFor(() => expect(createFromPrompt).toHaveBeenCalledWith({
-    prompt: 'A broad sculptural gold cuff with one clean opening.',
+    prompt: composeCreateBalanceInstruction(
+      'A broad sculptural gold cuff with one clean opening.', 'symmetrical', false,
+    ),
     references: [{
       role: 'material_style',
       image_base64: 'bWF0ZXJpYWw=',
       media_type: 'image/jpeg',
     }],
-    variation_count: 2,
+    variation_count: 1,
+    comparison_views: ['three_quarter'],
     owner: 'designer_1',
     title: 'A broad sculptural gold cuff with one clean opening.',
   }));
@@ -836,17 +1310,18 @@ test('rejects an advisory-only setup until the designer supplies a sentence or m
     onSave={jest.fn()}
   />);
 
-  await loadReferencePreview('Material & style reference preview');
-  expect(screen.getByText('2 directions · 1 supporting reference')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('Material & finish options'));
+  await loadReferencePreview('Material & finish reference preview');
+  expect(screen.getByText('Symmetrical · 1 extra choice')).toBeTruthy();
   expect(screen.getByText('Add a design idea')).toBeTruthy();
   expect(screen.getByText(
-    'Supporting references can guide material, construction, or brand direction after you add a design sentence or one visual source. They do not define the jewelry on their own.',
+    'Optional guidance can shape material, details, or mood after you add a design sentence or one visual source. It does not define the jewelry on its own.',
   )).toBeTruthy();
   expect(screen.queryByText('Master geometry required')).toBeNull();
-  expect(screen.getByText('Create 2 directions').parent?.props.accessibilityState).toEqual({
+  expect(screen.getByText('Generate').parent?.props.accessibilityState).toEqual({
     disabled: true,
   });
-  await fireEvent.press(screen.getByText('Create 2 directions'));
+  await fireEvent.press(screen.getByText('Generate'));
   expect(createFromPrompt).not.toHaveBeenCalled();
 });
 
@@ -872,15 +1347,27 @@ test('starts from a master image without forcing a sentence', async () => {
     'data:image/png;base64,bWFzdGVy',
   );
   expect(screen.getByLabelText('Replace visual source')).toBeTruthy();
-  expect(screen.getByText('Create 2 directions').parent?.props.accessibilityState).toEqual({ disabled: true });
+  expect(screen.getByText('Preserve source balance · No extra choices')).toBeTruthy();
+  expect(screen.getByText('Preserve source balance')).toBeTruthy();
+  expect(screen.getByText(/follows the uploaded design.+symmetrical or intentionally asymmetrical/i))
+    .toBeTruthy();
+  expect(screen.queryByLabelText('Design balance')).toBeNull();
+  expect(screen.getByText(
+    'A sentence is optional. Facetta will preserve the photographed piece and turn it into a polished design render.',
+  )).toBeTruthy();
+  expect(screen.getByText('Generate').parent?.props.accessibilityState).toEqual({ disabled: true });
   await loadReferencePreview('Visual source preview');
-  await fireEvent.press(screen.getByText('Create 2 directions'));
+  await fireEvent.press(screen.getByText('Generate'));
   await waitFor(() => expect(createFromDrawing).toHaveBeenCalledWith({
     image_base64: 'bWFzdGVy',
     source_kind: 'photograph',
     media_type: 'image/png',
+    instruction: composeCreateBalanceInstruction(
+      uploadOnlyInstruction('photograph'), 'symmetrical', true,
+    ),
     references: [],
-    variation_count: 2,
+    variation_count: 1,
+    comparison_views: ['three_quarter'],
     owner: 'designer_1',
     title: 'Pendant photograph',
   }));
@@ -909,8 +1396,8 @@ test('fails closed when an attached reference cannot render', async () => {
   expect(screen.getByText(
     'A reference preview could not be shown. Replace or remove it before creating directions.',
   )).toBeTruthy();
-  expect(screen.getByText('Create 2 directions').parent?.props.accessibilityState).toEqual({ disabled: true });
-  await fireEvent.press(screen.getByText('Create 2 directions'));
+  expect(screen.getByText('Generate').parent?.props.accessibilityState).toEqual({ disabled: true });
+  await fireEvent.press(screen.getByText('Generate'));
   expect(createFromDrawing).not.toHaveBeenCalled();
 });
 
@@ -929,7 +1416,7 @@ test('surfaces picker failures instead of leaving Add as a silent dead end', asy
     onSave: jest.fn(),
   }));
 
-  await fireEvent.press(screen.getByText('Add a drawing, photo, or render'));
+  await fireEvent.press(screen.getByText('Add a rough sketch, photo, or render'));
 
   expect(await screen.findByText(/Choose a PNG, JPEG, or WebP image/)).toBeTruthy();
   expect(onRequestReference).toHaveBeenCalledWith('master_geometry');
@@ -962,10 +1449,10 @@ test('the latest deferred picker merges into the current controlled draft', asyn
   let firstCompletion!: Promise<void>;
   let secondCompletion!: Promise<void>;
   await act(() => {
-    firstCompletion = fireEvent.press(screen.getByText('Add a drawing, photo, or render'));
+    firstCompletion = fireEvent.press(screen.getByText('Add a rough sketch, photo, or render'));
   });
   await act(() => {
-    secondCompletion = fireEvent.press(screen.getByText('Add a drawing, photo, or render'));
+    secondCompletion = fireEvent.press(screen.getByText('Add a rough sketch, photo, or render'));
   });
   await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'Newer sentence.');
   await act(async () => {
@@ -1006,7 +1493,7 @@ test('a picker resolving after unmount cannot write to its former controlled own
 
   let pickerCompletion!: Promise<void>;
   await act(() => {
-    pickerCompletion = fireEvent.press(screen.getByText('Add a drawing, photo, or render'));
+    pickerCompletion = fireEvent.press(screen.getByText('Add a rough sketch, photo, or render'));
   });
   await view.unmount();
   await act(async () => {
@@ -1040,16 +1527,39 @@ test('does not expose backend diagnostics when generation fails', async () => {
   }));
 
   await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'A quiet gold ring.');
-  await fireEvent.press(screen.getByLabelText('References and output options'));
-  await fireEvent.press(screen.getByLabelText('4 creative directions'));
-  await fireEvent.press(screen.getByText('Create 4 directions'));
+  await fireEvent.press(screen.getByLabelText('4 variations'));
+  await fireEvent.press(screen.getByText('Generate'));
   expect(await screen.findByText('Facetta could not create those directions. Try again.')).toBeTruthy();
   expect(screen.queryByText(/grok|base64|asset_id|run_id|design_version/i)).toBeNull();
   expect(screen.getByLabelText('Design sentence').props.value).toBe('A quiet gold ring.');
-  expect(screen.getByLabelText('4 creative directions').props.accessibilityState).toEqual({
+  expect(screen.getByLabelText('4 variations').props.accessibilityState).toEqual({
     checked: true,
   });
   expect(onGenerationSucceeded).not.toHaveBeenCalled();
+});
+
+test('keeps partial direction results visible and explains the uncharged failure', async () => {
+  const partialProject = creativeProject(1);
+  await renderCreate(React.createElement(StudioCreateWorkspace, {
+    gateway: {
+      createFromPrompt: jest.fn(async () => ({
+        data: partialProject, error: null, status: 201,
+      })),
+      createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
+    } as unknown as CreateGateway,
+    owner: 'designer_1',
+    onSave: jest.fn(),
+  }));
+
+  await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'A gold ring with 3 diamonds.');
+  await fireEvent.press(screen.getByLabelText('2 variations'));
+  await fireEvent.press(screen.getByText('Generate'));
+
+  expect(await screen.findByText(
+    '1 of 2 requested directions is ready. The other 1 failed quality or provider checks and will not be charged.',
+  )).toBeTruthy();
+  expect(screen.getByLabelText('Direction 1 preview')).toBeTruthy();
 });
 
 test('hydrates a controlled draft with its master source truth and output count', async () => {
@@ -1079,8 +1589,163 @@ test('hydrates a controlled draft with its master source truth and output count'
   expect(screen.getByLabelText('Design sentence').props.value)
     .toBe('A restored sapphire direction.');
   expect(screen.getByText('Restored sketch.png')).toBeTruthy();
-  expect(screen.getByText('4 directions · No supporting references')).toBeTruthy();
+  expect(screen.getByText('Preserve source balance · No extra choices')).toBeTruthy();
+  expect(screen.getByLabelText('4 variations').props.accessibilityState).toEqual({ checked: true });
+  expect(screen.getByText('15 credits per variation · 4 variations = 60 credits')).toBeTruthy();
   expect(screen.getByText('Drawing').parent?.props.accessibilityState).toEqual({ checked: true });
+});
+
+test('manual guidance uses one-tap choices without opening a file picker', async () => {
+  const onRequestReference = jest.fn();
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
+    } as CreateGateway}
+    owner="designer_1"
+    onRequestReference={onRequestReference}
+    onSave={jest.fn()}
+  />);
+
+  expect(screen.getByLabelText('Optional guidance').props.accessibilityState)
+    .toEqual({ expanded: false });
+  expect(screen.queryByLabelText('Metal color & material: Yellow gold')).toBeNull();
+  await fireEvent.press(screen.getByLabelText('Optional guidance'));
+  await fireEvent.press(screen.getByLabelText('Material & finish options'));
+  expect(screen.getByLabelText('Material & finish options').props.accessibilityState)
+    .toEqual({ expanded: true });
+
+  const yellowGold = screen.getByLabelText('Metal color & material: Yellow gold');
+  expect(yellowGold.props.accessibilityRole).toBe('checkbox');
+  expect(yellowGold.props.accessibilityState).toEqual({ checked: false });
+  expect(yellowGold.props.accessibilityHint).toMatch(/tap again to remove/i);
+  await fireEvent.press(yellowGold);
+  await fireEvent.press(screen.getByLabelText('Surface & finish: Brushed'));
+  await fireEvent.press(screen.getByLabelText('Color palette: Warm neutral'));
+  expect(onRequestReference).not.toHaveBeenCalled();
+  expect(screen.getByText('Symmetrical · 3 extra choices')).toBeTruthy();
+  expect(screen.getByLabelText('Metal color & material: Yellow gold').props.accessibilityState)
+    .toEqual({ checked: true });
+
+  await fireEvent.press(screen.getByLabelText('Metal color & material: Yellow gold'));
+  expect(screen.getByLabelText('Metal color & material: Yellow gold').props.accessibilityState)
+    .toEqual({ checked: false });
+  expect(screen.getByText('Symmetrical · 2 extra choices')).toBeTruthy();
+
+  await fireEvent.press(screen.getByLabelText('Add image for Material & finish'));
+  expect(onRequestReference).toHaveBeenCalledTimes(1);
+  expect(onRequestReference).toHaveBeenCalledWith('material_style');
+});
+
+test('maps material, detail, and brand choices into advisory-only provider guidance', async () => {
+  const createFromPrompt = jest.fn(async () => ({
+    data: creativeProject(1), error: null, status: 201,
+  }));
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt, createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
+    } as CreateGateway}
+    owner="designer_1"
+    initialSentence="A simple three-stone ring."
+    onSave={jest.fn()}
+  />);
+
+  await fireEvent.press(screen.getByLabelText('Optional guidance'));
+  await fireEvent.press(screen.getByLabelText('Material & finish options'));
+  await fireEvent.press(screen.getByLabelText('Metal color & material: Rose gold'));
+  await fireEvent.press(screen.getByLabelText('Surface & finish: Satin'));
+  await fireEvent.press(screen.getByLabelText('Color palette: Soft pastel'));
+  await fireEvent.changeText(
+    screen.getByLabelText('Material & finish note'),
+    'Restrained warmth',
+  );
+
+  await fireEvent.press(screen.getByLabelText('Specific design detail options'));
+  expect(screen.getByText(/prongs, an open gallery, a hidden hinge/i)).toBeTruthy();
+  await fireEvent.changeText(
+    screen.getByLabelText('Specific design detail note'),
+    'Use fine rounded prongs and an open gallery.',
+  );
+
+  await fireEvent.press(screen.getByLabelText('Brand mood options'));
+  expect(screen.getByText(/not another brand’s logo or jewelry shape/i)).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('Brand mood: Quiet luxury'));
+  await fireEvent.changeText(
+    screen.getByLabelText('Brand mood note'),
+    'Calm gallery lighting',
+  );
+
+  await fireEvent.press(screen.getByText('Generate'));
+  const guidance = {
+    material: {
+      metal: 'rose_gold' as const,
+      finish: 'satin' as const,
+      palette: 'soft_pastel' as const,
+      note: 'Restrained warmth',
+    },
+    detail: { note: 'Use fine rounded prongs and an open gallery.' },
+    brand: { mood: 'quiet_luxury' as const, note: 'Calm gallery lighting' },
+  };
+  const submittedPrompt = composeCreateInstruction(
+    composeCreateBalanceInstruction('A simple three-stone ring.', 'symmetrical', false),
+    guidance,
+  );
+  await waitFor(() => expect(createFromPrompt).toHaveBeenCalledWith({
+    prompt: submittedPrompt,
+    variation_count: 1,
+    comparison_views: ['three_quarter'],
+    owner: 'designer_1',
+    title: 'A simple three-stone ring.',
+  }));
+  expect(submittedPrompt).toMatch(/appearance only; keep geometry/i);
+  expect(submittedPrompt).toMatch(/not a production fact/i);
+  expect(submittedPrompt).toMatch(/no copied branding or geometry/i);
+});
+
+test('keeps optional guidance usable inside the narrow composer and wide web rail', async () => {
+  const originalPlatform = Platform.OS;
+  const originalWindow = Dimensions.get('window');
+  const originalScreen = Dimensions.get('screen');
+
+  const narrow = await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
+    } as CreateGateway}
+    owner="designer_1"
+    onSave={jest.fn()}
+  />);
+  await fireEvent.press(narrow.getByLabelText('Optional guidance'));
+  expect(narrow.getByLabelText('Specific design detail options')).toBeTruthy();
+  await narrow.unmount();
+
+  Object.defineProperty(Platform, 'OS', { configurable: true, value: 'web' });
+  Dimensions.set({
+    window: { ...originalWindow, width: 1440, height: 900 },
+    screen: { ...originalScreen, width: 1440, height: 900 },
+  });
+  try {
+    const wide = await renderCreate(<StudioCreateWorkspace
+      gateway={{
+        createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+        completeCreativeDirectionReview: jest.fn(),
+      } as CreateGateway}
+      owner="designer_1"
+      onSave={jest.fn()}
+    />);
+    expect(wide.getByTestId('create-web-composer')).toBeTruthy();
+    expect(wide.getByTestId('create-web-canvas')).toBeTruthy();
+    await fireEvent.press(wide.getByLabelText('Optional guidance'));
+    await fireEvent.press(wide.getByLabelText('Brand mood options'));
+    expect(wide.getByLabelText('Brand mood: Bold editorial')).toBeTruthy();
+    await wide.unmount();
+  } finally {
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: originalPlatform });
+    await act(async () => {
+      Dimensions.set({ window: originalWindow, screen: originalScreen });
+    });
+  }
 });
 
 test('explains when image selection is unavailable instead of silently ignoring Add', async () => {
@@ -1094,7 +1759,86 @@ test('explains when image selection is unavailable instead of silently ignoring 
     onSave: jest.fn(),
   }));
 
-  await fireEvent.press(screen.getByText('Add a drawing, photo, or render'));
+  await fireEvent.press(screen.getByText('Add a rough sketch, photo, or render'));
 
   expect(await screen.findByText(/Image selection is unavailable here/)).toBeTruthy();
+});
+
+test('wide web keeps the prompt composer beside the live direction canvas', async () => {
+  const originalPlatform = Platform.OS;
+  const originalWindow = Dimensions.get('window');
+  const originalScreen = Dimensions.get('screen');
+  Object.defineProperty(Platform, 'OS', { configurable: true, value: 'web' });
+  Dimensions.set({
+    window: { ...originalWindow, width: 1440, height: 900 },
+    screen: { ...originalScreen, width: 1440, height: 900 },
+  });
+
+  try {
+    const view = await renderCreate(<StudioCreateWorkspace
+      gateway={{
+        createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+        completeCreativeDirectionReview: jest.fn(),
+      } as CreateGateway}
+      owner="designer_1"
+      resumeProject={creativeProject(2)}
+      onSave={jest.fn()}
+    />);
+
+    expect(view.getByTestId('create-web-composer')).toBeTruthy();
+    expect(view.getByTestId('create-web-canvas')).toBeTruthy();
+    expect(view.getByLabelText('Design sentence')).toBeTruthy();
+    expect(view.getByLabelText('Direction 1')).toBeTruthy();
+    expect(view.getByText('Choose a direction to refine—or describe another idea.')).toBeTruthy();
+    await view.unmount();
+  } finally {
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: originalPlatform });
+    await act(async () => {
+      Dimensions.set({ window: originalWindow, screen: originalScreen });
+    });
+  }
+});
+
+test('wide web preserves the current render while a new request is running', async () => {
+  const originalPlatform = Platform.OS;
+  const originalWindow = Dimensions.get('window');
+  const originalScreen = Dimensions.get('screen');
+  Object.defineProperty(Platform, 'OS', { configurable: true, value: 'web' });
+  Dimensions.set({
+    window: { ...originalWindow, width: 1440, height: 900 },
+    screen: { ...originalScreen, width: 1440, height: 900 },
+  });
+  const pending = deferred<any>();
+
+  try {
+    const view = await renderCreate(<StudioCreateWorkspace
+      gateway={{
+        createFromPrompt: jest.fn(() => pending.promise), createFromDrawing: jest.fn(),
+        completeCreativeDirectionReview: jest.fn(),
+      } as CreateGateway}
+      owner="designer_1"
+      resumeProject={creativeProject(2)}
+      onSave={jest.fn()}
+    />);
+
+    await fireEvent.changeText(view.getByLabelText('Design sentence'), 'A new emerald pendant.');
+    let createCompletion!: Promise<void>;
+    await act(() => {
+      createCompletion = fireEvent.press(view.getByText('Generate'));
+    });
+
+    expect(view.getAllByText('Generating…')).toHaveLength(2);
+    expect(view.getByLabelText('Direction 1')).toBeTruthy();
+
+    await act(async () => {
+      pending.resolve({ data: creativeProject(1), error: null, status: 201 });
+      await createCompletion;
+    });
+    await view.unmount();
+  } finally {
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: originalPlatform });
+    await act(async () => {
+      Dimensions.set({ window: originalWindow, screen: originalScreen });
+    });
+  }
 });

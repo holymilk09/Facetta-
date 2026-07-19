@@ -21,19 +21,30 @@ from facetta.source_component_resolution import valid_source_component_spec_path
 
 FactAuthority = Literal["suggested", "estimated", "designer_supplied"]
 
-# Starting Facts is deliberately narrower than Advanced Specifications. Every
-# path here is either independently validatable or compiled through a coupled
-# component rule. Dense identity, geometry, and topology remain visible but
-# read-only until Studio has a grouped control that can express their required
-# dependencies without hidden drift.
+# Starting Facts exposes the visible, designer-reviewable leaves that can be
+# corrected safely before the first canonical revision is created. Coupled
+# component choices (metal material and setting style) are still compiled
+# through the shared catalog rules, so a one-tap correction cannot leave stale
+# dependent facts such as prong count behind. Jewelry identity, templates, and
+# side-stone topology remain descriptive until Studio has a grouped editor that
+# can express those structural dependencies without hidden drift.
 STARTING_FACT_EDITABLE_PATHS = frozenset({
+    "stone.species",
+    "stone.cut",
     "stone.color.trade",
+    "stone.carat",
+    "stone.dimensions_mm.length",
+    "stone.dimensions_mm.width",
+    "stone.dimensions_mm.depth",
+    "metal.material",
     "metal.karat",
     "metal.color",
     "metal.finish",
+    "setting.style",
     "band.profile",
     "band.width_mm",
     "band.thickness_mm",
+    "ring_size.system",
     "ring_size.value",
 })
 
@@ -235,13 +246,24 @@ def _designer_fact_groups(spec: Spec) -> tuple[StudioDesignerFactGroup, ...]:
     if spec.side_stones:
         groups.append(StudioDesignerFactGroup(
             key="accents",
-            label="Accent stones",
+            label="Side and accent stones",
             facts=tuple(
                 _fact(
                     spec,
                     key=f"group_{index + 1}",
-                    label=f"Accent group {index + 1}",
-                    value=f"{stone.count} x {stone.species}, {stone.cut}",
+                    label=(
+                        "Matching side stones"
+                        if (
+                            stone.species == spec.stone.species
+                            and stone.cut == spec.stone.cut
+                            and stone.dimensions_mm == spec.stone.dimensions_mm
+                        )
+                        else f"Accent group {index + 1}"
+                    ),
+                    value=(
+                        f"{stone.count} x {stone.species}, {stone.cut}"
+                        f" · {stone.position or 'side'}"
+                    ),
                     path=None,
                 )
                 for index, stone in enumerate(spec.side_stones)

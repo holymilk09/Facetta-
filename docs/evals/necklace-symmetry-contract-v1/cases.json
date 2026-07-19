@@ -1,0 +1,32 @@
+{
+  "schema_version": "facetta-necklace-symmetry-contract-fixtures.v1",
+  "evidence_status": "contract_only",
+  "external_quality_status": "not_run",
+  "provider_calls": 0,
+  "cases": [
+    {
+      "id": "bilateral-matched-leaf-sequence",
+      "expectation": "bilateral",
+      "expected_pass": true,
+      "purpose": "matching center-outward motif, metal, pave, stone, and connection treatment"
+    },
+    {
+      "id": "bilateral-full-gold-vs-half-pave",
+      "expectation": "bilateral",
+      "expected_pass": false,
+      "purpose": "reject the real-world necklace defect reported by the designer"
+    },
+    {
+      "id": "explicit-asymmetric-ruby-leaf-vs-diamond-branch",
+      "expectation": "explicit_asymmetry",
+      "expected_pass": true,
+      "purpose": "preserve differences explicitly requested by the designer"
+    },
+    {
+      "id": "candidate-self-authorized-asymmetry",
+      "expectation": "explicit_asymmetry",
+      "expected_pass": false,
+      "purpose": "a generated mismatch cannot authorize itself"
+    }
+  ]
+}

@@ -13,6 +13,7 @@ from facetta.db import Base, get_db
 import facetta.api.specs as specs_mod
 from facetta.dxf import svg_to_dxf
 from facetta.image_identity import spec_visual_hash
+from facetta.image_agent import vision as vision_module
 from facetta.main import app
 from facetta.spec import Spec
 
@@ -96,11 +97,18 @@ def test_designs_list_carries_search_fields(client, example_spec):
 
 
 def test_from_photo_without_key_returns_503(client, monkeypatch):
-    monkeypatch.delenv("XAI_KEY", raising=False)
+    monkeypatch.setattr(
+        vision_module, "env_value", lambda _key, default=None: default,
+    )
     r = client.post("/specs/from-photo", json={"image_base64": "aGk=",
                                                "media_type": "image/jpeg"})
     assert r.status_code == 503
-    assert "XAI_KEY" in r.json()["detail"]
+    detail = r.json()["detail"]
+    assert detail == (
+        "reference understanding is temporarily unavailable; try again"
+    )
+    assert "XAI" not in detail
+    assert "OPENAI" not in detail
 
 
 def test_from_photo_rejects_invalid_base64(client, monkeypatch):

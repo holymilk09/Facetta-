@@ -70,12 +70,23 @@ import type {
   StudioMarkupDecisionRequest,
   StudioMarkupDiscardResult,
   StudioMarkupResumeCandidate,
+  StudioContinuationPrompt,
+  StudioContinuationPromptList,
   MarketingPackRequest,
   MarketingPackResult,
   DrawingConfirmationResult,
   DesignFamilyDetail,
   DesignFamilyList,
   DesignFamilyVariation,
+  DesignFamilyTagsResult,
+  WorkspaceCollection,
+  WorkspaceCollectionList,
+  WorkspaceCollectionMembershipIndex,
+  WorkspaceCollectionTemplate,
+  ListWorkspaceCollectionsRequest,
+  CreateWorkspaceCollectionRequest,
+  UpdateWorkspaceCollectionRequest,
+  CollectionMembershipMutationResult,
   DraftFactorySheetPreview,
   DraftCatalogSelectionRequest,
   DraftCatalogSelectionResult,
@@ -425,7 +436,7 @@ const decodeQualityCheck: Decoder<ImageQualityCheck> = (value) => {
     label: text(pick(value, 'label', 'name'), 'Quality check'),
     verdict,
     severity: value.severity === 'advisory' || value.severity === 'warning' || value.hard === false
-      ? 'advisory'
+      ? 'warning'
       : 'hard',
     message: text(pick(value, 'message', 'detail', 'reason')),
   };
@@ -460,6 +471,22 @@ export const decodeAssetSummary: Decoder<AssetSummary> = (value) => {
   const assetId = nullableText(pick(value, 'asset_id', 'id'));
   if (assetId === null) return null;
   const capability = text(value.capability, 'UNKNOWN');
+  const views: NonNullable<AssetSummary['views']> = recordList(value.views).flatMap((raw) => {
+    const assetId = nullableText(raw.asset_id);
+    const view: 'primary' | 'three_quarter' | null = raw.view === 'primary'
+      || raw.view === 'three_quarter'
+      ? raw.view : null;
+    const imageUrl = nullableText(raw.image_url);
+    const sha256 = nullableText(raw.sha256);
+    if (assetId === null || view === null || imageUrl === null || sha256 === null) return [];
+    return [{
+      asset_id: assetId,
+      view,
+      media_type: text(raw.media_type, 'image/png'),
+      sha256,
+      image_url: imageUrl,
+    }];
+  });
   return {
     asset_id: assetId,
     root_id: text(pick(value, 'root_id', 'project_id'), assetId),
@@ -487,6 +514,7 @@ export const decodeAssetSummary: Decoder<AssetSummary> = (value) => {
       value.legacy_provenance,
       isRecord(value.provenance) ? boolean(value.provenance.legacy) : false,
     ),
+    views,
   };
 };
 
@@ -772,6 +800,76 @@ export const decodeCommitCreativeDirectionsResult: Decoder<CommitCreativeDirecti
   };
 };
 
+const decodeStudioContinuationPrompt: Decoder<StudioContinuationPrompt> = (value) => {
+  if (!isRecord(value) || !Array.isArray(value.annotations)) return null;
+  const promptId = nullableText(value.prompt_id);
+  const sequence = number(value.sequence);
+  const prompt = nullableText(value.prompt);
+  const sourceAssetId = nullableText(value.source_asset_id);
+  const sourceSha256 = nullableText(value.source_sha256);
+  const createdAt = nullableText(value.created_at);
+  const state = value.state;
+  const inputMode = value.input_mode;
+  const scope = value.scope;
+  const annotations = value.annotations.map((annotation) => {
+    if (!isRecord(annotation)) return null;
+    const regionDescription = nullableText(annotation.region_description);
+    const changeInstruction = nullableText(annotation.change_instruction);
+    return regionDescription === null || changeInstruction === null ? null : {
+      region_description: regionDescription,
+      change_instruction: changeInstruction,
+    };
+  });
+  const optionalText = (candidate: unknown): string | null | undefined => (
+    candidate === null ? null : nullableText(candidate) ?? undefined
+  );
+  const studioJobId = optionalText(value.studio_job_id);
+  const candidateId = optionalText(value.candidate_id);
+  const imageRunId = optionalText(value.image_run_id);
+  const appliedAssetId = optionalText(value.applied_asset_id);
+  const variant = value.variant === null ? null : number(value.variant);
+  if (
+    promptId === null || sequence === null || !Number.isInteger(sequence) || sequence < 1
+    || prompt === null || sourceAssetId === null || sourceSha256 === null
+    || !/^[a-f0-9]{64}$/i.test(sourceSha256)
+    || createdAt === null || Number.isNaN(Date.parse(createdAt))
+    || annotations.some((annotation) => annotation === null)
+    || (state !== 'requested' && state !== 'preview_ready' && state !== 'applied'
+      && state !== 'saved_as_variation' && state !== 'discarded' && state !== 'failed')
+    || (inputMode !== 'describe' && inputMode !== 'markup' && inputMode !== 'point'
+      && inputMode !== 'background' && inputMode !== 'angle' && inputMode !== 'symmetry')
+    || (scope !== 'appearance' && scope !== 'marked_region')
+    || studioJobId === undefined || candidateId === undefined || imageRunId === undefined
+    || appliedAssetId === undefined || (value.variant !== null && variant === null)
+  ) return null;
+  return {
+    prompt_id: promptId,
+    sequence,
+    prompt,
+    annotations: annotations as StudioContinuationPrompt['annotations'],
+    input_mode: inputMode,
+    scope,
+    variant,
+    source_asset_id: sourceAssetId,
+    source_sha256: sourceSha256,
+    studio_job_id: studioJobId,
+    state,
+    candidate_id: candidateId,
+    image_run_id: imageRunId,
+    applied_asset_id: appliedAssetId,
+    created_at: createdAt,
+  };
+};
+
+export const decodeStudioContinuationPromptList: Decoder<StudioContinuationPromptList> = (value) => {
+  if (!isRecord(value) || !Array.isArray(value.prompts)) return null;
+  const prompts = value.prompts.map(decodeStudioContinuationPrompt);
+  if (prompts.some((prompt) => prompt === null)) return null;
+  const typed = prompts as StudioContinuationPrompt[];
+  if (typed.some((prompt, index) => prompt.sequence !== index + 1)) return null;
+  return { prompts: typed };
+};
+
 export const decodeVisualPreviewResult: Decoder<VisualPreviewResult> = (value) => {
   if (!isRecord(value) || !isRecord(value.candidate)) return null;
   const projectId = nullableText(value.project_id);
@@ -788,6 +886,9 @@ export const decodeVisualPreviewResult: Decoder<VisualPreviewResult> = (value) =
     || (verdict !== 'pass' && verdict !== 'warn' && verdict !== 'fail')
     || verdict !== qa.verdict
   ) return null;
+  const continuationPrompt = value.continuation_prompt === undefined
+    ? undefined : decodeStudioContinuationPrompt(value.continuation_prompt);
+  if (value.continuation_prompt !== undefined && continuationPrompt === null) return null;
   return {
     project_id: projectId,
     source_asset_id: sourceAssetId,
@@ -799,6 +900,7 @@ export const decodeVisualPreviewResult: Decoder<VisualPreviewResult> = (value) =
       verdict,
       qa,
     },
+    ...(continuationPrompt === undefined ? {} : { continuation_prompt: continuationPrompt }),
   };
 };
 
@@ -850,6 +952,7 @@ export const decodeVisualPreviewApplyResult: Decoder<VisualPreviewApplyResult> =
     || project.active_design_version !== null
     || project.active_revision?.asset_id !== newAssetId
     || project.active_revision.design_version !== null
+    || project.active_revision.parent_asset_id !== sourceAssetId
     || !project.revisions.some((revision) => revision.asset.asset_id === sourceAssetId)
     || !project.revisions.some((revision) => revision.asset.asset_id === newAssetId)
   ) return null;
@@ -1249,10 +1352,15 @@ export const decodeDesignFamilyDetail: Decoder<DesignFamilyDetail> = (value) => 
   const title = nullableText(value.title);
   const createdAt = nullableText(value.created_at);
   const updatedAt = nullableText(value.updated_at);
+  const isFavorite = typeof value.is_favorite === 'boolean' ? value.is_favorite : null;
+  const favoritedAt = nullableText(value.favorited_at);
+  const tags = Array.isArray(value.tags) ? stringList(value.tags) : null;
   const rawVariations = Array.isArray(value.variations) ? value.variations : null;
   if (
     familyId === null || owner === null || title === null || createdAt === null
-    || updatedAt === null || rawVariations === null
+    || updatedAt === null || isFavorite === null || tags === null
+    || (value.favorited_at !== null && favoritedAt === null)
+    || rawVariations === null
   ) return null;
   const variations = rawVariations.map(decodeDesignFamilyVariation);
   if (variations.some((variation) => variation === null)) return null;
@@ -1260,8 +1368,11 @@ export const decodeDesignFamilyDetail: Decoder<DesignFamilyDetail> = (value) => 
     family_id: familyId,
     owner,
     title,
+    tags,
     created_at: createdAt,
     updated_at: updatedAt,
+    is_favorite: isFavorite,
+    favorited_at: favoritedAt,
     variations: variations as DesignFamilyVariation[],
   };
 };
@@ -1271,6 +1382,76 @@ export const decodeDesignFamilyList: Decoder<DesignFamilyList> = (value) => {
   const families = value.families.map(decodeDesignFamilyDetail);
   if (families.some((family) => family === null)) return null;
   return { families: families as DesignFamilyDetail[] };
+};
+
+const WORKSPACE_COLLECTION_TEMPLATES = new Set<WorkspaceCollectionTemplate>([
+  'generic', 'client', 'order', 'project', 'campaign', 'season',
+  'jewelry_line', 'personal_study', 'custom',
+]);
+
+export const decodeWorkspaceCollection: Decoder<WorkspaceCollection> = (value) => {
+  if (!isRecord(value)) return null;
+  const id = nullableText(value.id);
+  const name = nullableText(value.name);
+  const template = typeof value.template === 'string'
+    && WORKSPACE_COLLECTION_TEMPLATES.has(value.template as WorkspaceCollectionTemplate)
+    ? value.template as WorkspaceCollectionTemplate : null;
+  const metadata = decodeJsonObject(value.metadata);
+  const createdAt = nullableText(value.created_at);
+  const updatedAt = nullableText(value.updated_at);
+  const familyCount = number(value.family_count);
+  if (
+    id === null || name === null || template === null || metadata === null
+    || createdAt === null || updatedAt === null || familyCount === null || familyCount < 0
+  ) return null;
+  return {
+    id,
+    name,
+    template,
+    metadata,
+    archived_at: nullableText(value.archived_at),
+    created_at: createdAt,
+    updated_at: updatedAt,
+    family_count: familyCount,
+  };
+};
+
+export const decodeWorkspaceCollectionList: Decoder<WorkspaceCollectionList> = (value) => {
+  if (!isRecord(value) || !Array.isArray(value.collections)) return null;
+  const collections = value.collections.map(decodeWorkspaceCollection);
+  if (collections.some((collection) => collection === null)) return null;
+  return { collections: collections as WorkspaceCollection[] };
+};
+
+export const decodeWorkspaceCollectionMembershipIndex: Decoder<WorkspaceCollectionMembershipIndex> = (
+  value,
+) => {
+  if (!isRecord(value) || !isRecord(value.family_collection_ids)) return null;
+  const entries = Object.entries(value.family_collection_ids);
+  const decoded: [string, string[]][] = [];
+  for (const [familyId, collectionIds] of entries) {
+    if (familyId.trim().length === 0 || !Array.isArray(collectionIds)) return null;
+    if (collectionIds.some((collectionId) => (
+      typeof collectionId !== 'string' || collectionId.trim().length === 0
+    ))) return null;
+    const typedCollectionIds = collectionIds as string[];
+    if (new Set(typedCollectionIds).size !== typedCollectionIds.length) return null;
+    decoded.push([familyId, typedCollectionIds]);
+  }
+  return { family_collection_ids: Object.fromEntries(decoded) };
+};
+
+const decodeCollectionMembershipMutation: Decoder<CollectionMembershipMutationResult> = () => ({
+  status: 'updated',
+});
+
+export const decodeDesignFamilyTagsResult: Decoder<DesignFamilyTagsResult> = (value) => {
+  if (!isRecord(value)) return null;
+  const familyId = nullableText(value.family_id);
+  if (familyId === null || !Array.isArray(value.tags)) return null;
+  const tags = stringList(value.tags);
+  if (tags.length !== value.tags.length) return null;
+  return { family_id: familyId, tags };
 };
 
 const STUDIO_JOB_STATUSES = new Set<StudioJobStatus>([
@@ -1437,18 +1618,26 @@ export const decodeMarkupInterpretation: Decoder<MarkupInterpretation> = (value)
 
 export const decodeMarkupReadResponse: Decoder<MarkupReadResponse> = (value) => {
   if (!isRecord(value)) return null;
-  let interpretation = decodeMarkupInterpretation(value.interpretation);
-  if (interpretation === null && Array.isArray(value.annotations)) {
-    interpretation = decodeMarkupInterpretation(value.annotations[0]);
-  }
+  const interpretations = Array.isArray(value.annotations)
+    ? value.annotations.map(decodeMarkupInterpretation).filter(
+      (item): item is MarkupInterpretation => item !== null,
+    )
+    : [];
+  let interpretation: MarkupInterpretation | null = decodeMarkupInterpretation(value.interpretation)
+    ?? interpretations[0] ?? null;
   if (interpretation === null) interpretation = decodeMarkupInterpretation(value);
   if (interpretation === null) return null;
   if (interpretation.understood_as.length === 0) {
     interpretation = { ...interpretation, understood_as: text(value.understood_as) };
   }
+  const completeInterpretations = interpretations.length === 0
+    ? [interpretation]
+    : interpretations.map((item) => item.understood_as.length > 0
+      ? item : { ...item, understood_as: text(value.understood_as) });
   return {
     markup_asset_id: nullableText(value.markup_asset_id),
     assistant_name: nullableText(value.assistant_name),
+    interpretations: completeInterpretations,
     interpretation,
     design_id: nullableText(value.design_id),
     expected_design_version: number(pick(value, 'expected_design_version', 'design_version')),
@@ -3186,6 +3375,11 @@ export const decodeFactoryPackManifest: Decoder<FactoryPackManifest> = (value) =
     : [];
   const factPlan = decodeFactorySheetFactPlan(manifest.factory_sheet_fact_plan);
   if (factPlan === null) return null;
+  const authority = isRecord(manifest.authority) ? manifest.authority : {};
+  const productionAuthority = stringList(authority.production_authority);
+  if ((authority.release_status !== undefined
+      && authority.release_status !== 'factory_review_only')
+    || productionAuthority.length > 0) return null;
   return {
     project_id: projectId,
     design_id: designId,
@@ -3201,6 +3395,17 @@ export const decodeFactoryPackManifest: Decoder<FactoryPackManifest> = (value) =
       disclaimer: nullableText(dimensions.disclaimer),
     },
     factory_sheet_fact_plan: factPlan,
+    authority: {
+      factory_truth: stringList(authority.factory_truth),
+      authoritative_fact_records: stringList(authority.authoritative_fact_records),
+      dimensional_diagram_only: stringList(authority.dimensional_diagram_only),
+      exchange_reference_only: stringList(authority.exchange_reference_only),
+      visual_reference_only: stringList(authority.visual_reference_only),
+      discussion_only: stringList(authority.discussion_only),
+      production_authority: productionAuthority,
+      release_status: 'factory_review_only',
+      note: text(authority.note),
+    },
     artifacts: (Array.isArray(manifest.artifacts)
       ? manifest.artifacts
       : Array.isArray(manifest.files) ? manifest.files : [])
@@ -3407,7 +3612,14 @@ function projectWithUrls(project: ProjectDetail, baseUrl: string): ProjectDetail
     const imageUrl = rawUrl === null
       ? `${baseUrl}/assets/${encodeURIComponent(asset.asset_id)}/image`
       : resolveUrl(rawUrl, baseUrl);
-    return { ...asset, image_url: imageUrl };
+    return {
+      ...asset,
+      image_url: imageUrl,
+      views: asset.views?.map((view) => ({
+        ...view,
+        image_url: resolveUrl(view.image_url, baseUrl),
+      })),
+    };
   };
   const revisions = project.revisions.map((revision) => ({
     ...revision,
@@ -3424,6 +3636,7 @@ function projectWithUrls(project: ProjectDetail, baseUrl: string): ProjectDetail
     derived_assets: derivedAssets,
     active_revision: active,
     pinned_revision: pinned,
+    creative_candidates: project.creative_candidates?.map(addUrl),
   };
 }
 
@@ -3522,7 +3735,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
     }
   }
 
-  const jsonCall = <T>(path: string, method: 'POST' | 'PATCH', body: JsonObject, decoder: Decoder<T>) =>
+  const jsonCall = <T>(path: string, method: 'POST' | 'PUT' | 'PATCH', body: JsonObject, decoder: Decoder<T>) =>
     call(path, decoder, { method, body: encodeBody(body) });
 
   const svgCall = async (
@@ -3779,6 +3992,9 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           instruction: request.instruction
             ?? 'Create a polished fine-jewelry beauty render faithful to every visible design element in this source.',
           variation_count: request.variation_count ?? 1,
+          ...(request.comparison_views === undefined
+            ? {}
+            : { comparison_views: request.comparison_views }),
           starting_variant: request.starting_variant ?? 0,
           owner: request.owner,
           title: request.title,
@@ -3817,6 +4033,9 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
         body: encodeBody({
           prompt: request.prompt,
           variation_count: request.variation_count ?? 1,
+          ...(request.comparison_views === undefined
+            ? {}
+            : { comparison_views: request.comparison_views }),
           starting_variant: request.starting_variant ?? 0,
           owner: request.owner,
           title: request.title,
@@ -3899,6 +4118,15 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
             created_by: request.created_by,
             expected_active_asset_id: request.expected_active_asset_id,
             instruction: request.instruction,
+            ...(request.raw_user_instruction === undefined
+              ? {} : { raw_user_instruction: request.raw_user_instruction }),
+            ...(request.input_mode === undefined ? {} : { input_mode: request.input_mode }),
+            ...(request.annotations === undefined ? {} : {
+              annotations: request.annotations.map((annotation) => ({
+                region_description: annotation.region_description,
+                change_instruction: annotation.change_instruction,
+              })),
+            }),
             scope: request.scope,
             ...(request.scope === 'marked_region' && 'mask_base64' in request
               ? { mask_base64: request.mask_base64 }
@@ -3980,6 +4208,15 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
         ...result,
         data: { candidates: candidates as VisualPreviewListResult['candidates'] },
       };
+    },
+
+    async getStudioContinuationPrompts(
+      projectId: string,
+    ): Promise<ApiResult<StudioContinuationPromptList>> {
+      return call(
+        `/studio/projects/${encodeURIComponent(projectId)}/continuation-prompts`,
+        decodeStudioContinuationPromptList,
+      );
     },
 
     async acceptVisualPreview(
@@ -4954,6 +5191,135 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
       return call('/studio/families' + query, decodeDesignFamilyList);
     },
 
+    /**
+     * WorkspaceCollection transport contract: authentication validates the
+     * explicit owner, which also scopes an unbound local preview. Family
+     * membership routes never accept a project, asset, or revision id.
+     * PUT/DELETE are idempotent 204 operations decoded as `status: updated`.
+     */
+    listWorkspaceCollections(
+      request: ListWorkspaceCollectionsRequest,
+    ): Promise<ApiResult<WorkspaceCollectionList>> {
+      const params = new URLSearchParams();
+      params.set('owner', request.owner.trim());
+      if (request.query?.trim()) params.set('q', request.query.trim());
+      params.set('include_archived', 'false');
+      return call(`/studio/collections?${params.toString()}`, decodeWorkspaceCollectionList);
+    },
+
+    listWorkspaceCollectionMemberships(
+      owner: string,
+    ): Promise<ApiResult<WorkspaceCollectionMembershipIndex>> {
+      return call(
+        `/studio/collection-memberships?owner=${encodeURIComponent(owner.trim())}`,
+        decodeWorkspaceCollectionMembershipIndex,
+      );
+    },
+
+    favoriteDesignFamily(
+      familyId: string,
+      owner: string,
+    ): Promise<ApiResult<CollectionMembershipMutationResult>> {
+      return call(
+        `/studio/design-families/${encodeURIComponent(familyId)}/favorite?owner=${encodeURIComponent(owner.trim())}`,
+        decodeCollectionMembershipMutation,
+        { method: 'PUT' },
+      );
+    },
+
+    unfavoriteDesignFamily(
+      familyId: string,
+      owner: string,
+    ): Promise<ApiResult<CollectionMembershipMutationResult>> {
+      return call(
+        `/studio/design-families/${encodeURIComponent(familyId)}/favorite?owner=${encodeURIComponent(owner.trim())}`,
+        decodeCollectionMembershipMutation,
+        { method: 'DELETE' },
+      );
+    },
+
+    updateDesignFamilyTags(
+      familyId: string,
+      owner: string,
+      tags: string[],
+    ): Promise<ApiResult<DesignFamilyTagsResult>> {
+      return jsonCall(
+        `/studio/design-families/${encodeURIComponent(familyId)}/tags?owner=${encodeURIComponent(owner.trim())}`,
+        'PUT',
+        { tags },
+        decodeDesignFamilyTagsResult,
+      );
+    },
+
+    createWorkspaceCollection(
+      request: CreateWorkspaceCollectionRequest,
+    ): Promise<ApiResult<WorkspaceCollection>> {
+      const ownerQuery = `?owner=${encodeURIComponent(request.owner.trim())}`;
+      return jsonCall(`/studio/collections${ownerQuery}`, 'POST', {
+        name: request.name,
+        ...(request.template === undefined ? {} : { template: request.template }),
+        ...(request.metadata === undefined ? {} : { metadata: request.metadata }),
+      }, decodeWorkspaceCollection);
+    },
+
+    updateWorkspaceCollection(
+      collectionId: string,
+      request: UpdateWorkspaceCollectionRequest,
+    ): Promise<ApiResult<WorkspaceCollection>> {
+      return jsonCall(
+        `/studio/collections/${encodeURIComponent(collectionId)}`,
+        'PATCH',
+        {
+          ...(request.name === undefined ? {} : { name: request.name }),
+          ...(request.template === undefined ? {} : { template: request.template }),
+          ...(request.metadata === undefined ? {} : { metadata: request.metadata }),
+          ...(request.archived === undefined ? {} : { archived: request.archived }),
+        },
+        decodeWorkspaceCollection,
+      );
+    },
+
+    deleteWorkspaceCollection(
+      collectionId: string,
+    ): Promise<ApiResult<CollectionMembershipMutationResult>> {
+      return call(
+        `/studio/collections/${encodeURIComponent(collectionId)}`,
+        decodeCollectionMembershipMutation,
+        { method: 'DELETE' },
+      );
+    },
+
+    listDesignFamilyCollections(
+      familyId: string,
+    ): Promise<ApiResult<WorkspaceCollectionList>> {
+      return call(
+        `/studio/design-families/${encodeURIComponent(familyId)}/collections`,
+        decodeWorkspaceCollectionList,
+      );
+    },
+
+    addDesignFamilyToCollection(
+      familyId: string,
+      collectionId: string,
+    ): Promise<ApiResult<CollectionMembershipMutationResult>> {
+      return call(
+        `/studio/design-families/${encodeURIComponent(familyId)}/collections/${encodeURIComponent(collectionId)}`,
+        decodeCollectionMembershipMutation,
+        { method: 'PUT' },
+      );
+    },
+
+    removeDesignFamilyFromCollection(
+      familyId: string,
+      collectionId: string,
+    ): Promise<ApiResult<CollectionMembershipMutationResult>> {
+      return call(
+        `/studio/design-families/${encodeURIComponent(familyId)}/collections/${encodeURIComponent(collectionId)}`,
+        decodeCollectionMembershipMutation,
+        { method: 'DELETE' },
+      );
+    },
+
     createStudioJob(request: CreateStudioJobRequest): Promise<ApiResult<StudioJobRecord>> {
       return call('/studio/jobs', decodeStudioJobRecord, {
         method: 'POST',
@@ -5246,15 +5612,17 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
               markup_snapshot: request.markup_snapshot as unknown as JsonObject,
             }),
         created_by: request.created_by,
+        ...(request.instruction === undefined ? {} : { instruction: request.instruction }),
         ...(request.assistant_name === undefined ? {} : { assistant_name: request.assistant_name }),
       }, decodeMarkupReadResponse);
     },
 
     async applyMarkup(assetId: string, request: MarkupApplyRequest) {
-      const annotation = request.annotation;
-      const updateSpec = annotation.impact === 'specification';
+      const annotations = request.annotations?.length
+        ? request.annotations : [request.annotation];
+      const updateSpec = annotations.some(({ impact }) => impact === 'specification');
       const result = await jsonCall(`/assets/${encodeURIComponent(assetId)}/markup/apply`, 'POST', {
-        annotations: [{
+        annotations: annotations.map((annotation) => ({
           region_description: annotation.region_description,
           change_instruction: annotation.change_instruction,
           target_section: annotation.target_section,
@@ -5264,7 +5632,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           target_element_id: annotation.target_element_id,
           form_view: annotation.form_view,
           mask_base64: annotation.mask_base64,
-        }],
+        })),
         markup_asset_id: request.markup_asset_id,
         kind: 'render',
         update_spec: updateSpec,
@@ -5453,8 +5821,14 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
       const result = await call(`/projects/${encodeURIComponent(projectId)}/factory-pack`,
         decodeFactoryPackManifest);
       if (result.error !== null) return result;
-      const bundleUrl = result.data.bundle_url
-        || `${baseUrl}/projects/${encodeURIComponent(projectId)}/factory-pack.zip`;
+      const legacyBundleUrl = `${baseUrl}/projects/${encodeURIComponent(projectId)}/factory-pack.zip`;
+      const bundleUrl = result.data.bundle_url || (
+        result.data.manifest_sha256 === null
+          ? legacyBundleUrl
+          : `${legacyBundleUrl}?expected_asset_id=${encodeURIComponent(result.data.pinned_asset_id)}`
+            + `&expected_design_version=${result.data.design_version}`
+            + `&expected_manifest_sha256=${encodeURIComponent(result.data.manifest_sha256)}`
+      );
       return {
         ...result,
         data: {
@@ -5477,8 +5851,14 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
         'POST', request, decodeFactoryPackManifest,
       );
       if (result.error !== null) return result;
-      const bundleUrl = result.data.bundle_url
-        || `${baseUrl}/projects/${encodeURIComponent(projectId)}/factory-pack.zip`;
+      const legacyBundleUrl = `${baseUrl}/projects/${encodeURIComponent(projectId)}/factory-pack.zip`;
+      const bundleUrl = result.data.bundle_url || (
+        result.data.manifest_sha256 === null
+          ? legacyBundleUrl
+          : `${legacyBundleUrl}?expected_asset_id=${encodeURIComponent(result.data.pinned_asset_id)}`
+            + `&expected_design_version=${result.data.design_version}`
+            + `&expected_manifest_sha256=${encodeURIComponent(result.data.manifest_sha256)}`
+      );
       return {
         ...result,
         data: {

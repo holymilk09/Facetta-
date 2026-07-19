@@ -58,6 +58,25 @@ test('shows Factory only when the exact active revision passes its registry pred
   expect(onSelect).toHaveBeenCalledWith('factory');
 });
 
+test('omits the destination already being viewed without changing registry order or eligibility', async () => {
+  const onSelect = jest.fn();
+  await render(<StudioDestinationChooser
+    context={{ ...savedContext, factoryEligible: true }}
+    excludeDestinations={['library']}
+    onSelect={onSelect}
+    title="Use this revision"
+  />);
+
+  expect(screen.getByText('Use this revision')).toBeTruthy();
+  expect(screen.queryByLabelText('Library')).toBeNull();
+  expect(screen.getAllByTestId(/studio-destination-card-/).map((card) => (
+    card.props.accessibilityLabel
+  ))).toEqual(['Client', 'Marketing', 'Factory']);
+
+  fireEvent.press(screen.getByLabelText('Client'));
+  expect(onSelect).toHaveBeenCalledWith('client');
+});
+
 test('does not expose Factory when specification or backend eligibility is missing', async () => {
   const view = await render(
     <StudioDestinationChooser

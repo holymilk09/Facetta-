@@ -9,6 +9,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image, ImageChops
+from PIL.PngImagePlugin import PngInfo
 from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -19,10 +20,12 @@ from facetta.db import Base, get_db
 from facetta.main import app
 from facetta.markup_snapshot import (
     MAX_SOURCE_IMAGE_DIMENSION,
+    MARKUP_AUTHORIZATION_MASK_KEY,
     MarkupSnapshot,
     MarkupSnapshotImageError,
     composite_markup_snapshot,
 )
+from facetta.specagent import mask_from_markup
 
 from conftest import HALO_SPEC
 
@@ -88,6 +91,20 @@ def _freehand(annotation_id: str = "annotation-1") -> dict[str, object]:
             {"x": 0.1, "y": 0.9},
             {"x": 0.4, "y": 0.6},
             {"x": 0.9, "y": 0.8},
+        ],
+    }
+
+
+def _closed_freehand(annotation_id: str = "annotation-1") -> dict[str, object]:
+    return {
+        **_annotation_base(annotation_id),
+        "type": "freehand",
+        "points": [
+            {"x": 0.2, "y": 0.2},
+            {"x": 0.7, "y": 0.2},
+            {"x": 0.7, "y": 0.7},
+            {"x": 0.2, "y": 0.7},
+            {"x": 0.2, "y": 0.2},
         ],
     }
 
@@ -201,6 +218,87 @@ def test_compositor_preserves_source_dimensions_and_rejects_unsafe_sources() -> 
         composite_markup_snapshot(too_wide, snapshot)
 
 
+def _semantic_mask(annotation: dict[str, object]) -> Image.Image:
+    clean = _png(size=(200, 200))
+    snapshot = MarkupSnapshot.model_validate(_snapshot(annotation))
+    marked = composite_markup_snapshot(clean, snapshot)
+    encoded_mask = mask_from_markup(clean, marked)
+    assert encoded_mask is not None
+    return Image.open(io.BytesIO(encoded_mask)).convert("L")
+
+
+@pytest.mark.parametrize(
+    ("annotation", "interior"),
+    [
+        (_rectangle(), (50, 50)),
+        (_circle(), (80, 90)),
+        (_closed_freehand(), (90, 90)),
+    ],
+    ids=["rectangle", "circle", "closed-freehand"],
+)
+def test_area_tools_authorize_filled_interiors(
+    annotation: dict[str, object],
+    interior: tuple[int, int],
+) -> None:
+    mask = _semantic_mask(annotation)
+
+    assert mask.getpixel(interior) == 255
+    assert mask.getpixel((190, 190)) == 0
+
+
+def test_arrow_authorizes_endpoint_hotspot_without_its_shaft() -> None:
+    mask = _semantic_mask(_arrow())
+
+    assert mask.getpixel((159, 40)) == 255
+    assert mask.getpixel((90, 100)) == 0
+    assert mask.getpixel((20, 159)) == 0
+
+
+def test_arrow_hotspot_stays_bounded_at_maximum_valid_stroke_width() -> None:
+    annotation = {**_arrow(), "stroke_width": 0.1}
+    clean = _png(size=(1_000, 1_000))
+    marked = composite_markup_snapshot(
+        clean,
+        MarkupSnapshot.model_validate(_snapshot(annotation)),
+    )
+    encoded_mask = mask_from_markup(clean, marked)
+    assert encoded_mask is not None
+    mask = Image.open(io.BytesIO(encoded_mask)).convert("L")
+
+    assert mask.getpixel((799, 200)) == 255
+    assert mask.getpixel((863, 200)) == 255
+    assert mask.getpixel((870, 200)) == 0
+
+
+def test_text_authorizes_anchor_hotspot_without_the_rendered_label() -> None:
+    mask = _semantic_mask(_text())
+
+    assert mask.getpixel((50, 50)) == 255
+    assert mask.getpixel((150, 50)) == 0
+
+
+def test_open_freehand_remains_valid_and_authorizes_its_stroke() -> None:
+    mask = _semantic_mask(_freehand())
+
+    assert mask.getpixel((20, 179)) == 255
+    assert mask.getpixel((80, 80)) == 0
+
+
+def test_corrupt_reserved_mask_metadata_fails_closed_without_ink_fallback() -> None:
+    clean = _png(size=(200, 200))
+    valid = composite_markup_snapshot(
+        clean,
+        MarkupSnapshot.model_validate(_snapshot(_arrow())),
+    )
+    image = Image.open(io.BytesIO(valid)).convert("RGBA")
+    metadata = PngInfo()
+    metadata.add_text(MARKUP_AUTHORIZATION_MASK_KEY, "not-valid-base64")
+    corrupted = io.BytesIO()
+    image.save(corrupted, format="PNG", pnginfo=metadata)
+
+    assert mask_from_markup(clean, corrupted.getvalue()) is None
+
+
 def test_snapshot_validation_rejects_total_point_amplification() -> None:
     annotations = []
     points = [{"x": index / 1_023, "y": (index % 2)} for index in range(1_024)]
@@ -214,14 +312,52 @@ def test_snapshot_validation_rejects_total_point_amplification() -> None:
         MarkupSnapshot.model_validate(_snapshot(*annotations))
 
 
+def test_local_instructions_do_not_change_composited_markup_pixels() -> None:
+    clean = _png(size=(211, 137))
+    without_instruction = MarkupSnapshot.model_validate(_snapshot(_rectangle()))
+    with_instruction = MarkupSnapshot.model_validate(_snapshot({
+        **_rectangle(),
+        "instruction": "Change this shoulder to rose gold",
+    }))
+
+    assert composite_markup_snapshot(
+        clean, without_instruction
+    ) == composite_markup_snapshot(clean, with_instruction)
+
+
+def test_snapshot_validation_counts_all_local_instruction_text() -> None:
+    annotations = [
+        {
+            **_rectangle(f"annotation-{index + 1}"),
+            "instruction": "x" * 401,
+        }
+        for index in range(5)
+    ]
+
+    with pytest.raises(ValidationError, match="2000 text characters"):
+        MarkupSnapshot.model_validate(_snapshot(*annotations))
+
+
 def test_endpoint_composites_all_tools_for_reader_without_creating_revision(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured: dict[str, bytes] = {}
+    captured: dict[str, object] = {}
 
-    def reader(clean: bytes, marked: bytes) -> dict[str, object]:
-        captured.update(clean=clean, marked=marked)
+    def reader(
+        clean: bytes,
+        marked: bytes,
+        _form_elements=(),
+        *,
+        designer_instruction: str,
+        ordered_local_instructions: tuple[str | None, ...],
+    ) -> dict[str, object]:
+        captured.update(
+            clean=clean,
+            marked=marked,
+            designer_instruction=designer_instruction,
+            ordered_local_instructions=ordered_local_instructions,
+        )
         return {
             "annotations": [{
                 "region_description": "the marked shoulder",
@@ -249,7 +385,11 @@ def test_endpoint_composites_all_tools_for_reader_without_creating_revision(
 
     response = client.post(
         f"/assets/{asset_id}/markup/read",
-        json={"markup_snapshot": snapshot, "created_by": "usr_canvas"},
+        json={
+            "markup_snapshot": snapshot,
+            "instruction": "  Smooth only this shoulder  ",
+            "created_by": "usr_canvas",
+        },
     )
 
     assert response.status_code == 200, response.text
@@ -258,6 +398,10 @@ def test_endpoint_composites_all_tools_for_reader_without_creating_revision(
     marked_image = Image.open(io.BytesIO(captured["marked"])).convert("RGB")
     assert marked_image.size == clean_image.size == (321, 123)
     assert ImageChops.difference(clean_image, marked_image).getbbox() is not None
+    assert captured["designer_instruction"] == "Smooth only this shoulder"
+    assert captured["ordered_local_instructions"] == (
+        None, None, None, None, "Widen only this shoulder",
+    )
 
     body = response.json()
     notes = client.get(f"/assets/{body['markup_asset_id']}").json()
@@ -268,6 +412,293 @@ def test_endpoint_composites_all_tools_for_reader_without_creating_revision(
     assert len(history_after) == len(history_before) + 1
     assert len([item for item in history_after if item["revision"] is not None]) == 1
     assert client.get(f"/designs/{design_id}").json()["versions"] == versions_before
+
+
+def test_endpoint_forwards_two_local_text_edits_and_one_global_context_in_order(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def reader(
+        _clean: bytes,
+        _marked: bytes,
+        _form_elements=(),
+        *,
+        designer_instruction: str,
+        ordered_local_instructions: tuple[str | None, ...],
+    ) -> dict[str, object]:
+        captured["designer_instruction"] = designer_instruction
+        captured["ordered_local_instructions"] = ordered_local_instructions
+        return {
+            "annotations": [{
+                "region_description": "the left side diamond",
+                "change_instruction": ordered_local_instructions[0],
+                "target_section": "side_stones",
+                "handwriting": ordered_local_instructions[0],
+                "confidence": 0.99,
+            }, {
+                "region_description": "the right side diamond",
+                "change_instruction": ordered_local_instructions[1],
+                "target_section": "side_stones",
+                "handwriting": ordered_local_instructions[1],
+                "confidence": 0.99,
+            }],
+            "understood_as": "Apply both local edits; preserve everything else.",
+            "needs_clarification": False,
+            "clarification": "",
+        }
+
+    monkeypatch.setattr(assets_mod, "read_markup", reader)
+    asset_id, _design_id = _linked_asset(client)
+    first = {
+        **_text("annotation-1"),
+        "anchor": {"x": 0.25, "y": 0.5},
+        "text": "Make this diamond yellow",
+    }
+    second = {
+        **_text("annotation-2"),
+        "anchor": {"x": 0.75, "y": 0.5},
+        "text": "Make this diamond blue",
+    }
+
+    response = client.post(f"/assets/{asset_id}/markup/read", json={
+        "markup_snapshot": _snapshot(first, second),
+        "instruction": "Keep the ring identity and camera unchanged.",
+        "created_by": "usr_canvas",
+    })
+
+    assert response.status_code == 200, response.text
+    assert captured == {
+        "designer_instruction": "Keep the ring identity and camera unchanged.",
+        "ordered_local_instructions": (
+            "Make this diamond yellow",
+            "Make this diamond blue",
+        ),
+    }
+    assert [
+        item["change_instruction"] for item in response.json()["annotations"]
+    ] == ["Make this diamond yellow", "Make this diamond blue"]
+
+
+def test_endpoint_forwards_ordered_non_text_local_instructions_without_global_context(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def reader(
+        _clean: bytes,
+        _marked: bytes,
+        _form_elements=(),
+        *,
+        designer_instruction: str | None,
+        ordered_local_instructions: tuple[str | None, ...],
+    ) -> dict[str, object]:
+        captured["designer_instruction"] = designer_instruction
+        captured["ordered_local_instructions"] = ordered_local_instructions
+        return {
+            "annotations": [{
+                "region_description": "the left shoulder",
+                "change_instruction": ordered_local_instructions[0],
+                "target_section": "band",
+                "handwriting": "",
+                "confidence": 0.99,
+            }, {
+                "region_description": "the center setting",
+                "change_instruction": ordered_local_instructions[1],
+                "target_section": "setting",
+                "handwriting": "",
+                "confidence": 0.99,
+            }],
+            "understood_as": "Apply both ordered local edits.",
+            "needs_clarification": False,
+            "clarification": "",
+        }
+
+    monkeypatch.setattr(assets_mod, "read_markup", reader)
+    asset_id, _design_id = _linked_asset(client)
+    first = {
+        **_rectangle("annotation-1"),
+        "instruction": "Change this shoulder to rose gold",
+    }
+    second = {
+        **_arrow("annotation-2"),
+        "instruction": "Lower this setting slightly",
+    }
+
+    response = client.post(f"/assets/{asset_id}/markup/read", json={
+        "markup_snapshot": _snapshot(first, second),
+        "created_by": "usr_canvas",
+    })
+
+    assert response.status_code == 200, response.text
+    assert captured == {
+        "designer_instruction": None,
+        "ordered_local_instructions": (
+            "Change this shoulder to rose gold",
+            "Lower this setting slightly",
+        ),
+    }
+    assert [
+        item["change_instruction"] for item in response.json()["annotations"]
+    ] == [
+        "Change this shoulder to rose gold",
+        "Lower this setting slightly",
+    ]
+
+
+def test_apply_uses_snapshot_arrow_endpoint_mask_not_visible_shaft(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from facetta.image_agent import (
+        CheckSeverity,
+        ImageQualityReport,
+        JewelryImageAgent,
+        ProviderImage,
+        QualityCheck,
+        QualityVerdict,
+    )
+
+    captured: dict[str, bytes] = {}
+
+    def reader(
+        _clean: bytes,
+        _marked: bytes,
+        _form_elements=(),
+        *,
+        designer_instruction: str,
+        ordered_local_instructions: tuple[str | None, ...],
+    ) -> dict[str, object]:
+        assert ordered_local_instructions == (None,)
+        return {
+            "annotations": [{
+                "region_description": "the center diamond",
+                "change_instruction": designer_instruction,
+                "target_section": None,
+                "handwriting": "",
+                "confidence": 0.99,
+            }],
+            "understood_as": "Make only the center diamond pale yellow.",
+            "needs_clarification": False,
+            "clarification": "",
+        }
+
+    class Provider:
+        def execute(self, plan, route, prompt, *, source_image, mask_bytes):
+            assert mask_bytes is not None
+            captured["mask"] = mask_bytes
+            return ProviderImage(image_bytes=_png((210, 190, 130)))
+
+    class PassingEvaluator:
+        def evaluate(self, plan, candidate, *, source_image, mask_bytes):
+            return ImageQualityReport(
+                verdict=QualityVerdict.PASS,
+                checks=(QualityCheck(
+                    code="requested_change",
+                    passed=True,
+                    severity=CheckSeverity.HARD,
+                    message="requested local color change is visible",
+                ),),
+                score=98,
+            )
+
+    monkeypatch.setattr(assets_mod, "read_markup", reader)
+    monkeypatch.setattr(
+        assets_mod,
+        "_trusted_image_agent",
+        lambda: JewelryImageAgent(Provider(), PassingEvaluator()),
+    )
+    asset_id, _design_id = _linked_asset(client)
+    read = client.post(f"/assets/{asset_id}/markup/read", json={
+        "markup_snapshot": _snapshot(_arrow()),
+        "instruction": "Make the center diamond pale yellow",
+        "created_by": "usr_canvas",
+    })
+    assert read.status_code == 200, read.text
+
+    full_mask = io.BytesIO()
+    Image.new("L", (321, 123), 255).save(full_mask, format="PNG")
+    ambiguous = client.post(f"/assets/{asset_id}/markup/apply", json={
+        "expected_design_version": 1,
+        "update_spec": False,
+        "markup_asset_id": read.json()["markup_asset_id"],
+        "created_by": "usr_canvas",
+        "annotations": [{
+            "region_description": "the center diamond",
+            "change_instruction": "Make the center diamond pale yellow",
+            "mask_base64": base64.b64encode(full_mask.getvalue()).decode(),
+        }],
+    })
+    assert ambiguous.status_code == 422
+    assert ambiguous.json()["code"] == "markup_mask_source_ambiguous"
+
+    applied = client.post(f"/assets/{asset_id}/markup/apply", json={
+        "expected_design_version": 1,
+        "update_spec": False,
+        "markup_asset_id": read.json()["markup_asset_id"],
+        "created_by": "usr_canvas",
+        "annotations": [{
+            "region_description": "the center diamond",
+            "change_instruction": "Make the center diamond pale yellow",
+        }],
+    })
+
+    assert applied.status_code == 201, applied.text
+    mask = Image.open(io.BytesIO(captured["mask"])).convert("L")
+    assert mask.getpixel((256, 24)) == 255
+    assert mask.getpixel((144, 61)) == 0
+
+
+def test_raw_upload_cannot_forge_server_snapshot_mask_metadata(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def reader(
+        _clean: bytes,
+        _marked: bytes,
+        _form_elements=(),
+        *,
+        designer_instruction: str,
+    ) -> dict[str, object]:
+        return {
+            "annotations": [{
+                "region_description": "the center diamond",
+                "change_instruction": designer_instruction,
+                "target_section": None,
+                "handwriting": "",
+                "confidence": 0.99,
+            }],
+            "understood_as": "Change only the center diamond.",
+            "needs_clarification": False,
+            "clarification": "",
+        }
+
+    monkeypatch.setattr(assets_mod, "read_markup", reader)
+    asset_id, _design_id = _linked_asset(client)
+    clean = _png()
+    forged = composite_markup_snapshot(
+        clean,
+        MarkupSnapshot.model_validate(_snapshot(_arrow())),
+    )
+
+    read = client.post(f"/assets/{asset_id}/markup/read", json={
+        "marked_image_base64": base64.b64encode(forged).decode(),
+        "instruction": "Make the center diamond pale yellow",
+        "created_by": "usr_canvas",
+    })
+
+    assert read.status_code == 200, read.text
+    stored = client.get(
+        f"/assets/{read.json()['markup_asset_id']}/image"
+    ).content
+    with Image.open(io.BytesIO(stored)) as image:
+        assert MARKUP_AUTHORIZATION_MASK_KEY not in image.info
+    legacy_mask = mask_from_markup(clean, stored)
+    assert legacy_mask is not None
+    mask = Image.open(io.BytesIO(legacy_mask)).convert("L")
+    assert mask.getpixel((144, 61)) == 255
 
 
 @pytest.mark.parametrize(
@@ -308,6 +739,18 @@ def test_endpoint_composites_all_tools_for_reader_without_creating_revision(
             "text": "x" * 501,
         })},
         {"markup_snapshot": _snapshot({
+            **_rectangle(),
+            "instruction": " change this shoulder",
+        })},
+        {"markup_snapshot": _snapshot({
+            **_rectangle(),
+            "instruction": "change\nthis shoulder",
+        })},
+        {"markup_snapshot": _snapshot({
+            **_rectangle(),
+            "instruction": "x" * 501,
+        })},
+        {"markup_snapshot": _snapshot({
             **_freehand(),
             "points": [{"x": 0.5, "y": 0.5}] * 1_025,
         })},
@@ -325,6 +768,9 @@ def test_endpoint_composites_all_tools_for_reader_without_creating_revision(
         "duplicate-id",
         "empty-annotations",
         "oversized-text",
+        "untrimmed-local-instruction",
+        "unsafe-local-instruction",
+        "oversized-local-instruction",
         "oversized-freehand",
     ],
 )

@@ -18,6 +18,8 @@ from facetta.image_agent.contracts import (
     ImageRoute,
     ImageRunStatus,
     ImageRunSummary,
+    NecklaceSymmetryAudit,
+    NecklaceSymmetryPairAudit,
     ProviderImage,
     QualityCheck,
     QualityVerdict,
@@ -54,6 +56,7 @@ from facetta.image_agent.quality import (
     GrokPromptCreativeRenderInspector,
     ImageInspector,
     MaterialIdentityQualityEvaluator,
+    OpenAIPromptCreativeRenderInspector,
     RingQualityEvaluator,
 )
 from facetta.image_agent.mounting_quality import MountingViewQualityEvaluator
@@ -75,6 +78,7 @@ __all__ = [
     "GrokSkepticalEditInspector",
     "GrokSkepticalRenderInspector",
     "GrokPromptCreativeRenderInspector",
+    "OpenAIPromptCreativeRenderInspector",
     "ImageAgentError",
     "ImageAgentPlan",
     "ImageAgentResult",
@@ -90,6 +94,8 @@ __all__ = [
     "ImageRoute",
     "ImageRunStatus",
     "ImageRunSummary",
+    "NecklaceSymmetryAudit",
+    "NecklaceSymmetryPairAudit",
     "JewelryImageAgent",
     "MaterialIdentityQualityEvaluator",
     "MountingViewQualityEvaluator",

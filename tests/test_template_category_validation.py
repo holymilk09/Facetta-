@@ -16,6 +16,8 @@ EXPECTED_TEMPLATE_JEWELRY_TYPES = {
     "solitaire_prong": frozenset({"ring"}),
     "halo_prong": frozenset({"ring"}),
     "leaf_shoulder_prong": frozenset({"ring"}),
+    "three_stone_prong": frozenset({"ring"}),
+    "multi_stone_prong": frozenset({"ring"}),
     "love_bangle": frozenset({"bracelet"}),
     "cuff": frozenset({"bracelet"}),
     "link_bracelet": frozenset({"bracelet"}),

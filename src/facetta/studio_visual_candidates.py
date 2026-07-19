@@ -66,6 +66,7 @@ class StudioVisualCandidate:
     created_by: str
     expires_at: datetime
     studio_job_id: str | None = None
+    continuation_prompt_id: str | None = None
 
 
 def _utc(value: datetime) -> datetime:
@@ -91,6 +92,7 @@ def _candidate(record: PreviewCandidateRecord) -> StudioVisualCandidate:
         created_by=record.owner,
         expires_at=_utc(record.expires_at),
         studio_job_id=record.studio_job_id,
+        continuation_prompt_id=record.continuation_prompt_id,
     )
 
 
@@ -485,6 +487,7 @@ def store_studio_visual_candidate(
     qa: JsonObject,
     created_by: str,
     studio_job_id: str | None = None,
+    continuation_prompt_id: str | None = None,
 ) -> StudioVisualCandidate:
     if not reviewable_candidate_qa(verdict, qa):
         raise StudioVisualCandidateUnavailable(
@@ -525,11 +528,13 @@ def store_studio_visual_candidate(
         kind="studio_visual",
         status="reviewing",
         studio_job_id=studio_job_id,
+        continuation_prompt_id=continuation_prompt_id,
         payload={
             "verdict": verdict,
             "requested_change": requested_change,
             "scope": scope,
             "qa": qa,
+            "continuation_prompt_id": continuation_prompt_id,
         },
         created_at=now,
         expires_at=now + timedelta(seconds=_TTL_SECONDS),

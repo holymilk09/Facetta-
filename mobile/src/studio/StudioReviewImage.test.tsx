@@ -35,6 +35,9 @@ test('opens an authenticated full-detail inspector with explicit jewelry zoom co
     headers: { Authorization: 'Bearer runtime-token' },
   });
 
+  fireEvent.press(compact);
+  expect(screen.queryByText('DETAIL INSPECTION')).toBeNull();
+
   await act(async () => {
     fireEvent.press(screen.getByLabelText(
       'Inspect Temporary refinement candidate in detail',

@@ -33,6 +33,7 @@ import type {
   StudioJobRecord,
   StudioMarkupResumeCandidate,
   StudioFactPath,
+  WorkspaceCollection,
 } from '../trusted/types';
 import { getStudioAction } from './actions';
 import {
@@ -48,6 +49,7 @@ export type StudioGatewayErrorCategory =
   | 'validation'
   | 'conflict'
   | 'quality'
+  | 'provider'
   | 'unavailable'
   | 'invalid_response';
 
@@ -112,6 +114,67 @@ export interface StudioDesignConfirmationReview {
   };
 }
 
+const settingQuestionChoices = [
+  {
+    value: '4_prong_basket',
+    label: '4-prong basket',
+    patterns: [
+      /\b4_prong_basket\b/i,
+      /\b4[-\s]?prong(?:ed|s)?\b/i,
+      /\bfour[-\s]?prong(?:ed|s)?\b/i,
+    ],
+  },
+  {
+    value: '6_prong_basket',
+    label: '6-prong basket',
+    patterns: [
+      /\b6_prong_basket\b/i,
+      /\b6[-\s]?prong(?:ed|s)?\b/i,
+      /\bsix[-\s]?prong(?:ed|s)?\b/i,
+    ],
+  },
+  {
+    value: 'semi_bezel',
+    label: 'semi-bezel',
+    patterns: [/\bsemi[-\s]?bezel\b/i],
+  },
+  {
+    value: 'bezel',
+    label: 'bezel',
+    patterns: [/\bfull[-\s]?bezel\b/i, /\bbezel setting\b/i, /\bas bezel\b/i],
+  },
+] as const;
+
+/**
+ * Keep deferred source-review copy synchronized with a controlled Starting
+ * Facts correction. The original question is useful evidence only while it
+ * describes the fact currently being reviewed; carrying "6-prong" beside a
+ * designer-selected 4-prong setting would make the review and saved audit
+ * contradict themselves.
+ */
+export function reconcileStartingFactQuestions(
+  questions: readonly string[],
+  path: StudioFactPath,
+  nextValue: string | number,
+): readonly string[] {
+  if (path !== 'setting.style' || typeof nextValue !== 'string') return questions;
+  const selected = settingQuestionChoices.find((choice) => choice.value === nextValue);
+  const selectedLabel = selected?.label
+    ?? (nextValue === 'bezel' ? 'bezel' : nextValue.replaceAll('_', ' '));
+  const replacement = `Review the selected setting as ${selectedLabel} against the visual.`;
+  let replaced = false;
+  const synchronized = questions.map((question) => {
+    const namesAnotherSetting = settingQuestionChoices.some((choice) => (
+      choice.value !== nextValue
+      && choice.patterns.some((pattern) => pattern.test(question))
+    ));
+    if (!namesAnotherSetting) return question;
+    replaced = true;
+    return replacement;
+  });
+  return replaced ? [...new Set(synchronized)] : questions;
+}
+
 export interface StudioDesignConfirmationAudit {
   auditId: string;
   status: 'pass' | 'fail';
@@ -151,6 +214,10 @@ export function createStudioDesignConfirmationGateway(
 export type StudioVisualPreviewRequest = StudioVisualLineage & {
   createdBy: string;
   instruction: string;
+  /** Raw designer words; never includes internal freeze/preservation suffixes. */
+  rawUserInstruction?: string;
+  inputMode?: NonNullable<CreateVisualPreviewRequest['input_mode']>;
+  annotations?: CreateVisualPreviewRequest['annotations'];
   variant?: number;
 } & (
   | { scope: 'appearance'; maskBase64?: never; markupAssetId?: never }
@@ -162,6 +229,7 @@ export interface StudioVisualPreview {
   candidate: PreviewCandidate;
   lineage: StudioVisualLineage;
   instruction: string;
+  annotations?: NonNullable<CreateVisualPreviewRequest['annotations']>;
   scope: CreateVisualPreviewRequest['scope'];
 }
 
@@ -178,6 +246,7 @@ export interface StudioMarkupPreview {
   candidate: PreviewCandidate;
   lineage: ExactStudioLineage;
   annotation: MarkupApplyRequest['annotation'];
+  annotations: MarkupApplyRequest['annotation'][];
 }
 
 export interface StudioResumedRefinePreview {
@@ -220,6 +289,7 @@ export interface StudioCatalogPreviewRequest extends ExactStudioLineage {
 export interface StudioMarkupPreviewRequest extends ExactStudioLineage {
   createdBy: string;
   annotation: MarkupApplyRequest['annotation'];
+  annotations?: MarkupApplyRequest['annotation'][];
   markupAssetId?: string | null;
   variant?: number;
 }
@@ -336,6 +406,17 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'reviseStudioFacts'
   | 'getDesignFamily'
   | 'listDesignFamilies'
+  | 'favoriteDesignFamily'
+  | 'unfavoriteDesignFamily'
+  | 'updateDesignFamilyTags'
+  | 'listWorkspaceCollections'
+  | 'listWorkspaceCollectionMemberships'
+  | 'createWorkspaceCollection'
+  | 'updateWorkspaceCollection'
+  | 'deleteWorkspaceCollection'
+  | 'listDesignFamilyCollections'
+  | 'addDesignFamilyToCollection'
+  | 'removeDesignFamilyFromCollection'
   | 'getStudioProjectHistory'
   | 'restoreStudioRevision'
   | 'assetImageUrl'
@@ -346,6 +427,7 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'cancelStudioJob'
   | 'createVisualPreview'
   | 'listVisualPreviews'
+  | 'getStudioContinuationPrompts'
   | 'acceptVisualPreview'
   | 'discardVisualPreview'
   | 'saveVisualPreviewAsVariation'
@@ -393,6 +475,8 @@ function mapError(error: ApiError): StudioGatewayError {
         ? 'conflict'
         : error.category === 'quality'
           ? 'quality'
+          : error.category === 'provider'
+            ? 'provider'
           : error.category === 'decode'
             ? 'invalid_response'
             : 'unavailable';
@@ -468,9 +552,25 @@ function qualityPreviewChecks(qa: ImageQualityReport): readonly PreviewCheck[] {
   return qa.checks.map((check) => ({
     id: check.key,
     label: check.label,
-    verdict: check.verdict === 'fail' ? 'reject' : check.verdict,
+    verdict: check.verdict === 'fail'
+      ? (check.severity === 'warning' ? 'warn' : 'reject')
+      : check.verdict,
+    severity: check.severity,
     detail: check.message || null,
   }));
+}
+
+/**
+ * Studio may explicitly save a warning candidate after comparison, but never
+ * a provider FAIL or a candidate containing a failed hard preservation check.
+ * Repeating the rule in the typed gateway prevents a malformed or stale wire
+ * payload from relying on the UI alone for charge-bearing acceptance.
+ */
+export function isStudioViewPreviewSaveable(preview: StudioViewPreview): boolean {
+  return preview.verdict !== 'fail'
+    && !preview.checks.some((check) => (
+      check.severity === 'hard' && check.verdict !== 'pass'
+    ));
 }
 
 function expiresAt(now: Date, seconds: number): string {
@@ -601,6 +701,21 @@ export function createStudioGateway(
         }
         correctedPaths.add(original.path);
         corrections.push({ path: original.path, value: fact.rawValue });
+      }
+    }
+    const settingCorrection = corrections.find(
+      (correction) => correction.path === 'setting.style',
+    );
+    if (settingCorrection !== undefined) {
+      const synchronizedQuestions = reconcileStartingFactQuestions(
+        review.unresolvedQuestions,
+        settingCorrection.path,
+        settingCorrection.value as string | number,
+      );
+      if (synchronizedQuestions !== review.unresolvedQuestions) {
+        issues.push(
+          'The setting review question no longer matches the corrected setting. Reload the selected visual before saving.',
+        );
       }
     }
     return { corrections, issues };
@@ -893,10 +1008,14 @@ export function createStudioGateway(
         || record.billing.charged_outputs !== 0) return null;
 
       const durableProject = await client.getProject(record.active_design_id);
+      const recoveredOutputCount = durableProject.error === null
+        ? creativeOutputCount(durableProject.data, requestedOutputs)
+        : 0;
       if (durableProject.error !== null
         || durableProject.data.root_id !== record.active_design_id
         || durableProject.data.owner !== job.owner
-        || creativeOutputCount(durableProject.data, requestedOutputs) !== requestedOutputs) {
+        || recoveredOutputCount < 1
+        || recoveredOutputCount > requestedOutputs) {
         return null;
       }
 
@@ -1018,6 +1137,12 @@ export function createStudioGateway(
       return mapResult(await client.getProject(...args));
     },
 
+    async getStudioContinuationPrompts(
+      ...args: Parameters<GatewayTrustedClient['getStudioContinuationPrompts']>
+    ) {
+      return mapResult(await client.getStudioContinuationPrompts(...args));
+    },
+
     async getComponentCatalog(
       ...args: Parameters<GatewayTrustedClient['getComponentCatalog']>
     ): Promise<StudioGatewayResult<ComponentCatalog>> {
@@ -1066,6 +1191,72 @@ export function createStudioGateway(
       ...args: Parameters<GatewayTrustedClient['listDesignFamilies']>
     ) {
       return mapResult(await client.listDesignFamilies(...args));
+    },
+
+    async favoriteDesignFamily(
+      ...args: Parameters<GatewayTrustedClient['favoriteDesignFamily']>
+    ) {
+      return mapResult(await client.favoriteDesignFamily(...args));
+    },
+
+    async unfavoriteDesignFamily(
+      ...args: Parameters<GatewayTrustedClient['unfavoriteDesignFamily']>
+    ) {
+      return mapResult(await client.unfavoriteDesignFamily(...args));
+    },
+
+    async updateDesignFamilyTags(
+      ...args: Parameters<GatewayTrustedClient['updateDesignFamilyTags']>
+    ) {
+      return mapResult(await client.updateDesignFamilyTags(...args));
+    },
+
+    async listWorkspaceCollections(
+      ...args: Parameters<GatewayTrustedClient['listWorkspaceCollections']>
+    ) {
+      return mapResult(await client.listWorkspaceCollections(...args));
+    },
+
+    async listWorkspaceCollectionMemberships(
+      ...args: Parameters<GatewayTrustedClient['listWorkspaceCollectionMemberships']>
+    ) {
+      return mapResult(await client.listWorkspaceCollectionMemberships(...args));
+    },
+
+    async createWorkspaceCollection(
+      ...args: Parameters<GatewayTrustedClient['createWorkspaceCollection']>
+    ): Promise<StudioGatewayResult<WorkspaceCollection>> {
+      return mapResult(await client.createWorkspaceCollection(...args));
+    },
+
+    async updateWorkspaceCollection(
+      ...args: Parameters<GatewayTrustedClient['updateWorkspaceCollection']>
+    ) {
+      return mapResult(await client.updateWorkspaceCollection(...args));
+    },
+
+    async deleteWorkspaceCollection(
+      ...args: Parameters<GatewayTrustedClient['deleteWorkspaceCollection']>
+    ) {
+      return mapResult(await client.deleteWorkspaceCollection(...args));
+    },
+
+    async listDesignFamilyCollections(
+      ...args: Parameters<GatewayTrustedClient['listDesignFamilyCollections']>
+    ) {
+      return mapResult(await client.listDesignFamilyCollections(...args));
+    },
+
+    async addDesignFamilyToCollection(
+      ...args: Parameters<GatewayTrustedClient['addDesignFamilyToCollection']>
+    ) {
+      return mapResult(await client.addDesignFamilyToCollection(...args));
+    },
+
+    async removeDesignFamilyFromCollection(
+      ...args: Parameters<GatewayTrustedClient['removeDesignFamilyFromCollection']>
+    ) {
+      return mapResult(await client.removeDesignFamilyFromCollection(...args));
     },
 
     async getStudioProjectHistory(
@@ -1676,6 +1867,7 @@ export function createStudioGateway(
         preview: {
           candidate, lineage,
           instruction: latest.requested_change,
+          annotations: [],
           scope: latest.scope,
         },
         studioJob,
@@ -1694,9 +1886,34 @@ export function createStudioGateway(
       request: StudioVisualPreviewRequest,
     ): Promise<StudioGatewayResult<StudioVisualPreview>> {
       const instruction = request.instruction.trim();
-      if (instruction.length === 0) return gatewayError(
+      const rawDesignerInstruction = request.rawUserInstruction?.trim();
+      const annotations = (request.annotations ?? []).map((annotation) => ({
+        region_description: annotation.region_description.trim(),
+        change_instruction: annotation.change_instruction.trim(),
+      }));
+      if (instruction.length === 0 && annotations.length === 0) return gatewayError(
         'VISUAL_INSTRUCTION_REQUIRED',
         'Describe the visual change before creating a preview.',
+        'validation', 422,
+      );
+      if (request.rawUserInstruction !== undefined && rawDesignerInstruction?.length === 0) {
+        return gatewayError(
+          'RAW_VISUAL_INSTRUCTION_REQUIRED',
+          'The designer instruction cannot be blank.',
+          'validation', 422,
+        );
+      }
+      if (annotations.some((annotation) => (
+        annotation.region_description.length === 0
+        || annotation.change_instruction.length === 0
+      ))) return gatewayError(
+        'VISUAL_ANNOTATION_INCOMPLETE',
+        'Each marked area needs both a location and a requested change.',
+        'validation', 422,
+      );
+      if (annotations.length > 0 && request.scope !== 'marked_region') return gatewayError(
+        'VISUAL_ANNOTATION_SCOPE_INVALID',
+        'Region-specific changes require marked areas on the active image.',
         'validation', 422,
       );
       if (
@@ -1721,6 +1938,10 @@ export function createStudioGateway(
             created_by: request.createdBy,
             expected_active_asset_id: request.sourceAssetId,
             instruction,
+            ...(rawDesignerInstruction === undefined
+              ? {} : { raw_user_instruction: rawDesignerInstruction }),
+            ...(request.inputMode === undefined ? {} : { input_mode: request.inputMode }),
+            ...(annotations.length === 0 ? {} : { annotations }),
             scope: 'appearance',
             ...(started.data === null ? {} : { studio_job_id: started.data.jobId }),
             ...(request.variant === undefined ? {} : { variant: request.variant }),
@@ -1730,6 +1951,10 @@ export function createStudioGateway(
             created_by: request.createdBy,
             expected_active_asset_id: request.sourceAssetId,
             instruction,
+            ...(rawDesignerInstruction === undefined
+              ? {} : { raw_user_instruction: rawDesignerInstruction }),
+            ...(request.inputMode === undefined ? {} : { input_mode: request.inputMode }),
+            ...(annotations.length === 0 ? {} : { annotations }),
             scope: 'marked_region',
             ...(started.data === null ? {} : { studio_job_id: started.data.jobId }),
             mask_base64: request.maskBase64,
@@ -1739,6 +1964,10 @@ export function createStudioGateway(
             created_by: request.createdBy,
             expected_active_asset_id: request.sourceAssetId,
             instruction,
+            ...(rawDesignerInstruction === undefined
+              ? {} : { raw_user_instruction: rawDesignerInstruction }),
+            ...(request.inputMode === undefined ? {} : { input_mode: request.inputMode }),
+            ...(annotations.length === 0 ? {} : { annotations }),
             scope: 'marked_region',
             ...(started.data === null ? {} : { studio_job_id: started.data.jobId }),
             markup_asset_id: request.markupAssetId,
@@ -1780,6 +2009,7 @@ export function createStudioGateway(
         candidate,
         lineage,
         instruction,
+        annotations,
         scope: request.scope,
       };
       visualCandidates.set(candidate.id, {
@@ -2183,6 +2413,8 @@ export function createStudioGateway(
     async previewMarkupRefine(
       request: StudioMarkupPreviewRequest,
     ): Promise<StudioGatewayResult<StudioMarkupPreview>> {
+      const annotations = request.annotations?.length
+        ? request.annotations : [request.annotation];
       const lineage = {
         projectId: request.projectId,
         sourceAssetId: request.sourceAssetId,
@@ -2195,6 +2427,7 @@ export function createStudioGateway(
         request.sourceAssetId,
         {
           annotation: request.annotation,
+          annotations,
           markup_asset_id: request.markupAssetId ?? null,
           expected_design_version: request.sourceDesignVersion,
           created_by: request.createdBy,
@@ -2270,6 +2503,7 @@ export function createStudioGateway(
           candidate,
           lineage,
           annotation: request.annotation,
+          annotations,
         },
         error: null,
         status: result.status,
@@ -2445,12 +2679,7 @@ export function createStudioGateway(
         view: result.data.view,
         lineage,
         verdict: result.data.quality_report.verdict,
-        checks: result.data.quality_report.checks.map((check) => ({
-          id: check.key,
-          label: check.label,
-          verdict: check.verdict === 'fail' ? 'reject' : check.verdict,
-          detail: check.message || null,
-        })),
+        checks: qualityPreviewChecks(result.data.quality_report),
       };
       viewCandidates.set(candidateId, {
         preview, status: 'pending_review', studioJob: started.data,
@@ -2486,12 +2715,7 @@ export function createStudioGateway(
         view: candidate.view,
         lineage,
         verdict: candidate.qa.verdict,
-        checks: candidate.qa.checks.map((check) => ({
-          id: check.key,
-          label: check.label,
-          verdict: check.verdict === 'fail' ? 'reject' : check.verdict,
-          detail: check.message || null,
-        })),
+        checks: qualityPreviewChecks(candidate.qa),
       };
       viewCandidates.set(candidate.candidate_id, {
         preview, status: 'pending_review', studioJob: job.data,
@@ -2509,9 +2733,9 @@ export function createStudioGateway(
       if (stored.status !== 'pending_review') return gatewayError(
         'VIEW_CANDIDATE_NOT_REVIEWABLE', 'This view preview already has a final decision.', 'conflict', 409,
       );
-      if (stored.preview.verdict === 'fail') return gatewayError(
+      if (!isStudioViewPreviewSaveable(stored.preview)) return gatewayError(
         'VIEW_QUALITY_REJECTED',
-        'This view failed fidelity checks and cannot be saved.',
+        'This view has a hard preservation failure and cannot be saved.',
         'quality',
         422,
       );

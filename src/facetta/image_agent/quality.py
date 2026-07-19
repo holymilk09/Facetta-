@@ -7,6 +7,11 @@ import io
 from collections.abc import Callable
 from typing import Protocol
 
+from facetta.config import env_value
+from facetta.creative_symmetry import (
+    JEWELRY_SYMMETRY_CONTRACT,
+    JEWELRY_SYMMETRY_REPAIR_CONTRACT,
+)
 from facetta.image_agent.contracts import (
     BlindCountInspection,
     ChainStyleEditInspection,
@@ -23,16 +28,51 @@ from facetta.image_agent.contracts import (
     RenderCrossInspection,
     RenderInspection,
 )
-from facetta.image_agent.drift import outside_mask_drift
+from facetta.image_agent.drift import (
+    inside_mask_effect,
+    inside_mask_region_effects,
+    outside_mask_drift,
+)
 from facetta.image_agent.localization import (
     center_stone_footprint_evidence,
     crop_chromatic_center_assembly,
 )
+from facetta.necklace_symmetry import evaluate_necklace_symmetry_audits
 from facetta.image_agent.vision import (
+    VisionProviderUnavailable,
     check_design_consistency,
+    openai_vision_json,
+    openai_vision_json_pair,
     vision_json,
     vision_json_pair,
 )
+
+
+def _qa_vision_json(system: str, image: bytes, user_text: str) -> dict:
+    """Keep Grok primary, retrying only provider-unavailable QA with OpenAI."""
+
+    try:
+        return vision_json(system, image, user_text)
+    except VisionProviderUnavailable:
+        if not env_value("OPENAI_API_KEY"):
+            raise
+        return openai_vision_json(system, image, user_text)
+
+
+def _qa_vision_json_pair(
+    system: str,
+    image_a: bytes,
+    image_b: bytes,
+    user_text: str,
+) -> dict:
+    """Keep Grok primary for pair QA with one narrow availability fallback."""
+
+    try:
+        return vision_json_pair(system, image_a, image_b, user_text)
+    except VisionProviderUnavailable:
+        if not env_value("OPENAI_API_KEY"):
+            raise
+        return openai_vision_json_pair(system, image_a, image_b, user_text)
 
 
 class ImageInspector(Protocol):
@@ -137,6 +177,9 @@ Return JSON only:
  "repeated_element_pattern_preserved": true|false|null,
  "stone_shape_and_cut_family_preserved": true|false|null,
  "requested_presentation_applied": true|false|null,
+ "symmetry_expectation_matches": true|false|null,
+ "symmetry_observations": ["specific left/right or radial evidence"],
+ "necklace_symmetry_audits": [{"expectation":"bilateral|explicit_asymmetry|source_asymmetry","centerline_anchor":"visible center element","complete_piece_assessable":true|false|null,"left_count":0,"right_count":0,"pair_audits":[{"position_from_center":1,"left_component":"specific element","right_component":"specific element","motif_order_matches":true|false|null,"orientation_matches":true|false|null,"spacing_matches":true|false|null,"scale_matches":true|false|null,"metal_treatment_matches":true|false|null,"pave_coverage_matches":true|false|null,"gemstone_treatment_matches":true|false|null,"connection_type_matches":true|false|null,"authorized_differences":[],"observation":"specific comparison"}],"unpaired_left":[],"unpaired_right":[],"unpaired_elements_authorized":false,"requested_asymmetry_preserved":null,"unrequested_differences_absent":true|false|null}],
  "text_or_branding_detected": true|false|null,
  "major_unintended_changes": ["specific visible difference"],
  "score": 0-100,
@@ -161,7 +204,28 @@ step-cut versus brilliant-style facet architecture when assessable. A polished
 material interpretation is allowed; a silent redesign is not. Do not claim
 pixels prove dimensions, carat, hidden geometry, manufacturability, or a factory
 specification. Use null only when the selected view truly cannot establish a
-fact, and identify the exact occlusion in notes."""
+fact, and identify the exact occlusion in notes.
+
+symmetry_expectation_matches means the candidate preserves the source's
+visible intentional symmetry or intentional asymmetry. Compare corresponding
+left/right shoulders, strands, links, motifs, stone treatments, metal/pave
+coverage, and repeated sequences. A mismatch is false unless the source or
+designer instruction explicitly authorizes that difference. Record the exact
+corresponding elements inspected in symmetry_observations.
+For a necklace, pendant, choker, collar, lariat, torque, or neckpiece, return
+exactly one necklace_symmetry_audits entry. Inventory both strands completely
+from the named centerline anchor outward. One pair_audits row is required for
+every corresponding position. A bilateral row must assess every match field;
+do not summarize several unlike links as one row. authorized_differences stays
+empty unless the designer explicitly requested that exact difference or the
+identity source visibly establishes it.
+
+text_or_branding_detected is an ABSOLUTE inspection of the SECOND candidate
+image only. Ignore labels, arrows, handwriting, captions, dimensions, logos,
+signatures, or watermarks that appear only in the FIRST source image. Removing
+source annotation or overlay text is permitted output hygiene and is not a
+jewelry design change. It is true only when non-jewelry text or branding is
+visible in the SECOND candidate; do not count a physical jewelry engraving."""
 
 
 _SKEPTICAL_CREATIVE_RENDER_AUDIT_SYSTEM = """\
@@ -185,6 +249,9 @@ Return JSON only:
  "repeated_element_pattern_preserved": true|false|null,
  "stone_shape_and_cut_family_preserved": true|false|null,
  "requested_presentation_applied": true|false|null,
+ "symmetry_expectation_matches": true|false|null,
+ "symmetry_observations": ["specific left/right or radial evidence"],
+ "necklace_symmetry_audits": [{"expectation":"bilateral|explicit_asymmetry|source_asymmetry","centerline_anchor":"visible center element","complete_piece_assessable":true|false|null,"left_count":0,"right_count":0,"pair_audits":[{"position_from_center":1,"left_component":"specific element","right_component":"specific element","motif_order_matches":true|false|null,"orientation_matches":true|false|null,"spacing_matches":true|false|null,"scale_matches":true|false|null,"metal_treatment_matches":true|false|null,"pave_coverage_matches":true|false|null,"gemstone_treatment_matches":true|false|null,"connection_type_matches":true|false|null,"authorized_differences":[],"observation":"specific comparison"}],"unpaired_left":[],"unpaired_right":[],"unpaired_elements_authorized":false,"requested_asymmetry_preserved":null,"unrequested_differences_absent":true|false|null}],
  "text_or_branding_detected": true|false|null,
  "major_unintended_changes": ["specific source-to-candidate difference"],
  "score": 0-100,
@@ -195,7 +262,169 @@ being simplified, step-cut facets becoming brilliant-style facets, altered
 shoulder transitions, missing gallery members, or rounded angular contours.
 Ignore only lighting, background, and legitimate material realism. Do not infer
 dimensions, hidden geometry, manufacturability, or source skill. Use null only
-for a fact genuinely occluded in the selected source view."""
+for a fact genuinely occluded in the selected source view.
+
+Audit corresponding left/right or radial components independently. Set
+symmetry_expectation_matches false for any unrequested mismatch in component
+count, motif order, orientation, spacing, scale, metal treatment, pave
+coverage, stone treatment, or connection type. Preserve intentional asymmetry
+that is visibly present in the source or explicitly named by the designer.
+Record the compared elements in symmetry_observations.
+For every necklace-family piece, also return exactly one structured
+necklace_symmetry_audits entry and inventory every corresponding position from
+the visible centerline outward. Assess every pair field independently. Never
+authorize a difference merely because the generated candidate contains it.
+
+text_or_branding_detected inspects the SECOND candidate image only. Ignore
+labels, arrows, handwriting, captions, dimension text, logos, signatures, or
+watermarks that appear only in the FIRST source. Their removal is permitted
+output hygiene, not jewelry drift. Return true only for non-jewelry text or
+branding visible in the SECOND candidate; do not count physical engraving."""
+
+
+_COMPARISON_VIEW_QA_CONTEXT = """\
+COMPARISON-ANGLE QA MODE: The FIRST image is the exact primary direction and
+the SECOND is deliberately rendered as a different camera view of that same
+physical design. A changed projection is authorized; a changed design is not.
+
+Do not compare raw 2D pixel coordinates or projected outlines. Perspective,
+foreshortening, apparent spacing, overlap, and visibility of side/gallery
+surfaces naturally change with camera rotation. Those projection effects alone
+must never make source_design_preserved, visible_components_preserved,
+local_geometry_preserved, repeated_element_pattern_preserved, or
+stone_shape_and_cut_family_preserved false. If camera occlusion prevents an
+exact comparison, return null for only that unassessable fact, not false.
+
+Instead establish same-design identity from view-invariant evidence. Inventory
+and compare the center stone outline/cut/color, the exact assessable center
+holding-claw count and arrangement, each left/right side-stone count and shape,
+repeated-element count/order, setting topology, band/shank construction and
+profile, material, and finish. Set the preservation fields true when those
+physical facts correspond despite the new projection. Keep them false for a
+real count mismatch; an added, missing, replaced, or relocated component; a
+changed stone outline/cut; a changed prong or setting; a split or ornamented
+band replacing a plain band; or any actual topology/design-form change.
+requested_presentation_applied is true only if the SECOND image supplies the
+prescribed three-quarter review angle while keeping the complete piece
+reviewable. Never relax identity, count, shape, setting, or topology checks."""
+
+
+_MARKED_REGION_EDIT_QA_CONTEXT = """\
+MARKED-REGION EDIT QA MODE: The designer explicitly authorized the numbered
+changes named in the request, each only inside its named marked region. Judge
+preservation relative to those requested changes, not against literal identity
+inside the authorized regions.
+
+Do not set source_design_preserved, visible_components_preserved,
+local_geometry_preserved, repeated_element_pattern_preserved, or
+stone_shape_and_cut_family_preserved false merely because the SECOND image
+applies an explicitly requested local color, surface, finish, contour, setting,
+or construction-detail change in the named region. For example, making named
+prongs finer is an authorized local contour change when the request says so.
+Set the relevant preservation field true when the requested local change is the
+only visible difference affecting that fact.
+
+Remain strict about everything not requested. A preservation field is false for
+any added, removed, replaced, or moved component; changed count, topology,
+order, spacing, stone shape, setting, or contour that was not explicitly named;
+or any unrelated redesign inside or outside the marked regions.
+requested_presentation_applied is true only when every numbered marked change is
+visibly applied. The deterministic mask check independently enforces that all
+pixels outside the combined authorized mask remain fixed. Never infer factory
+authority from this review-only visual candidate."""
+
+
+_DESCRIBED_VISUAL_EDIT_QA_CONTEXT = """\
+DESCRIBED VISUAL EDIT QA MODE: The designer explicitly authorized every visible
+change named in the request, and may have requested several changes together.
+Judge preservation relative to those named changes rather than requiring
+literal source identity for an attribute the designer asked to change.
+
+Do not set source_design_preserved, visible_components_preserved,
+local_geometry_preserved, repeated_element_pattern_preserved, or
+stone_shape_and_cut_family_preserved false merely because the SECOND image
+applies an explicitly requested change to color, material, surface, finish,
+stones, repeated motifs, visible contour, setting, or construction detail. Set
+the relevant preservation field true when the requested changes are the only
+visible differences affecting that fact. requested_presentation_applied is
+true only when every requested change is visibly applied.
+
+Remain strict about every unmentioned region and attribute. Any added, removed,
+replaced, moved, or redesigned element that the request did not name is drift.
+When a request names a bilateral or repeated class without limiting it to one
+side, require the change to be applied consistently to corresponding elements;
+an explicitly side-specific request may authorize only that named difference.
+Never infer specification, dimensional, manufacturing, or factory authority
+from this temporary review candidate."""
+
+
+_SYMMETRY_REPAIR_QA_CONTEXT = """\
+This is an EXPLICIT BILATERAL SYMMETRY REPAIR. The designer has identified the
+source's unmatched left/right treatment as the defect to correct. Do not fail a
+preservation field merely because the candidate fixes that explicitly named
+mismatch. Treat source_design_preserved, visible_components_preserved,
+local_geometry_preserved, and repeated_element_pattern_preserved as true when
+the only difference is the minimum corresponding left/right change needed to
+make the sequence match.
+
+Remain strict about the center element and every unmentioned detail. Set the
+relevant preservation field false for any unrelated change to component count,
+motif order, spacing, orientation, scale, metal or pave treatment, gemstone
+treatment, connection, camera, crop, background, or presentation. Set
+symmetry_expectation_matches true only after comparing corresponding elements
+from the centerline outward and confirming that each left/right pair now
+matches the designer's requested pattern."""
+
+
+_ROUGH_DRAWING_INTERPRETATION_QA_CONTEXT = """\
+ROUGH-DRAWING INTERPRETATION QA MODE: The FIRST image is a low-information
+designer sketch, not a finished design that can support literal local-geometry
+comparison. Judge whether the SECOND image is a useful professional
+interpretation of the sketch and written direction.
+
+Require one coherent, complete jewelry piece; the requested concept; the
+observable overall silhouette, center-element placement, side-element rhythm,
+and balance; expected symmetry unless asymmetry was explicitly requested or is
+clearly established by the sketch; and no text, logo, signature, watermark, or
+invented branding. Set source_design_preserved true when those observable
+high-level design signals are preserved, even when professional judgment was
+needed to resolve loose or missing lines.
+
+Do not require pixel matching, literal local contours, exact repeated-motif
+topology, prong counts, or stone cut/facet identity that the rough lines cannot
+establish. Polishing ambiguous geometry is not an unintended redesign. Do not
+infer dimensions, hidden construction, manufacturability, or factory authority.
+Photos and finished renders never use this relaxed contract."""
+
+
+def _is_rough_drawing_interpretation(plan: ImageAgentPlan) -> bool:
+    return "ROUGH DRAWING INTENT FALLBACK" in plan.intent
+
+
+def _creative_review_system(
+    system: str,
+    plan: ImageAgentPlan,
+) -> str:
+    """Add camera-aware semantics only to prescribed same-design comparisons."""
+
+    contexts: list[str] = []
+    if plan.intent.startswith("COMPARISON VIEW CONTRACT:"):
+        contexts.append(_COMPARISON_VIEW_QA_CONTEXT)
+    if plan.intent.startswith("PRE-SPEC DESCRIBED VISUAL REFINEMENT."):
+        contexts.append(_DESCRIBED_VISUAL_EDIT_QA_CONTEXT)
+    localization = plan.normalized_intent.get("localization")
+    if (
+        isinstance(localization, dict)
+        and localization.get("mode") == "designer_marked_pre_spec_region"
+    ):
+        contexts.append(_MARKED_REGION_EDIT_QA_CONTEXT)
+    if JEWELRY_SYMMETRY_REPAIR_CONTRACT in plan.intent:
+        contexts.append(_SYMMETRY_REPAIR_QA_CONTEXT)
+    if _is_rough_drawing_interpretation(plan):
+        contexts.append(_ROUGH_DRAWING_INTERPRETATION_QA_CONTEXT)
+    if not contexts:
+        return system
+    return system + "\n\n" + "\n\n".join(contexts)
 
 
 _PROMPT_CREATIVE_RENDER_QA_SYSTEM = """\
@@ -206,11 +435,15 @@ fine-jewelry piece.
 
 Return JSON only:
 {"coherent_jewelry_render": true|false|null,
+ "complete_piece_visible": true|false|null,
  "source_design_preserved": null,
  "visible_components_preserved": null,
  "requested_presentation_applied": true|false|null,
  "explicit_counts_match": true|false,
  "explicit_stone_facts_match": true|false,
+ "symmetry_expectation_matches": true|false|null,
+ "symmetry_observations": ["specific left/right or radial evidence"],
+ "necklace_symmetry_audits": [{"expectation":"bilateral|explicit_asymmetry|source_asymmetry","centerline_anchor":"visible center element","complete_piece_assessable":true|false|null,"left_count":0,"right_count":0,"pair_audits":[{"position_from_center":1,"left_component":"specific element","right_component":"specific element","motif_order_matches":true|false|null,"orientation_matches":true|false|null,"spacing_matches":true|false|null,"scale_matches":true|false|null,"metal_treatment_matches":true|false|null,"pave_coverage_matches":true|false|null,"gemstone_treatment_matches":true|false|null,"connection_type_matches":true|false|null,"authorized_differences":[],"observation":"specific comparison"}],"unpaired_left":[],"unpaired_right":[],"unpaired_elements_authorized":false,"requested_asymmetry_preserved":null,"unrequested_differences_absent":true|false|null}],
  "text_or_branding_detected": true|false|null,
  "major_unintended_changes": ["specific contradiction of the direction"],
  "score": 0-100,
@@ -235,6 +468,24 @@ and compare its species, visible color, cut/outline shape, and role. It is false
 if a requested round-diamond group contains leaf, marquise, pear, square, or
 another alternate shape, or if any other named stone fact is contradicted. Set
 it true when all named stone facts match or none were specified.
+
+Unless the designer direction explicitly requests asymmetry, conventional
+jewelry symmetry is mandatory. For necklaces and pendants compare the left and
+right sequence from the centerline outward, link by link, including count,
+motif order, orientation, spacing, scale, metal treatment, pave coverage,
+stone treatment, and connection type. For rings compare both shoulders and
+bilateral halo/side-stone patterns. For earring pairs compare construction; for
+bracelets and radial designs compare the repeated sequence around the piece.
+Set symmetry_expectation_matches false for any unrequested mismatch, including
+one corresponding element being full metal while the other is partly pave.
+Set it true when the expected symmetry is visibly consistent, when an explicit
+asymmetric direction is followed, or when symmetry genuinely does not apply.
+Use null only when the complete-piece view cannot establish the relationship,
+and record the exact evidence in symmetry_observations.
+For every necklace-family piece, return exactly one structured
+necklace_symmetry_audits entry. Inventory every corresponding element from the
+visible centerline outward and assess each match field; use an empty audit only
+when the complete piece is genuinely not assessable.
 Use null only when the candidate truly cannot establish a requested visual fact."""
 
 
@@ -465,14 +716,14 @@ class GrokVisionInspector:
             "Expected facts: " + json.dumps(plan.spec_facts, sort_keys=True)
         )
         if reference:
-            data = vision_json_pair(
+            data = _qa_vision_json_pair(
                 _RENDER_QA_WITH_REFERENCE_SYSTEM,
                 reference,
                 candidate,
                 ask,
             )
         else:
-            data = vision_json(_RENDER_QA_SYSTEM, candidate, ask)
+            data = _qa_vision_json(_RENDER_QA_SYSTEM, candidate, ask)
         return RenderInspection.model_validate(data)
 
     def inspect_edit(
@@ -504,7 +755,61 @@ class GrokVisionInspector:
                 sort_keys=True,
             )
         )
-        data = vision_json_pair(
+        data = _qa_vision_json_pair(
+            (_NECKLACE_CHAIN_EDIT_QA_SYSTEM
+             if plan.is_necklace_chain_style_edit else _EDIT_QA_SYSTEM),
+            reference,
+            candidate,
+            ask,
+        )
+        return EditInspection.model_validate(data)
+
+
+class OpenAIVisionInspector:
+    """OpenAI visual QA for renders and source-preserving image edits."""
+
+    def inspect_render(
+        self,
+        plan: ImageAgentPlan,
+        candidate: bytes,
+        *,
+        reference: bytes | None,
+    ) -> RenderInspection:
+        ask = (
+            f"Operation: {plan.operation.value}\n"
+            f"Intent: {plan.intent}\n"
+            "Expected facts: " + json.dumps(plan.spec_facts, sort_keys=True)
+        )
+        data = (
+            openai_vision_json_pair(
+                _RENDER_QA_WITH_REFERENCE_SYSTEM, reference, candidate, ask)
+            if reference
+            else openai_vision_json(_RENDER_QA_SYSTEM, candidate, ask)
+        )
+        return RenderInspection.model_validate(data)
+
+    def inspect_edit(
+        self,
+        plan: ImageAgentPlan,
+        reference: bytes,
+        candidate: bytes,
+    ) -> EditInspection:
+        ask = (
+            f"Operation: {plan.operation.value}\n"
+            f"Requested change: {plan.intent}\n"
+            f"Region: {plan.region_description or 'presentation only'}\n"
+            "Source facts: "
+            + json.dumps(plan.source_spec_facts or {}, sort_keys=True) + "\n"
+            "Validated result facts: "
+            + json.dumps(plan.spec_facts, sort_keys=True) + "\n"
+            "Exact spec delta: "
+            + json.dumps(
+                plan.normalized_intent.get("spec_delta", []), sort_keys=True)
+            + "\nFrozen facts: " + json.dumps(list(plan.frozen)) + "\n"
+            "REQUIRED EDIT DOMAINS: "
+            + json.dumps([domain.value for domain in plan.edit_domains])
+        )
+        data = openai_vision_json_pair(
             (_NECKLACE_CHAIN_EDIT_QA_SYSTEM
              if plan.is_necklace_chain_style_edit else _EDIT_QA_SYSTEM),
             reference,
@@ -528,8 +833,30 @@ class GrokCreativeRenderInspector:
             "Frozen source facts: " + json.dumps(list(plan.frozen)) + "\n"
             f"Expected output: {plan.expected_output}"
         )
-        return CreativeRenderInspection.model_validate(vision_json_pair(
-            _CREATIVE_RENDER_QA_SYSTEM,
+        return CreativeRenderInspection.model_validate(_qa_vision_json_pair(
+            _creative_review_system(_CREATIVE_RENDER_QA_SYSTEM, plan),
+            reference,
+            candidate,
+            ask,
+        ))
+
+
+class OpenAICreativeRenderInspector:
+    """OpenAI source-fidelity review for pre-spec visual candidates."""
+
+    def inspect_render(
+        self,
+        plan: ImageAgentPlan,
+        reference: bytes,
+        candidate: bytes,
+    ) -> CreativeRenderInspection:
+        ask = (
+            f"Designer direction: {plan.intent}\n"
+            "Frozen source facts: " + json.dumps(list(plan.frozen)) + "\n"
+            f"Expected output: {plan.expected_output}"
+        )
+        return CreativeRenderInspection.model_validate(openai_vision_json_pair(
+            _creative_review_system(_CREATIVE_RENDER_QA_SYSTEM, plan),
             reference,
             candidate,
             ask,
@@ -550,8 +877,32 @@ class GrokSkepticalCreativeRenderInspector:
             f"Selected source region: {plan.region_description or 'full source'}\n"
             "Frozen source facts: " + json.dumps(list(plan.frozen))
         )
-        return CreativeRenderInspection.model_validate(vision_json_pair(
-            _SKEPTICAL_CREATIVE_RENDER_AUDIT_SYSTEM,
+        return CreativeRenderInspection.model_validate(_qa_vision_json_pair(
+            _creative_review_system(
+                _SKEPTICAL_CREATIVE_RENDER_AUDIT_SYSTEM, plan),
+            reference,
+            candidate,
+            ask,
+        ))
+
+
+class OpenAISkepticalCreativeRenderInspector:
+    """Second OpenAI pass that holds attractive but drifting references."""
+
+    def inspect_render(
+        self,
+        plan: ImageAgentPlan,
+        reference: bytes,
+        candidate: bytes,
+    ) -> CreativeRenderInspection:
+        ask = (
+            f"Designer direction: {plan.intent}\n"
+            f"Selected source region: {plan.region_description or 'full source'}\n"
+            "Frozen source facts: " + json.dumps(list(plan.frozen))
+        )
+        return CreativeRenderInspection.model_validate(openai_vision_json_pair(
+            _creative_review_system(
+                _SKEPTICAL_CREATIVE_RENDER_AUDIT_SYSTEM, plan),
             reference,
             candidate,
             ask,
@@ -569,6 +920,7 @@ _CREATIVE_MATCH_FIELDS = (
     "requested_presentation_applied",
     "explicit_counts_match",
     "explicit_stone_facts_match",
+    "symmetry_expectation_matches",
 )
 
 
@@ -604,6 +956,14 @@ def _merge_creative_inspections(
         *primary.major_unintended_changes,
         *skeptical.major_unintended_changes,
     )))
+    update["symmetry_observations"] = tuple(dict.fromkeys((
+        *primary.symmetry_observations,
+        *skeptical.symmetry_observations,
+    )))
+    update["necklace_symmetry_audits"] = (
+        *primary.necklace_symmetry_audits,
+        *skeptical.necklace_symmetry_audits,
+    )
     update["notes"] = (
         *(f"primary audit: {note}" for note in primary.notes),
         *(f"skeptical audit: {note}" for note in skeptical.notes),
@@ -624,11 +984,42 @@ class GrokPromptCreativeRenderInspector:
             "Frozen facts: " + json.dumps(list(plan.frozen)) + "\n"
             f"Expected output: {plan.expected_output}"
         )
-        return CreativeRenderInspection.model_validate(vision_json(
+        return CreativeRenderInspection.model_validate(_qa_vision_json(
             _PROMPT_CREATIVE_RENDER_QA_SYSTEM,
             candidate,
             ask,
         ))
+
+
+class OpenAIPromptCreativeRenderInspector:
+    """OpenAI vision QA fallback for category-neutral prompt concepts."""
+
+    def inspect_render(
+        self,
+        plan: ImageAgentPlan,
+        candidate: bytes,
+    ) -> CreativeRenderInspection:
+        ask = (
+            f"Designer direction: {plan.intent}\n"
+            "Frozen facts: " + json.dumps(list(plan.frozen)) + "\n"
+            f"Expected output: {plan.expected_output}"
+        )
+        return CreativeRenderInspection.model_validate(openai_vision_json(
+            _PROMPT_CREATIVE_RENDER_QA_SYSTEM,
+            candidate,
+            ask,
+        ))
+
+
+def _default_prompt_creative_inspector() -> PromptCreativeRenderInspector:
+    """Choose a configured fail-closed vision reviewer for prompt concepts."""
+    if env_value("XAI_KEY"):
+        return GrokPromptCreativeRenderInspector()
+    if env_value("OPENAI_API_KEY"):
+        return OpenAIPromptCreativeRenderInspector()
+    # Preserve the established missing-credential failure when neither
+    # reviewer is configured; candidates must never bypass QA silently.
+    return GrokPromptCreativeRenderInspector()
 
 
 class GrokSkepticalEditInspector:
@@ -659,7 +1050,39 @@ class GrokSkepticalEditInspector:
                 sort_keys=True,
             )
         )
-        data = vision_json_pair(
+        data = _qa_vision_json_pair(
+            (_SKEPTICAL_NECKLACE_CHAIN_EDIT_AUDIT_SYSTEM
+             if plan.is_necklace_chain_style_edit
+             else _SKEPTICAL_EDIT_AUDIT_SYSTEM),
+            reference,
+            candidate,
+            ask,
+        )
+        return EditCrossInspection.model_validate(data)
+
+
+class OpenAISkepticalEditInspector:
+    """Independent OpenAI audit that vetoes edits with outside-region drift."""
+
+    def inspect_edit(
+        self,
+        plan: ImageAgentPlan,
+        reference: bytes,
+        candidate: bytes,
+    ) -> EditCrossInspection:
+        ask = (
+            f"Authorized instruction: {plan.intent}\n"
+            f"Authorized region: {plan.region_description or 'none'}\n"
+            "Source facts: "
+            + json.dumps(plan.source_spec_facts or {}, sort_keys=True)
+            + "\nEXACT AUTHORIZED DELTA: "
+            + json.dumps(
+                plan.normalized_intent.get("spec_delta", []), sort_keys=True)
+            + "\nFROZEN FACTS: " + json.dumps(list(plan.frozen))
+            + "\nREQUIRED EDIT DOMAINS: "
+            + json.dumps([domain.value for domain in plan.edit_domains])
+        )
+        data = openai_vision_json_pair(
             (_SKEPTICAL_NECKLACE_CHAIN_EDIT_AUDIT_SYSTEM
              if plan.is_necklace_chain_style_edit
              else _SKEPTICAL_EDIT_AUDIT_SYSTEM),
@@ -687,7 +1110,7 @@ class GrokSkepticalRenderInspector:
             + json.dumps(plan.spec_facts.get("side_stones", []), sort_keys=True)
             + "\nFROZEN FACTS: " + json.dumps(list(plan.frozen))
         )
-        data = vision_json(
+        data = _qa_vision_json(
             _SKEPTICAL_RENDER_AUDIT_SYSTEM,
             candidate,
             ask,
@@ -697,7 +1120,7 @@ class GrokSkepticalRenderInspector:
         blind_candidate = (
             focused.image_bytes if focused is not None else candidate)
         try:
-            blind_data = vision_json(
+            blind_data = _qa_vision_json(
                 _BLIND_COMPONENT_COUNT_SYSTEM,
                 blind_candidate,
                 "Count only what is visibly present in this image. This may be "
@@ -1213,12 +1636,24 @@ class RingQualityEvaluator:
                  require_creative_cross_inspection: bool | None = None,
                  prompt_creative_inspector: PromptCreativeRenderInspector | None = None) -> None:
         primary_is_default = inspector is None
-        self.inspector = inspector or GrokVisionInspector()
+        if inspector is not None:
+            self.inspector = inspector
+        elif env_value("XAI_KEY"):
+            self.inspector = GrokVisionInspector()
+        elif env_value("OPENAI_API_KEY"):
+            self.inspector = OpenAIVisionInspector()
+        else:
+            # Fail closed through the established missing-credential error.
+            self.inspector = GrokVisionInspector()
         if require_cross_inspection is None:
             require_cross_inspection = primary_is_default
         self._edit_cross_inspector = edit_cross_inspector
         if self._edit_cross_inspector is None and require_cross_inspection:
-            self._edit_cross_inspector = GrokSkepticalEditInspector()
+            self._edit_cross_inspector = (
+                GrokSkepticalEditInspector()
+                if env_value("XAI_KEY") or not env_value("OPENAI_API_KEY")
+                else OpenAISkepticalEditInspector()
+            )
         if require_render_cross_inspection is None:
             require_render_cross_inspection = primary_is_default
         self._render_cross_inspector = render_cross_inspector
@@ -1227,17 +1662,26 @@ class RingQualityEvaluator:
             self._render_cross_inspector = GrokSkepticalRenderInspector()
         self._drift_measure = drift_measure
         creative_primary_is_default = creative_inspector is None
-        self._creative_inspector = (
-            creative_inspector or GrokCreativeRenderInspector())
+        if creative_inspector is not None:
+            self._creative_inspector = creative_inspector
+        elif env_value("XAI_KEY"):
+            self._creative_inspector = GrokCreativeRenderInspector()
+        elif env_value("OPENAI_API_KEY"):
+            self._creative_inspector = OpenAICreativeRenderInspector()
+        else:
+            self._creative_inspector = GrokCreativeRenderInspector()
         if require_creative_cross_inspection is None:
             require_creative_cross_inspection = creative_primary_is_default
         self._creative_cross_inspector = creative_cross_inspector
         if (self._creative_cross_inspector is None
                 and require_creative_cross_inspection):
             self._creative_cross_inspector = (
-                GrokSkepticalCreativeRenderInspector())
+                GrokSkepticalCreativeRenderInspector()
+                if env_value("XAI_KEY") or not env_value("OPENAI_API_KEY")
+                else OpenAISkepticalCreativeRenderInspector()
+            )
         self._prompt_creative_inspector = (
-            prompt_creative_inspector or GrokPromptCreativeRenderInspector())
+            prompt_creative_inspector or _default_prompt_creative_inspector())
 
     def evaluate_source_precondition(
         self,
@@ -1322,9 +1766,11 @@ class RingQualityEvaluator:
             inspection = self._prompt_creative_inspector.inspect_render(
                 plan, candidate)
             return self._creative_render_report(
+                plan,
                 inspection,
                 candidate=candidate,
                 source_image=None,
+                mask_bytes=None,
                 enforce_explicit_counts=True,
             )
         if plan.operation is ImageOperation.REFERENCE_RENDER:
@@ -1343,9 +1789,11 @@ class RingQualityEvaluator:
                 inspection = _merge_creative_inspections(
                     inspection, skeptical)
             return self._creative_render_report(
+                plan,
                 inspection,
                 candidate=candidate,
                 source_image=source_image,
+                mask_bytes=mask_bytes,
                 enforce_explicit_counts=False,
             )
         if plan.operation in {
@@ -1408,12 +1856,89 @@ class RingQualityEvaluator:
             mask_bytes=mask_bytes,
         )
 
-    @staticmethod
+    def _masked_change_checks(
+        self,
+        plan: ImageAgentPlan,
+        source_image: bytes,
+        candidate: bytes,
+        mask_bytes: bytes,
+    ) -> list[QualityCheck]:
+        effect = inside_mask_effect(source_image, candidate, mask_bytes)
+        visible = bool(
+            effect.get("checked") and effect.get("change_visible")
+        )
+        checks = [QualityCheck(
+            code="inside_mask_effect",
+            passed=visible,
+            severity=CheckSeverity.HARD,
+            message=(
+                "the authorized region contains a visible edit"
+                if visible else
+                "the masked candidate is unchanged, invalid, or too close "
+                "to the source to count as the requested edit"
+            ),
+            evidence=effect,
+        )]
+        localization = plan.normalized_intent.get("localization", {})
+        expected_region_count = (
+            localization.get("marked_region_count")
+            if isinstance(localization, dict) else None
+        )
+        region_effects = inside_mask_region_effects(
+            source_image,
+            candidate,
+            mask_bytes,
+            expected_region_count=(
+                expected_region_count
+                if isinstance(expected_region_count, int) else None
+            ),
+        )
+        every_region_changed = bool(
+            region_effects.get("checked")
+            and region_effects.get("every_region_changed")
+        )
+        checks.append(QualityCheck(
+            code="inside_each_mask_region_effect",
+            passed=every_region_changed,
+            severity=CheckSeverity.HARD,
+            message=(
+                "every designer-marked region contains a visible edit"
+                if every_region_changed else
+                "one or more designer-marked regions are missing, unchanged, "
+                "or too close to the source to prove every requested edit"
+            ),
+            evidence=region_effects,
+        ))
+        if self._drift_measure is not None:
+            drift = self._drift_measure(source_image, candidate, mask_bytes)
+        elif effect.get("checked"):
+            drift = outside_mask_drift(source_image, candidate, mask_bytes)
+        else:
+            return checks
+        checks.append(QualityCheck(
+            code="outside_mask_drift",
+            passed=drift <= plan.drift_threshold,
+            severity=CheckSeverity.HARD,
+            message=(
+                "outside-mask drift is within the calibrated threshold"
+                if drift <= plan.drift_threshold else
+                "outside-mask drift exceeds the calibrated threshold"
+            ),
+            evidence={
+                "drift": round(float(drift), 6),
+                "threshold": plan.drift_threshold,
+            },
+        ))
+        return checks
+
     def _creative_render_report(
+        self,
+        plan: ImageAgentPlan,
         item: CreativeRenderInspection,
         *,
         candidate: bytes,
         source_image: bytes | None,
+        mask_bytes: bytes | None,
         enforce_explicit_counts: bool,
     ) -> ImageQualityReport:
         checks = [
@@ -1454,6 +1979,49 @@ class RingQualityEvaluator:
                 evidence={"factory_authoritative": False},
             ),
         ]
+        if JEWELRY_SYMMETRY_CONTRACT in plan.intent:
+            observed_symmetry = item.symmetry_expectation_matches
+            checks.insert(-2, QualityCheck(
+                code="jewelry_symmetry",
+                passed=observed_symmetry is True,
+                severity=CheckSeverity.HARD,
+                message=(
+                    "left/right or radial jewelry symmetry matches the design intent"
+                    if observed_symmetry is True else
+                    "candidate has unrequested or unverified left/right or radial "
+                    "design asymmetry"
+                ),
+                evidence={
+                    "observed": observed_symmetry,
+                    "observations": list(item.symmetry_observations),
+                    "default_symmetry_required": True,
+                    "identity_source_or_explicit_asymmetry_may_override": True,
+                },
+            ))
+            necklace_gate = evaluate_necklace_symmetry_audits(
+                plan.intent,
+                item.necklace_symmetry_audits,
+                source_present=source_image is not None,
+            )
+            if necklace_gate.applicable:
+                checks.insert(-2, QualityCheck(
+                    code="necklace_sequence_symmetry",
+                    passed=necklace_gate.passed,
+                    severity=CheckSeverity.HARD,
+                    message=(
+                        "center-outward necklace elements satisfy the structured "
+                        "symmetry contract"
+                        if necklace_gate.passed else
+                        "center-outward necklace symmetry evidence is missing, "
+                        "incomplete, or contradicts the design intent"
+                    ),
+                    evidence={
+                        "audit_count": necklace_gate.audit_count,
+                        "reasons": list(necklace_gate.reasons),
+                        "provider_free_deterministic_validation": True,
+                        "pixel_measurement_claimed": False,
+                    },
+                ))
         if enforce_explicit_counts:
             checks.insert(-2, _match_check(
                 "explicit_counts_match",
@@ -1467,39 +2035,98 @@ class RingQualityEvaluator:
                 "candidate contradicts an explicitly requested gemstone fact",
                 "explicit gemstone facts could not be visually confirmed",
             ))
+        masked_checks: list[QualityCheck] = []
+        if source_image is not None and mask_bytes is not None:
+            masked_checks = self._masked_change_checks(
+                plan,
+                source_image,
+                candidate,
+                mask_bytes,
+            )
         if source_image is not None:
-            checks[2:2] = [
-                _match_check(
-                    "source_design_preserved",
-                    item.source_design_preserved,
-                    "candidate materially changed the visible source design identity",
-                    "source-design preservation could not be visually confirmed",
-                ),
-                _match_check(
-                    "visible_components_preserved",
-                    item.visible_components_preserved,
-                    "candidate added, removed, replaced, or moved a visible component",
-                    "visible component preservation could not be confirmed",
-                ),
-                _match_check(
-                    "local_geometry_preserved",
-                    item.local_geometry_preserved,
-                    "candidate changed visible local contours, panels, supports, gallery, shoulders, or shank geometry",
-                    "local source geometry could not be fully confirmed",
-                ),
-                _match_check(
-                    "repeated_element_pattern_preserved",
-                    item.repeated_element_pattern_preserved,
-                    "candidate changed a visible repeated motif's count, shape, order, spacing, or element type",
-                    "repeated source-element topology could not be fully confirmed",
-                ),
-                _match_check(
-                    "stone_shape_and_cut_family_preserved",
-                    item.stone_shape_and_cut_family_preserved,
-                    "candidate changed a visible center or side stone shape/cut family",
-                    "source stone shape/cut preservation could not be fully confirmed",
-                ),
-            ]
+            localization = plan.normalized_intent.get("localization", {})
+            authorized_domains = (
+                localization.get("authorized_change_domains", [])
+                if isinstance(localization, dict) else []
+            )
+            bounded_marked_change = bool(
+                localization.get("mode") == "designer_marked_pre_spec_region"
+                if isinstance(localization, dict) else False
+            ) and bool(masked_checks) and all(
+                check.passed for check in masked_checks
+                if check.severity is CheckSeverity.HARD
+            ) and all(value is True for value in (
+                item.coherent_jewelry_render,
+                item.complete_piece_visible,
+                item.visible_components_preserved,
+                item.repeated_element_pattern_preserved,
+                item.stone_shape_and_cut_family_preserved,
+                item.requested_presentation_applied,
+            )) and not item.major_unintended_changes
+            source_design_preserved = item.source_design_preserved
+            local_geometry_preserved = item.local_geometry_preserved
+            if bounded_marked_change and "appearance" in authorized_domains:
+                source_design_preserved = True
+            if bounded_marked_change and "local_geometry" in authorized_domains:
+                local_geometry_preserved = True
+            source_design_check = _match_check(
+                "source_design_preserved",
+                source_design_preserved,
+                "candidate materially changed the visible source design identity",
+                "source-design preservation could not be visually confirmed",
+            )
+            if source_design_preserved is True and item.source_design_preserved is False:
+                source_design_check = source_design_check.model_copy(update={
+                    "evidence": {
+                        "vision_observed": False,
+                        "resolved_by": "bounded_marked_region_authorization",
+                        "authorized_change_domains": authorized_domains,
+                    },
+                })
+            local_geometry_check = _match_check(
+                "local_geometry_preserved",
+                local_geometry_preserved,
+                "candidate changed visible local contours, panels, supports, gallery, shoulders, or shank geometry",
+                "local source geometry could not be fully confirmed",
+            )
+            if local_geometry_preserved is True and item.local_geometry_preserved is False:
+                local_geometry_check = local_geometry_check.model_copy(update={
+                    "evidence": {
+                        "vision_observed": False,
+                        "resolved_by": "bounded_marked_region_authorization",
+                        "authorized_change_domains": authorized_domains,
+                    },
+                })
+            if _is_rough_drawing_interpretation(plan):
+                # A sparse sketch cannot support literal local-geometry, motif,
+                # or cut-family claims.  Keep the high-level design-identity
+                # gate plus coherence, complete-piece, presentation, symmetry,
+                # and branding gates above.
+                checks[2:2] = [source_design_check]
+            else:
+                checks[2:2] = [
+                    source_design_check,
+                    _match_check(
+                        "visible_components_preserved",
+                        item.visible_components_preserved,
+                        "candidate added, removed, replaced, or moved a visible component",
+                        "visible component preservation could not be confirmed",
+                    ),
+                    local_geometry_check,
+                    _match_check(
+                        "repeated_element_pattern_preserved",
+                        item.repeated_element_pattern_preserved,
+                        "candidate changed a visible repeated motif's count, shape, order, spacing, or element type",
+                        "repeated source-element topology could not be fully confirmed",
+                    ),
+                    _match_check(
+                        "stone_shape_and_cut_family_preserved",
+                        item.stone_shape_and_cut_family_preserved,
+                        "candidate changed a visible center or side stone shape/cut family",
+                        "source stone shape/cut preservation could not be fully confirmed",
+                    ),
+                ]
+            checks.extend(masked_checks)
         return _report(
             checks,
             score=item.score,
@@ -2002,20 +2629,11 @@ class RingQualityEvaluator:
                 ),
             ))
         if mask_bytes is not None:
-            if self._drift_measure is None:
-                drift = outside_mask_drift(
-                    source_image, candidate, mask_bytes)
-            else:
-                drift = self._drift_measure(source_image, candidate, mask_bytes)
-            checks.append(QualityCheck(
-                code="outside_mask_drift",
-                passed=drift <= plan.drift_threshold,
-                severity=CheckSeverity.HARD,
-                message=("outside-mask drift is within the calibrated threshold"
-                         if drift <= plan.drift_threshold else
-                         "outside-mask drift exceeds the calibrated threshold"),
-                evidence={"drift": round(float(drift), 6),
-                          "threshold": plan.drift_threshold},
+            checks.extend(self._masked_change_checks(
+                plan,
+                source_image,
+                candidate,
+                mask_bytes,
             ))
         cross_notes = (cross_inspection.notes
                        if cross_inspection is not None else ())

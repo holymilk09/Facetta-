@@ -9,6 +9,8 @@ visual source of truth.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import io
 import math
 import re
@@ -16,6 +18,7 @@ import warnings
 from typing import Annotated, Literal
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps, UnidentifiedImageError
+from PIL.PngImagePlugin import PngInfo
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -33,6 +36,7 @@ MAX_SOURCE_IMAGE_BYTES = 50_000_000
 MAX_SOURCE_IMAGE_DIMENSION = 8_192
 MAX_SOURCE_IMAGE_PIXELS = 20_000_000
 MAX_COMPOSITED_IMAGE_BYTES = 64_000_000
+MARKUP_AUTHORIZATION_MASK_KEY = "facetta_markup_authorization_mask_v1"
 
 _CONTROL_CHARACTERS = re.compile(r"[\x00-\x1f\x7f]")
 
@@ -66,6 +70,23 @@ class _MarkupAnnotationBase(_FrozenStrictModel):
         Field(strict=True, pattern=r"^#[0-9A-Fa-f]{6}$"),
     ]
     stroke_width: Annotated[float, Field(ge=0.001, le=0.1)]
+    instruction: Annotated[
+        str,
+        Field(strict=True, min_length=1, max_length=500),
+    ] | None = None
+
+    @field_validator("instruction")
+    @classmethod
+    def require_safe_trimmed_instruction(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if value != value.strip():
+            raise ValueError("annotation instruction must be trimmed")
+        if _CONTROL_CHARACTERS.search(value):
+            raise ValueError(
+                "annotation instruction cannot contain control characters"
+            )
+        return value
 
 
 class RectangleMarkupAnnotation(_MarkupAnnotationBase):
@@ -176,6 +197,8 @@ class MarkupSnapshot(_FrozenStrictModel):
         point_count = 0
         text_count = 0
         for annotation in self.annotations:
+            if annotation.instruction is not None:
+                text_count += len(annotation.instruction)
             if isinstance(annotation, FreehandMarkupAnnotation):
                 point_count += len(annotation.points)
             elif isinstance(annotation, TextMarkupAnnotation):
@@ -196,6 +219,10 @@ class MarkupSnapshot(_FrozenStrictModel):
 
 class MarkupSnapshotImageError(ValueError):
     """The immutable source could not be safely composited."""
+
+
+class MarkupAuthorizationMaskError(ValueError):
+    """Reserved semantic-mask metadata exists but is not trustworthy."""
 
 
 def _pixel_point(
@@ -279,6 +306,164 @@ def _default_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
         return ImageFont.load_default(size=size)
     except TypeError:  # pragma: no cover - compatibility with old Pillow
         return ImageFont.load_default()
+
+
+def _hotspot_radius(
+    stroke_width: int,
+    min_dimension: int,
+) -> int:
+    """Bound a point annotation to a useful local target neighborhood."""
+
+    return min(
+        64,
+        max(stroke_width * 2, max(6, round(min_dimension * 0.075))),
+    )
+
+
+def _draw_hotspot(
+    draw: ImageDraw.ImageDraw,
+    center: tuple[int, int],
+    radius: int,
+) -> None:
+    x, y = center
+    draw.ellipse(
+        (x - radius, y - radius, x + radius, y + radius),
+        fill=255,
+    )
+
+
+def _authorization_mask(
+    snapshot: MarkupSnapshot,
+    width: int,
+    height: int,
+) -> Image.Image:
+    """Rasterize vector intent, not the visible annotation ink."""
+
+    mask = Image.new("L", (width, height), 0)
+    draw = ImageDraw.Draw(mask)
+    min_dimension = min(width, height)
+    for annotation in snapshot.annotations:
+        stroke_width = _stroke_width(annotation.stroke_width, width, height)
+        if isinstance(annotation, (RectangleMarkupAnnotation, CircleMarkupAnnotation)):
+            box = _ellipse_box(
+                _pixel_point(annotation.start, width, height),
+                _pixel_point(annotation.end, width, height),
+            )
+            if isinstance(annotation, RectangleMarkupAnnotation):
+                draw.rectangle(box, fill=255)
+            else:
+                draw.ellipse(box, fill=255)
+        elif isinstance(annotation, ArrowMarkupAnnotation):
+            _draw_hotspot(
+                draw,
+                _pixel_point(annotation.end, width, height),
+                _hotspot_radius(stroke_width, min_dimension),
+            )
+        elif isinstance(annotation, FreehandMarkupAnnotation):
+            points = [
+                _pixel_point(point, width, height)
+                for point in annotation.points
+            ]
+            closure_distance = min(
+                64,
+                max(stroke_width * 2, round(min_dimension * 0.03)),
+            )
+            if (len(points) >= 3
+                    and math.dist(points[0], points[-1]) <= closure_distance):
+                draw.polygon(points, fill=255)
+            else:
+                _draw_freehand(
+                    draw,
+                    points,
+                    fill=255,
+                    width=stroke_width,
+                )
+        else:
+            _draw_hotspot(
+                draw,
+                _pixel_point(annotation.anchor, width, height),
+                _hotspot_radius(stroke_width, min_dimension),
+            )
+    return mask
+
+
+def _encode_authorization_mask(mask: Image.Image) -> str:
+    output = io.BytesIO()
+    mask.save(output, format="PNG", compress_level=9, optimize=False)
+    return base64.b64encode(output.getvalue()).decode("ascii")
+
+
+def embedded_markup_authorization_mask(
+    marked_bytes: bytes,
+    *,
+    expected_size: tuple[int, int],
+) -> bytes | None:
+    """Return a trusted-shape mask embedded by the schema-v1 compositor.
+
+    Raster uploads created before semantic masks have no metadata and return
+    ``None`` so callers can retain their historical pixel-difference fallback.
+    Malformed or wrong-size reserved metadata raises so callers can fail closed
+    without silently downgrading a vector snapshot to an ink-difference mask.
+    """
+
+    try:
+        with Image.open(io.BytesIO(marked_bytes)) as marked:
+            encoded = marked.info.get(MARKUP_AUTHORIZATION_MASK_KEY)
+        if encoded is None:
+            return None
+        if not isinstance(encoded, str) or not encoded:
+            raise MarkupAuthorizationMaskError(
+                "markup authorization mask metadata is malformed"
+            )
+        raw = base64.b64decode(encoded, validate=True)
+        with Image.open(io.BytesIO(raw)) as decoded:
+            if decoded.size != expected_size:
+                raise MarkupAuthorizationMaskError(
+                    "markup authorization mask dimensions do not match source"
+                )
+            normalized = decoded.convert("L")
+            if normalized.getbbox() is None:
+                raise MarkupAuthorizationMaskError(
+                    "markup authorization mask is empty"
+                )
+            output = io.BytesIO()
+            normalized.save(
+                output,
+                format="PNG",
+                compress_level=9,
+                optimize=False,
+            )
+            return output.getvalue()
+    except MarkupAuthorizationMaskError:
+        raise
+    except (binascii.Error, OSError, UnidentifiedImageError, ValueError) as exc:
+        raise MarkupAuthorizationMaskError(
+            "markup authorization mask metadata is malformed"
+        ) from exc
+
+
+def strip_markup_authorization_metadata(marked_bytes: bytes) -> bytes:
+    """Remove the reserved server-only mask key from an untrusted raster.
+
+    A raw ``marked_image_base64`` upload remains a valid legacy ink-difference
+    note, but it cannot impersonate a server-composited vector snapshot.
+    """
+
+    try:
+        with Image.open(io.BytesIO(marked_bytes)) as marked:
+            if MARKUP_AUTHORIZATION_MASK_KEY not in marked.info:
+                return marked_bytes
+            sanitized = marked.convert("RGBA")
+    except (OSError, UnidentifiedImageError, ValueError):
+        return marked_bytes
+    output = io.BytesIO()
+    sanitized.save(
+        output,
+        format="PNG",
+        compress_level=6,
+        optimize=False,
+    )
+    return output.getvalue()
 
 
 def _safe_source_image(source_bytes: bytes) -> Image.Image:
@@ -375,8 +560,21 @@ def composite_markup_snapshot(
                 stroke_fill=(255, 255, 255, 255),
             )
 
+    authorization_mask = _authorization_mask(snapshot, width, height)
+    metadata = PngInfo()
+    metadata.add_text(
+        MARKUP_AUTHORIZATION_MASK_KEY,
+        _encode_authorization_mask(authorization_mask),
+        zip=True,
+    )
     output = io.BytesIO()
-    canvas.save(output, format="PNG", compress_level=6, optimize=False)
+    canvas.save(
+        output,
+        format="PNG",
+        compress_level=6,
+        optimize=False,
+        pnginfo=metadata,
+    )
     marked = output.getvalue()
     if len(marked) > MAX_COMPOSITED_IMAGE_BYTES:
         raise MarkupSnapshotImageError(

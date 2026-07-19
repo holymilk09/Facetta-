@@ -7,13 +7,39 @@ import { File, Paths } from 'expo-file-system';
 import { Button, Notice } from '../components';
 import { radius, theme } from '../theme';
 import type {
-  ApprovalSummary, FactoryPackManifest, ProjectDetail,
+  ApprovalSummary, FactoryPackArtifact, FactoryPackManifest, ProjectDetail,
 } from '../trusted/types';
 import { getStudioAction } from './actions';
 import { designerErrorMessage } from './designerErrorMessage';
 import type { ExactStudioLineage, StudioGateway } from './gateway';
 
 const FACTORY_CREDITS = getStudioAction('factory').creditEstimate ?? 0;
+
+const shortSha256 = (value: string): string => (
+  value.length <= 12 ? value : `${value.slice(0, 12)}…`
+);
+
+export function factoryArtifactRole(
+  artifact: FactoryPackArtifact,
+  authority: FactoryPackManifest['authority'],
+): string {
+  if (authority.authoritative_fact_records.includes(artifact.name)) {
+    return 'Authoritative fact record';
+  }
+  if (authority.dimensional_diagram_only.includes(artifact.name)) {
+    return 'Dimensional diagram only';
+  }
+  if (authority.exchange_reference_only.includes(artifact.name)) {
+    return 'Drawing-exchange reference only';
+  }
+  if (authority.visual_reference_only.includes(artifact.name)) {
+    return 'Visual reference only';
+  }
+  if (authority.discussion_only.includes(artifact.name)) {
+    return 'Discussion only';
+  }
+  return artifact.authoritative ? 'Authoritative fact record' : 'Review reference only';
+}
 
 export type StudioFactoryApi = Pick<StudioGateway,
   'createStudioJob' | 'prepareFactoryPack'
@@ -134,7 +160,8 @@ export function StudioFactoryWorkspace({
   }, [lineage?.projectId, lineage?.sourceAssetId, lineage?.sourceDesignVersion]);
 
   const startChecklist = async (): Promise<void> => {
-    if (lineage === null || readinessBusy) return;
+    if (lineage === null || readinessBusy
+      || (project?.factory_blockers.length ?? 0) > 0) return;
     setReadinessBusy(true);
     setReadinessError(null);
     const result = await api.createChecklist(lineage.sourceAssetId, {
@@ -151,7 +178,8 @@ export function StudioFactoryWorkspace({
   };
 
   const approveFact = async (itemKey: string): Promise<void> => {
-    if (lineage === null || readinessBusy) return;
+    if (lineage === null || readinessBusy
+      || (project?.factory_blockers.length ?? 0) > 0) return;
     setReadinessBusy(true);
     setReadinessError(null);
     const result = await api.respondChecklist(lineage.sourceAssetId, {
@@ -260,7 +288,12 @@ export function StudioFactoryWorkspace({
               ))}
             </View>
           )}
-          {approval === null ? (
+          {blockers.length > 0 ? (
+            <Notice
+              kind="info"
+              text="Factory review is not available for this exact revision. Keep designing, presenting, and organizing it normally; its saved history remains unchanged."
+            />
+          ) : approval === null ? (
             <>
               <Text style={styles.body}>Create a checklist derived from this revision's exact specification. Each confirmation is recorded against this immutable revision.</Text>
               <Button
@@ -319,6 +352,24 @@ export function StudioFactoryWorkspace({
       ) : (
         <View style={styles.packCard}>
           <Text style={styles.packTitle}>Review material prepared</Text>
+          <View style={styles.provenanceCard}>
+            <Text style={styles.provenanceTitle}>Exact revision provenance</Text>
+            <Text style={styles.small}>
+              Design revision {pack.design_version} · source {pack.pinned_asset_id}
+            </Text>
+            <Text style={styles.small}>
+              Approved by {pack.approver} · checklist {pack.checklist_id}
+            </Text>
+            {pack.manifest_sha256 !== null && (
+              <Text style={styles.hashText}>
+                Pack SHA-256 {shortSha256(pack.manifest_sha256)}
+              </Text>
+            )}
+          </View>
+          <Notice
+            kind="info"
+            text="Factory review only. The file roles below identify confirmed fact records separately from diagrams and visual references; none is a production-ready claim."
+          />
           <Text style={styles.body}>
             {pack.factory_sheet_fact_plan.confirmed_fact_count} confirmed facts · {' '}
             {pack.factory_sheet_fact_plan.pending_confirmation_count} pending confirmations
@@ -331,18 +382,25 @@ export function StudioFactoryWorkspace({
             <View key={artifact.name} style={styles.artifactRow}>
               <View style={styles.artifactCopy}>
                 <Text style={styles.artifactName}>{artifact.name}</Text>
-                <Text style={styles.small}>{artifact.media_type}</Text>
+                <Text style={styles.artifactRole}>
+                  {factoryArtifactRole(artifact, pack.authority)}
+                </Text>
+                <Text style={styles.hashText}>
+                  {artifact.media_type} · SHA-256 {shortSha256(artifact.sha256)}
+                </Text>
               </View>
-              <Button
-                title={delivering === artifact.name ? 'Opening…' : `Open ${artifact.name}`}
-                kind="ghost"
-                disabled={delivering !== null}
-                onPress={() => { void deliver({
-                  url: artifact.url,
-                  name: artifact.name,
-                  mediaType: artifact.media_type,
-                }); }}
-              />
+              {artifact.url !== pack.bundle_url && (
+                <Button
+                  title={delivering === artifact.name ? 'Opening…' : `Open ${artifact.name}`}
+                  kind="ghost"
+                  disabled={delivering !== null}
+                  onPress={() => { void deliver({
+                    url: artifact.url,
+                    name: artifact.name,
+                    mediaType: artifact.media_type,
+                  }); }}
+                />
+              )}
             </View>
           ))}
           <Button
@@ -395,4 +453,11 @@ const styles = StyleSheet.create({
   },
   artifactCopy: { flex: 1, gap: 2 },
   artifactName: { color: theme.ink, fontWeight: '700' },
+  artifactRole: { color: theme.gold, fontSize: 12, lineHeight: 17, fontWeight: '800' },
+  hashText: { color: theme.faint, fontSize: 11, lineHeight: 16, fontFamily: 'monospace' },
+  provenanceCard: {
+    borderWidth: 1, borderColor: theme.line, borderRadius: radius.sm,
+    padding: 12, gap: 4, backgroundColor: theme.paper,
+  },
+  provenanceTitle: { color: theme.ink, fontSize: 13, fontWeight: '800' },
 });

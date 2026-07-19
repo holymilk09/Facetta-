@@ -1,5 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { Dimensions, Platform } from 'react-native';
 
 import { AuthenticatedImageProvider } from '../AuthenticatedImage';
 import { StudioRefineWorkspace } from './StudioRefineWorkspace';
@@ -98,6 +99,156 @@ function renderWithAuth(ui: React.ReactElement) {
 }
 
 describe('StudioRefineWorkspace', () => {
+  test('wide web keeps the selected design beside the editing tools', async () => {
+    const originalPlatform = Platform.OS;
+    const originalWindow = Dimensions.get('window');
+    const originalScreen = Dimensions.get('screen');
+    const originalFetch = global.fetch;
+    const originalCreateObjectURL = URL.createObjectURL;
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: 'web' });
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      headers: { get: () => 'image/png' },
+      blob: async () => new Blob(['image']),
+    })) as unknown as typeof fetch;
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: jest.fn(() => 'blob:facetta-refine-test'),
+    });
+    Dimensions.set({
+      window: { ...originalWindow, width: 1440, height: 900 },
+      screen: { ...originalScreen, width: 1440, height: 900 },
+    });
+
+    try {
+      const previewVisualRefine = jest.fn(async () => ({
+        data: {
+          lineage: { projectId: 'project_1', sourceAssetId: 'creative_1' },
+          instruction: 'Match both sides', scope: 'appearance' as const,
+          annotations: [],
+          candidate: {
+            id: 'candidate_symmetry', jobId: 'run_symmetry', sourceRevisionId: 'creative_1',
+            assetUrl: 'https://test/symmetry.png', verdict: 'pass' as const,
+            status: 'pending_review' as const, checks: [], temporary: true,
+            expiresAt: null, decision: null, decidedAt: null, canonicalRevisionId: null,
+          },
+        }, error: null, status: 201,
+      }));
+      const saveVisualPreviewAsVariation = jest.fn(async () => ({
+        data: {
+          candidate: {
+            id: 'candidate_symmetry', jobId: 'run_symmetry', sourceRevisionId: 'creative_1',
+            assetUrl: 'https://test/symmetry.png', verdict: 'pass' as const,
+            status: 'saved_as_variation' as const, checks: [], temporary: true,
+            expiresAt: null, decision: 'save_as_variation' as const,
+            decidedAt: '2026-07-18T00:00:00Z', canonicalRevisionId: 'variation_asset_1',
+          },
+          project: preSpecProject,
+          familyId: 'project_1',
+          variationIndex: 2,
+        }, error: null, status: 201,
+      }));
+      const view = await renderWithAuth(
+        <StudioRefineWorkspace
+          api={{
+            getComponentCatalog: jest.fn(),
+            getStudioComponentTargeting: getReadyTargeting,
+            readMarkup: jest.fn(),
+          }}
+          gateway={{
+            previewVisualRefine, applyVisualRefine: jest.fn(), discardVisualRefine: jest.fn(),
+            saveVisualPreviewAsVariation,
+            previewCatalogRefine: jest.fn(), applyCatalogRefine: jest.fn(), discardCatalogRefine: jest.fn(),
+            previewMarkupRefine: jest.fn(), applyMarkupRefine: jest.fn(), discardMarkupRefine: jest.fn(),
+          }}
+          lineage={{ projectId: 'project_1', sourceAssetId: 'creative_1' }}
+          sourceImageUrl="https://test/source.png"
+          createdBy="designer"
+          onApplied={jest.fn()}
+        />,
+      );
+
+      expect(view.getByTestId('refine-web-canvas')).toBeTruthy();
+      expect(view.getByTestId('refine-web-tools')).toBeTruthy();
+      expect(view.getByTestId('studio-canvas-edit-panel')).toBeTruthy();
+      expect(view.getByLabelText('Inspect Selected design in detail')).toBeTruthy();
+      expect(view.getByLabelText('Mark up editing tool')).toBeTruthy();
+      expect(view.getByLabelText('Symmetry editing tool')).toBeTruthy();
+      expect(view.getByLabelText('Background editing tool')).toBeTruthy();
+      expect(view.getByLabelText('Angle editing tool')).toBeTruthy();
+      await fireEvent.press(view.getByLabelText('Symmetry editing tool'));
+      await fireEvent.press(view.getByText('Preview changes'));
+      await waitFor(() => expect(previewVisualRefine).toHaveBeenCalledWith({
+        projectId: 'project_1', sourceAssetId: 'creative_1', createdBy: 'designer',
+        scope: 'appearance',
+        rawUserInstruction: 'Make the corresponding left and right jewelry elements symmetrical.',
+        inputMode: 'symmetry',
+        instruction: expect.stringMatching(
+          /intentional bilateral symmetry repair[\s\S]*center element/i,
+        ),
+      }));
+      await fireEvent(view.getByLabelText('Selected source design'), 'load');
+      await fireEvent(view.getByLabelText('Temporary edited design preview'), 'load');
+      await fireEvent.press(view.getByText('Save as variation'));
+      expect(view.getByText(/selected source revision and its history stay unchanged/i)).toBeTruthy();
+      await fireEvent.changeText(view.getByPlaceholderText('e.g. Rose gold halo'), 'Matched necklace');
+      await fireEvent.press(view.getByText('Save named variation'));
+      expect(saveVisualPreviewAsVariation).toHaveBeenCalledWith({
+        candidateId: 'candidate_symmetry', createdBy: 'designer', label: 'Matched necklace',
+      });
+      await view.unmount();
+    } finally {
+      global.fetch = originalFetch;
+      Object.defineProperty(URL, 'createObjectURL', {
+        configurable: true,
+        value: originalCreateObjectURL,
+      });
+      Object.defineProperty(Platform, 'OS', { configurable: true, value: originalPlatform });
+      await act(async () => {
+        Dimensions.set({ window: originalWindow, screen: originalScreen });
+      });
+    }
+  });
+
+  test('keeps the selected jewelry visible and exposes the full annotation toolbar', async () => {
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{
+          getComponentCatalog: jest.fn(),
+          getStudioComponentTargeting: getReadyTargeting,
+          readMarkup: jest.fn(),
+        }}
+        gateway={{
+          previewVisualRefine: jest.fn(), applyVisualRefine: jest.fn(), discardVisualRefine: jest.fn(),
+          previewCatalogRefine: jest.fn(), applyCatalogRefine: jest.fn(), discardCatalogRefine: jest.fn(),
+          previewMarkupRefine: jest.fn(), applyMarkupRefine: jest.fn(), discardMarkupRefine: jest.fn(),
+        }}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'creative_1' }}
+        sourceImageUrl="https://test/source.png"
+        createdBy="designer"
+        onApplied={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Show Facetta what you want to change.')).toBeTruthy();
+    expect(screen.queryByText('Change one thing. Keep the rest.')).toBeNull();
+    expect(screen.getByTestId('refine-active-design')).toBeTruthy();
+    expect(screen.getByLabelText('Selected design being refined')).toBeTruthy();
+    expect(screen.getByText('Describe the changes')).toBeTruthy();
+
+    await fireEvent.press(screen.getByLabelText('Mark up refine mode'));
+
+    expect(screen.getByText('Mark the areas you want to edit')).toBeTruthy();
+    expect(screen.getByTestId('refine-annotation-canvas')).toBeTruthy();
+    expect(screen.getByLabelText('Text annotation tool').props.accessibilityState.selected).toBe(true);
+    expect(screen.getByLabelText('Circle annotation tool')).toBeTruthy();
+    expect(screen.getByLabelText('Rectangle annotation tool')).toBeTruthy();
+    expect(screen.getByLabelText('Freehand annotation tool')).toBeTruthy();
+    expect(screen.getByLabelText('Text annotation tool')).toBeTruthy();
+    expect(screen.getByText('Instructions for the marked areas')).toBeTruthy();
+    expect(screen.getByText(/add multiple marks/i)).toBeTruthy();
+  });
+
   test('fails closed when there is no exact immutable revision', async () => {
     await renderWithAuth(
       <StudioRefineWorkspace
@@ -204,7 +355,7 @@ describe('StudioRefineWorkspace', () => {
     await fireEvent.press(screen.getByLabelText('Component refine mode'));
     await waitFor(() => expect(screen.getByText('Rose gold')).toBeTruthy());
     expect(screen.getByText('Quick preview · 0 credits')).toBeTruthy();
-    await fireEvent.press(await screen.findByText('Preview change'));
+    await fireEvent.press(await screen.findByText('Preview changes'));
     expect(previewCatalogRefine).toHaveBeenCalledWith(expect.objectContaining({
       executionMode: 'instant',
     }));
@@ -244,7 +395,7 @@ describe('StudioRefineWorkspace', () => {
     await fireEvent.press(screen.getByText('Apply as new revision'));
     await waitFor(() => expect(onApplied).toHaveBeenCalledWith(appliedProject));
     expect(await screen.findByText('Saved as Revision 3.')).toBeTruthy();
-    expect(screen.getByText('Refine another change')).toBeTruthy();
+    expect(screen.getByText('Continue refining')).toBeTruthy();
     expect(screen.queryByText('Factory')).toBeNull();
     await fireEvent.press(screen.getByText('Library'));
     await fireEvent.press(screen.getByText('Client'));
@@ -337,7 +488,7 @@ describe('StudioRefineWorkspace', () => {
     await waitFor(() => expect(getComponentCatalog).toHaveBeenCalledWith('stone.cut'));
     expect(screen.getByText('1 requested output × 20 credits = estimated 20 credits')).toBeTruthy();
     await fireEvent.press(await screen.findByText('Emerald cut'));
-    await fireEvent.press(screen.getByText('Preview change'));
+    await fireEvent.press(screen.getByText('Preview changes'));
     await waitFor(() => expect(previewCatalogRefine).toHaveBeenCalledWith({
       projectId: 'project_1',
       sourceAssetId: 'asset_2',
@@ -370,6 +521,7 @@ describe('StudioRefineWorkspace', () => {
       data: {
         lineage: { projectId: 'project_1', sourceAssetId: 'creative_1' },
         instruction: 'Make the lighting warmer', scope: 'appearance' as const,
+        annotations: [],
         candidate: {
           id: 'candidate_visual', jobId: 'run_visual', sourceRevisionId: 'creative_1',
           assetUrl: 'https://test/preview.png', verdict: 'pass' as const,
@@ -413,21 +565,22 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByLabelText('Describe refine mode').props.accessibilityState).toEqual({
       selected: true,
     });
-    expect(screen.getByText('Unlock precise ring edits')).toBeTruthy();
-    expect(screen.getByText(/image-derived starting facts/i)).toBeTruthy();
-    expect(screen.getByText(/Technical views become available after those facts are recorded/)).toBeTruthy();
-    expect(screen.getByText(/you can keep refining or presenting without them/)).toBeTruthy();
-    await fireEvent.press(screen.getByText('Review starting design'));
-    expect(onReviewStartingDesign).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Unlock precise ring edits')).toBeNull();
+    expect(screen.queryByText(/image-derived starting facts/i)).toBeNull();
+    expect(screen.queryByText(/Technical views become available after those facts are recorded/)).toBeNull();
+    expect(screen.queryByText(/you can keep refining or presenting without them/)).toBeNull();
+    expect(screen.queryByText('Review starting design')).toBeNull();
+    expect(onReviewStartingDesign).not.toHaveBeenCalled();
     await fireEvent.changeText(
-      screen.getByPlaceholderText(/make the presentation softer/i),
+      screen.getByPlaceholderText(/make the center stone oval/i),
       'Make the lighting warmer',
     );
     await waitFor(() => expect(screen.getByDisplayValue('Make the lighting warmer')).toBeTruthy());
-    await fireEvent.press(screen.getByText('Preview change'));
+    await fireEvent.press(screen.getByText('Preview changes'));
     await waitFor(() => expect(previewVisualRefine).toHaveBeenCalledWith({
       projectId: 'project_1', sourceAssetId: 'creative_1', createdBy: 'designer',
       instruction: 'Make the lighting warmer', scope: 'appearance',
+      rawUserInstruction: 'Make the lighting warmer', inputMode: 'describe',
     }));
     expect(screen.getByLabelText('Exact source revision')).toBeTruthy();
     expect(screen.getByLabelText('Temporary refinement preview')).toBeTruthy();
@@ -436,9 +589,9 @@ describe('StudioRefineWorkspace', () => {
     await fireEvent.press(screen.getByText('Apply as new revision'));
     await waitFor(() => expect(onApplied).toHaveBeenCalledWith(preSpecProject));
     await waitFor(() => expect(
-      screen.getByPlaceholderText(/make the presentation softer/i).props.value,
+      screen.getByPlaceholderText(/make the center stone oval/i).props.value,
     ).toBe(''));
-    expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByText('Preview changes').parent?.props.accessibilityState.disabled).toBe(true);
     expect(preSpecProject.active_design_version).toBeNull();
   });
 
@@ -519,11 +672,11 @@ describe('StudioRefineWorkspace', () => {
     );
 
     await fireEvent.changeText(
-      screen.getByPlaceholderText(/make the presentation softer/i),
+      screen.getByPlaceholderText(/make the center stone oval/i),
       'Make the lighting warmer',
     );
     await waitFor(() => expect(screen.getByDisplayValue('Make the lighting warmer')).toBeTruthy());
-    await fireEvent.press(screen.getByText('Preview change'));
+    await fireEvent.press(screen.getByText('Preview changes'));
     expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
     await fireEvent(screen.getByLabelText('Exact source revision'), 'load');
     await fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
@@ -544,8 +697,8 @@ describe('StudioRefineWorkspace', () => {
       projectId: 'variation_visual', sourceAssetId: 'variation_visual',
     }));
     expect(await screen.findByText('Variation “Warm direction” is ready.')).toBeTruthy();
-    expect(screen.getByPlaceholderText(/make the presentation softer/i).props.value).toBe('');
-    expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByPlaceholderText(/make the center stone oval/i).props.value).toBe('');
+    expect(screen.getByText('Preview changes').parent?.props.accessibilityState.disabled).toBe(true);
     await rendered.rerender(
       workspace({ projectId: 'another_project', sourceAssetId: 'another_asset' }),
     );
@@ -554,7 +707,7 @@ describe('StudioRefineWorkspace', () => {
     });
   });
 
-  test('routes pre-spec annotation through exact saved markup provenance', async () => {
+  test('keeps two local text edits distinct from one global instruction', async () => {
     const annotationCandidate = {
       id: 'candidate_markup', jobId: 'run_markup', sourceRevisionId: 'creative_1',
       assetUrl: 'https://test/markup-preview.png', verdict: 'pass' as const,
@@ -565,15 +718,34 @@ describe('StudioRefineWorkspace', () => {
       data: {
         markup_asset_id: 'markup_exact', assistant_name: 'Facetta',
         design_id: null, expected_design_version: null,
-        interpretation: {
-          target_region: 'highlighted upper-left metal',
-          requested_change: 'Warm only this surface',
+        interpretations: [{
+          target_region: 'left side diamond',
+          requested_change: 'Make this diamond yellow',
           impact: 'visual_only' as const,
           target_spec_reference: null, target_section: null, target_index: null,
-          target_component_id: 'metal.upper-left',
+          target_component_id: 'stone.left', target_element_id: null,
+          frozen_elements: ['all jewelry geometry'], confidence: 0.98,
+          clarification_question: null,
+          understood_as: 'Make the left side diamond yellow.',
+        }, {
+          target_region: 'right side diamond',
+          requested_change: 'Make this diamond blue',
+          impact: 'visual_only' as const,
+          target_spec_reference: null, target_section: null, target_index: null,
+          target_component_id: 'stone.right', target_element_id: null,
+          frozen_elements: ['all jewelry geometry'], confidence: 0.97,
+          clarification_question: null,
+          understood_as: 'Make the right side diamond blue.',
+        }],
+        interpretation: {
+          target_region: 'left side diamond',
+          requested_change: 'Make this diamond yellow',
+          impact: 'visual_only' as const,
+          target_spec_reference: null, target_section: null, target_index: null,
+          target_component_id: 'stone.left',
           target_element_id: null, frozen_elements: ['all jewelry geometry'],
           confidence: 0.98, clarification_question: null,
-          understood_as: 'Warm only the highlighted surface; preserve geometry.',
+          understood_as: 'Make the left side diamond yellow.',
         },
       }, error: null, status: 200,
     }));
@@ -581,6 +753,7 @@ describe('StudioRefineWorkspace', () => {
       data: {
         lineage: { projectId: 'project_1', sourceAssetId: 'creative_1' },
         instruction: 'Warm only this surface', scope: 'marked_region' as const,
+        annotations: [],
         candidate: annotationCandidate,
       }, error: null, status: 201,
     }));
@@ -615,19 +788,61 @@ describe('StudioRefineWorkspace', () => {
     await fireEvent(canvas, 'layout', {
       nativeEvent: { layout: { x: 0, y: 0, width: 200, height: 160 } },
     });
-    await fireEvent(canvas, 'responderGrant', responderEvent(20, 20));
-    await fireEvent(canvas, 'responderRelease', responderEvent(90, 80));
-    await fireEvent.press(screen.getByText('Preview change'));
+    await fireEvent.press(screen.getByLabelText('Text annotation tool'));
+    await fireEvent(canvas, 'responderGrant', responderEvent(40, 80));
+    await fireEvent(canvas, 'responderRelease', responderEvent(40, 80));
+    await fireEvent.changeText(
+      screen.getByLabelText('Instruction for selected annotation'),
+      'Make this diamond yellow',
+    );
+    await fireEvent.press(screen.getByLabelText('Save annotation instruction'));
+    await fireEvent.press(screen.getByLabelText('Text annotation tool'));
+    await fireEvent(canvas, 'responderGrant', responderEvent(160, 80));
+    await fireEvent(canvas, 'responderRelease', responderEvent(160, 80));
+    await fireEvent.changeText(
+      screen.getByLabelText('Instruction for selected annotation'),
+      'Make this diamond blue',
+    );
+    await fireEvent.press(screen.getByLabelText('Save annotation instruction'));
+    await fireEvent.changeText(
+      screen.getByLabelText('Instructions for the marked areas'),
+      'Keep the ring identity and camera unchanged.',
+    );
+    await fireEvent.press(screen.getByText('Preview changes'));
 
     await waitFor(() => expect(readMarkup).toHaveBeenCalledWith(
       'creative_1',
-      expect.objectContaining({ created_by: 'designer' }),
+      expect.objectContaining({
+        created_by: 'designer',
+        instruction: 'Keep the ring identity and camera unchanged.',
+        markup_snapshot: expect.objectContaining({
+          annotations: [
+            expect.objectContaining({
+              type: 'text', text: 'Make this diamond yellow',
+            }),
+            expect.objectContaining({
+              type: 'text', text: 'Make this diamond blue',
+            }),
+          ],
+        }),
+      }),
     ));
     await waitFor(() => expect(previewVisualRefine).toHaveBeenCalledWith({
       projectId: 'project_1', sourceAssetId: 'creative_1', createdBy: 'designer',
-      instruction: 'Warm only this surface', scope: 'marked_region', markupAssetId: 'markup_exact',
+      instruction: 'Keep the ring identity and camera unchanged.',
+      scope: 'marked_region', markupAssetId: 'markup_exact',
+      rawUserInstruction: 'Keep the ring identity and camera unchanged.', inputMode: 'point',
+      annotations: [{
+        region_description: 'left side diamond',
+        change_instruction: 'Make this diamond yellow',
+      }, {
+        region_description: 'right side diamond',
+        change_instruction: 'Make this diamond blue',
+      }],
     }));
-    expect(screen.getByText(/Warm only the highlighted surface/)).toBeTruthy();
+    expect(screen.getByText(
+      'Make the left side diamond yellow.',
+    )).toBeTruthy();
     expect(screen.getByLabelText('Temporary refinement preview')).toBeTruthy();
 
     await fireEvent.press(screen.getByText('Discard'));
@@ -636,9 +851,9 @@ describe('StudioRefineWorkspace', () => {
     }));
     expect(await screen.findByLabelText('Jewelry image annotation canvas')).toBeTruthy();
     expect(screen.getByLabelText('Clear all annotations').props.accessibilityState.disabled).toBe(false);
-    expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(false);
+    expect(screen.getByText('Preview changes').parent?.props.accessibilityState.disabled).toBe(false);
 
-    await fireEvent.press(screen.getByText('Preview change'));
+    await fireEvent.press(screen.getByText('Preview changes'));
     expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
     await fireEvent(screen.getByLabelText('Exact source revision'), 'load');
     await fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
@@ -647,7 +862,82 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByLabelText('Describe refine mode').props.accessibilityState.selected).toBe(true);
     await fireEvent.press(screen.getByLabelText('Mark up refine mode'));
     expect(screen.getByLabelText('Clear all annotations').props.accessibilityState.disabled).toBe(true);
-    expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByText('Preview changes').parent?.props.accessibilityState.disabled).toBe(true);
+  });
+
+  test('reports missing image setup honestly when a marked-area preview returns 503', async () => {
+    const readMarkup = jest.fn(async () => ({
+      data: {
+        markup_asset_id: 'markup_exact', assistant_name: 'Facetta',
+        design_id: null, expected_design_version: null,
+        interpretation: {
+          target_region: 'marked upper surface', requested_change: 'Warm this surface',
+          impact: 'visual_only' as const, target_spec_reference: null,
+          target_section: null, target_index: null, target_component_id: 'metal.upper',
+          target_element_id: null, frozen_elements: ['unmarked jewelry'], confidence: 0.98,
+          clarification_question: null, understood_as: 'Warm the marked upper surface.',
+        },
+      }, error: null, status: 200,
+    }));
+    const previewVisualRefine = jest.fn(async () => ({
+      data: null,
+      error: {
+        code: 'provider_not_configured', category: 'unavailable' as const,
+        status: 503, retryable: false,
+        message: 'OPENAI_API_KEY is not configured; provider QA cannot run.',
+      },
+      status: 503,
+    }));
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{ getComponentCatalog: jest.fn(), getStudioComponentTargeting: getReadyTargeting, readMarkup }}
+        gateway={{
+          previewVisualRefine, applyVisualRefine: jest.fn(), discardVisualRefine: jest.fn(),
+          previewCatalogRefine: jest.fn(), applyCatalogRefine: jest.fn(), discardCatalogRefine: jest.fn(),
+          previewMarkupRefine: jest.fn(), applyMarkupRefine: jest.fn(), discardMarkupRefine: jest.fn(),
+        }}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'creative_1' }}
+        sourceImageUrl="https://test/source.png"
+        createdBy="designer"
+        onApplied={jest.fn()}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText('Mark up refine mode'));
+    const canvas = await screen.findByLabelText('Jewelry image annotation canvas');
+    await fireEvent(canvas, 'layout', {
+      nativeEvent: { layout: { x: 0, y: 0, width: 200, height: 160 } },
+    });
+    await fireEvent(canvas, 'responderGrant', responderEvent(20, 20));
+    await fireEvent(canvas, 'responderRelease', responderEvent(90, 80));
+    await fireEvent.changeText(
+      screen.getByLabelText('Instruction for selected annotation'),
+      'Warm this surface',
+    );
+    await fireEvent.press(screen.getByLabelText('Save annotation instruction'));
+    await fireEvent.changeText(
+      screen.getByLabelText('Instructions for the marked areas'),
+      'Warm this surface',
+    );
+    await fireEvent.press(screen.getByText('Preview changes'));
+
+    expect(await screen.findByText(
+      'Image creation is not configured for this Facetta workspace. Ask a workspace administrator to finish image setup, then try again. Nothing was saved or charged.',
+    )).toBeTruthy();
+    expect(readMarkup).toHaveBeenCalledWith('creative_1', expect.objectContaining({
+      instruction: 'Warm this surface',
+      markup_snapshot: expect.objectContaining({
+        annotations: [expect.objectContaining({
+          type: 'text',
+          instruction: 'Warm this surface',
+          text: 'Warm this surface',
+        })],
+      }),
+    }));
+    expect(previewVisualRefine).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/could not connect|openai|api[_ ]?key|provider|qa/i)).toBeNull();
+    expect(screen.queryByLabelText('Temporary refinement preview')).toBeNull();
+    expect(screen.getByLabelText('Clear all annotations').props.accessibilityState.disabled).toBe(false);
   });
 
   test('clears markup instead of rebinding it when the exact source revision changes', async () => {
@@ -686,10 +976,19 @@ describe('StudioRefineWorkspace', () => {
     });
     await fireEvent(canvas, 'responderGrant', responderEvent(20, 20));
     await fireEvent(canvas, 'responderRelease', responderEvent(90, 80));
+    await fireEvent.changeText(
+      screen.getByLabelText('Instruction for selected annotation'),
+      'Warm only this surface',
+    );
+    await fireEvent.press(screen.getByLabelText('Save annotation instruction'));
+    await fireEvent.changeText(
+      screen.getByLabelText('Instructions for the marked areas'),
+      'Warm only this surface',
+    );
     expect(screen.getByLabelText('Clear all annotations').props.accessibilityState).toEqual({
       disabled: false,
     });
-    expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(false);
+    expect(screen.getByText('Preview changes').parent?.props.accessibilityState.disabled).toBe(false);
 
     await rendered.rerender(workspace('creative_1', 'https://test/source-1-refreshed.png'));
     expect(screen.getByLabelText('Clear all annotations').props.accessibilityState).toEqual({
@@ -700,7 +999,7 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByLabelText('Clear all annotations').props.accessibilityState).toEqual({
       disabled: true,
     });
-    expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByText('Preview changes').parent?.props.accessibilityState.disabled).toBe(true);
     expect(screen.queryByLabelText('rectangle annotation annotation-1')).toBeNull();
   });
 
@@ -737,26 +1036,26 @@ describe('StudioRefineWorkspace', () => {
     const rendered = await render(workspace('creative_1', 'https://test/source-1.png'));
 
     await fireEvent.changeText(
-      rendered.getByPlaceholderText(/make the presentation softer/i),
+      rendered.getByPlaceholderText(/make the center stone oval/i),
       'Warm only the shoulders',
     );
     await waitFor(() => expect(
-      rendered.getByPlaceholderText(/make the presentation softer/i).props.value,
+      rendered.getByPlaceholderText(/make the center stone oval/i).props.value,
     ).toBe('Warm only the shoulders'));
-    await fireEvent.press(rendered.getByText('Preview change'));
+    await fireEvent.press(rendered.getByText('Preview changes'));
     await waitFor(() => expect(previewVisualRefine).toHaveBeenCalledWith(expect.objectContaining({
       sourceAssetId: 'creative_1', instruction: 'Warm only the shoulders',
     })));
 
     await rendered.rerender(workspace('creative_2', 'https://test/source-2.png'));
     await waitFor(() => expect(
-      rendered.getByPlaceholderText(/make the presentation softer/i).props.value,
+      rendered.getByPlaceholderText(/make the center stone oval/i).props.value,
     ).toBe(''));
-    expect(rendered.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(true);
+    expect(rendered.getByText('Preview changes').parent?.props.accessibilityState.disabled).toBe(true);
 
     // Returning to the same lineage key must not revive work started in its earlier epoch.
     await rendered.rerender(workspace('creative_1', 'https://test/source-1.png'));
-    expect(rendered.getByPlaceholderText(/make the presentation softer/i).props.value).toBe('');
+    expect(rendered.getByPlaceholderText(/make the center stone oval/i).props.value).toBe('');
 
     await act(async () => {
       resolvePreview?.({
@@ -778,7 +1077,7 @@ describe('StudioRefineWorkspace', () => {
 
     expect(rendered.queryByText('Nothing has changed yet.')).toBeNull();
     expect(rendered.queryByLabelText('Temporary refinement preview')).toBeNull();
-    expect(rendered.getByPlaceholderText(/make the presentation softer/i).props.value).toBe('');
+    expect(rendered.getByPlaceholderText(/make the center stone oval/i).props.value).toBe('');
   });
 
   test('ignores a late Apply completion after the designer switches source revisions', async () => {
@@ -802,7 +1101,7 @@ describe('StudioRefineWorkspace', () => {
       previewVisualRefine: jest.fn(async () => ({
         data: {
           lineage: { projectId: 'project_1', sourceAssetId: 'creative_1' },
-          instruction: 'Warm the metal', scope: 'appearance' as const, candidate,
+          instruction: 'Warm the metal', scope: 'appearance' as const, annotations: [], candidate,
         },
         error: null,
         status: 201,
@@ -831,13 +1130,13 @@ describe('StudioRefineWorkspace', () => {
     const rendered = await render(workspace('creative_1', 'https://test/source-1.png'));
 
     await fireEvent.changeText(
-      rendered.getByPlaceholderText(/make the presentation softer/i),
+      rendered.getByPlaceholderText(/make the center stone oval/i),
       'Warm the metal',
     );
     await waitFor(() => expect(
-      rendered.getByPlaceholderText(/make the presentation softer/i).props.value,
+      rendered.getByPlaceholderText(/make the center stone oval/i).props.value,
     ).toBe('Warm the metal'));
-    await fireEvent.press(rendered.getByText('Preview change'));
+    await fireEvent.press(rendered.getByText('Preview changes'));
     expect(await rendered.findByText('Nothing has changed yet.')).toBeTruthy();
     await fireEvent(rendered.getByLabelText('Exact source revision'), 'load');
     await fireEvent(rendered.getByLabelText('Temporary refinement preview'), 'load');
@@ -860,10 +1159,10 @@ describe('StudioRefineWorkspace', () => {
 
     expect(onApplied).not.toHaveBeenCalled();
     expect(rendered.queryByText('Nothing has changed yet.')).toBeNull();
-    expect(rendered.getByPlaceholderText(/make the presentation softer/i).props.value).toBe('');
+    expect(rendered.getByPlaceholderText(/make the center stone oval/i).props.value).toBe('');
   });
 
-  test('plain language is constrained to appearance and still previews first', async () => {
+  test('plain language accepts several changes and still previews first', async () => {
     const previewMarkupRefine = jest.fn(async () => ({
       data: {
         lineage: { projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 },
@@ -893,18 +1192,20 @@ describe('StudioRefineWorkspace', () => {
       />,
     );
     await fireEvent.press(screen.getByLabelText('Describe refine mode'));
-    expect(await screen.findByText(/changes presentation only/i)).toBeTruthy();
+    expect(await screen.findByText(/interpret the complete request/i)).toBeTruthy();
     await fireEvent.changeText(
-      screen.getByPlaceholderText(/make the presentation softer/i),
-      'Make the background warmer',
+      screen.getByPlaceholderText(/make the center stone oval/i),
+      'Make the background warmer and the metal more luminous',
     );
-    await waitFor(() => expect(screen.getByDisplayValue('Make the background warmer')).toBeTruthy());
-    await fireEvent.press(screen.getByText('Preview change'));
+    await waitFor(() => expect(screen.getByDisplayValue(
+      'Make the background warmer and the metal more luminous',
+    )).toBeTruthy());
+    await fireEvent.press(screen.getByText('Preview changes'));
     await waitFor(() => expect(previewMarkupRefine).toHaveBeenCalledWith(expect.objectContaining({
       sourceAssetId: 'asset_2',
       annotation: expect.objectContaining({
         impact: 'visual_only',
-        change_instruction: 'Make the background warmer',
+        change_instruction: 'Make the background warmer and the metal more luminous',
       }),
     })));
     expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
@@ -1111,7 +1412,7 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.queryByLabelText('Advanced design facts')).toBeNull();
     expect(screen.queryByText('Review fact changes')).toBeNull();
     expect(screen.queryByLabelText('Identity fact group')).toBeNull();
-    expect(screen.getByText('Preview change')).toBeTruthy();
+    expect(screen.getByText('Preview changes')).toBeTruthy();
     expect(getStudioComponentTargeting).toHaveBeenCalledWith('asset_2');
   });
 
@@ -1154,7 +1455,7 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.queryByLabelText('Component refine mode')).toBeNull();
     expect(screen.queryByLabelText('Describe refine mode')).toBeNull();
     expect(screen.queryByLabelText('Mark up refine mode')).toBeNull();
-    expect(screen.queryByText('Preview change')).toBeNull();
+    expect(screen.queryByText('Preview changes')).toBeNull();
     expect(screen.queryByLabelText('Advanced design facts')).toBeNull();
     expect(screen.queryByText('Stone species')).toBeNull();
     expect(await screen.findByText('Identity')).toBeTruthy();
@@ -1344,7 +1645,7 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByLabelText('Describe refine mode').props.accessibilityState).toEqual({
       selected: true,
     });
-    expect(screen.getByText('Appearance change')).toBeTruthy();
+    expect(screen.getByText('Describe the changes')).toBeTruthy();
     expect(getComponentCatalog).not.toHaveBeenCalled();
     expect(previewCatalogRefine).not.toHaveBeenCalled();
   });
@@ -1417,9 +1718,9 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByText(/Record the exact stone species/i)).toBeTruthy();
     expect(screen.getByLabelText('Stone cut component path').props.accessibilityState.disabled).toBe(true);
     expect(screen.getByLabelText('Setting component path').props.accessibilityState.disabled).toBe(true);
-    expect(screen.getAllByText(/not ready for that precise component change yet/i).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText(/not ready for that precise component edit yet/i).length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText(/calibrated|structural mapping|component identity/i)).toBeNull();
-    expect(screen.getByText(/Every change creates a temporary candidate/i)).toBeTruthy();
+    expect(screen.getByText(/temporary preview before anything is saved/i)).toBeTruthy();
   });
 
   test('loads stone colors only with the exact lineage-checked stone species', async () => {
@@ -1508,6 +1809,6 @@ describe('StudioRefineWorkspace', () => {
     await fireEvent.press(screen.getByLabelText('Stone color component path'));
     expect(await screen.findByText('Check the requested change or reference, then try again.')).toBeTruthy();
     expect(screen.queryByText(/stone_species_invalid|unknown gemstone species/i)).toBeNull();
-    expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByText('Preview changes').parent?.props.accessibilityState.disabled).toBe(true);
   });
 });

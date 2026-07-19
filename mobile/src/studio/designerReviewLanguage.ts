@@ -4,7 +4,7 @@ export type InternalReviewVerdict = 'pass' | 'warn' | 'reject' | 'fail';
 
 export function designerReviewState(verdict: InternalReviewVerdict): string {
   if (verdict === 'pass') return 'Design preserved';
-  if (verdict === 'warn') return 'Review recommended';
+  if (verdict === 'warn') return 'Needs review';
   return 'Could not preserve design';
 }
 

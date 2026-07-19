@@ -111,6 +111,7 @@ class ImageAgentPlan(_Contract):
     source_spec_visual_hash: str | None = None
     source_hash: str | None = None
     quality_source_hash: str | None = None
+    camera_reference_hash: str | None = None
     mask_hash: str | None = None
     spec_visual_hash: str
     region_description: str | None = None
@@ -236,6 +237,56 @@ class RenderInspection(_Contract):
     notes: tuple[str, ...] = ()
 
 
+NecklaceSymmetryDimension = Literal[
+    "motif_order",
+    "orientation",
+    "spacing",
+    "scale",
+    "metal_treatment",
+    "pave_coverage",
+    "gemstone_treatment",
+    "connection_type",
+]
+
+
+class NecklaceSymmetryPairAudit(_Contract):
+    """One corresponding necklace element pair, ordered from the center out."""
+
+    position_from_center: int = Field(ge=1, le=256)
+    left_component: str = Field(min_length=1, max_length=500)
+    right_component: str = Field(min_length=1, max_length=500)
+    motif_order_matches: bool | None = None
+    orientation_matches: bool | None = None
+    spacing_matches: bool | None = None
+    scale_matches: bool | None = None
+    metal_treatment_matches: bool | None = None
+    pave_coverage_matches: bool | None = None
+    gemstone_treatment_matches: bool | None = None
+    connection_type_matches: bool | None = None
+    authorized_differences: tuple[NecklaceSymmetryDimension, ...] = ()
+    observation: str = Field(min_length=1, max_length=1000)
+
+
+class NecklaceSymmetryAudit(_Contract):
+    """Structured visual evidence for one complete necklace symmetry audit."""
+
+    expectation: Literal[
+        "bilateral",
+        "explicit_asymmetry",
+        "source_asymmetry",
+    ]
+    centerline_anchor: str = Field(min_length=1, max_length=500)
+    complete_piece_assessable: bool | None = None
+    left_count: int = Field(ge=0, le=256)
+    right_count: int = Field(ge=0, le=256)
+    pair_audits: tuple[NecklaceSymmetryPairAudit, ...] = ()
+    unpaired_left: tuple[str, ...] = ()
+    unpaired_right: tuple[str, ...] = ()
+    unpaired_elements_authorized: bool | None = None
+    requested_asymmetry_preserved: bool | None = None
+    unrequested_differences_absent: bool | None = None
+
+
 class CreativeRenderInspection(_Contract):
     """Comparative evidence for a pre-spec drawing/image beauty render.
 
@@ -257,6 +308,9 @@ class CreativeRenderInspection(_Contract):
     requested_presentation_applied: bool | None = None
     explicit_counts_match: bool | None = None
     explicit_stone_facts_match: bool | None = None
+    symmetry_expectation_matches: bool | None = None
+    symmetry_observations: tuple[str, ...] = ()
+    necklace_symmetry_audits: tuple[NecklaceSymmetryAudit, ...] = ()
     text_or_branding_detected: bool | None = None
     major_unintended_changes: tuple[str, ...] = ()
     score: float | None = Field(default=None, ge=0, le=100)

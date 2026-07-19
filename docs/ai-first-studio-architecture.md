@@ -260,7 +260,7 @@ persistence. This preserves zero-call planning and prevents local fixtures,
 credentials, or an unreviewed provider runner from becoming release evidence.
 The exact fallback route, account budget, assignment bundle, `corpus_run_id`,
 and executor authority must be explicitly reviewed and pinned before any of the
-1,044 logical sequences becomes execution-ready.
+1,102 logical sequences becomes execution-ready.
 
 ## Optional factory promotion lane
 

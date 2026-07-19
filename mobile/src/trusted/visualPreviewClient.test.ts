@@ -60,6 +60,20 @@ describe('pre-spec visual preview client', () => {
       ...applyPayload,
       project: { ...projectPayload, active_asset_id: 'asset source' },
     })).toBeNull();
+    expect(decodeVisualPreviewApplyResult({
+      ...applyPayload,
+      project: {
+        ...projectPayload,
+        active_revision: { ...applied, parent_asset_id: null },
+        revisions: [
+          projectPayload.revisions[0],
+          {
+            ...projectPayload.revisions[1],
+            asset: { ...applied, parent_asset_id: null },
+          },
+        ],
+      },
+    })).toBeNull();
   });
 
   test('uses encoded typed routes and preserves the active-asset concurrency token', async () => {
@@ -82,6 +96,8 @@ describe('pre-spec visual preview client', () => {
     const preview = await client.createVisualPreview('project visual', {
       created_by: 'designer', expected_active_asset_id: 'asset source',
       instruction: 'warm only the center stone', scope: 'marked_region',
+      raw_user_instruction: 'Make only the center stone warmer.',
+      input_mode: 'point',
       mask_base64: 'mask-data', variant: 2,
     });
     expect(preview.error).toBeNull();
@@ -107,11 +123,53 @@ describe('pre-spec visual preview client', () => {
     expect(JSON.parse(String(calls[0]?.[1]?.body))).toEqual({
       created_by: 'designer', expected_active_asset_id: 'asset source',
       instruction: 'warm only the center stone', scope: 'marked_region',
+      raw_user_instruction: 'Make only the center stone warmer.', input_mode: 'point',
       mask_base64: 'mask-data', variant: 2,
     });
     expect(JSON.parse(String(calls[1]?.[1]?.body))).toEqual({
       created_by: 'designer', expected_active_asset_id: 'asset source',
     });
+  });
+
+  test('reads chronological raw prompt history without exposing compiled provider text', async () => {
+    const internal = 'KEEP ALL OTHER DETAILS FIXED.';
+    const fetcher = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ prompts: [{
+        prompt_id: 'scp_1',
+        sequence: 1,
+        prompt: 'Make the chain white gold and braided.',
+        annotations: [],
+        input_mode: 'describe',
+        scope: 'appearance',
+        variant: 0,
+        source_asset_id: 'asset source',
+        source_sha256: 'a'.repeat(64),
+        studio_job_id: 'job_1',
+        state: 'applied',
+        candidate_id: 'candidate visual',
+        image_run_id: 'run visual',
+        applied_asset_id: 'asset applied',
+        created_at: '2026-07-19T00:00:00Z',
+      }] }),
+    } as Response));
+    const client = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+    const result = await client.getStudioContinuationPrompts('project visual');
+
+    expect(result.error).toBeNull();
+    expect(result.data?.prompts[0]).toMatchObject({
+      sequence: 1,
+      prompt: 'Make the chain white gold and braided.',
+      state: 'applied',
+      applied_asset_id: 'asset applied',
+    });
+    expect(result.data?.prompts[0]?.prompt).not.toContain(internal);
+    expect(fetcher).toHaveBeenCalledWith(
+      'https://facetta.test/studio/projects/project%20visual/continuation-prompts',
+      expect.objectContaining({ headers: { Accept: 'application/json' } }),
+    );
   });
 
   test('lists only typed same-origin pending visual candidates', async () => {

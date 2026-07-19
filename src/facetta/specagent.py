@@ -28,8 +28,9 @@ from facetta.image_agent.edit_prompt import (
 )
 from facetta.image_agent.vision import (
     check_design_consistency as _canonical_design_consistency,
+    configured_vision_json_pair as _vision_json_2img,
     vision_json as _vision_json,
-    vision_json_pair as _vision_json_2img,
+    vision_json_pair as _xai_vision_json_2img,
 )
 from facetta.render import (
     RenderUnavailable, edit_image, generate_image,
@@ -1455,7 +1456,7 @@ def check_design_consistency(reference_bytes: bytes,
     return _canonical_design_consistency(
         reference_bytes,
         candidate_bytes,
-        inspect_pair=_vision_json_2img,
+        inspect_pair=_xai_vision_json_2img,
     )
 
 
@@ -1475,6 +1476,14 @@ interpret it. Describe the marked region in jewelry terms ("the prongs on the
 center setting", "the halo, lower arc", "the shank, left shoulder"). One
 annotation per mark. Do not invent marks; do not merge separate marks.
 
+When the user message supplies only a DESIGNER INSTRUCTION, that sentence is
+the authoritative change intent for every mark. When it also supplies ORDERED
+SNAPSHOT MARKS, each mark's LOCAL INSTRUCTION is authoritative for that mark and the
+designer instruction is overall context plus fallback for marks without local
+instructions. Use the marked image only to locate WHERE each ordered mark applies. Do
+not replace or expand either kind of supplied change. Supplied instructions
+resolve intent, but never resolve an ambiguous marked location.
+
 Return JSON exactly:
 {"annotations": [{"region_description": "...", "change_instruction": "...",
   "target_section": "stone|side_stones|setting|metal|band|ring_size|drop|pendant|chain|bracelet|brooch|design_form" or null,
@@ -1489,58 +1498,151 @@ shape or silhouette change must identify exactly one supplied element_id. Do
 not invent an ID or use a neighboring component. Set needs_clarification true
 (with a concrete question) if no supplied element matches.
 
-Set needs_clarification true (with a concrete question) if any handwriting is
-illegible, a mark's intent is ambiguous, or you cannot tell WHICH element a
-mark points at. NEVER guess a region or an intent. Output ONLY the JSON."""
+Without a supplied DESIGNER INSTRUCTION, set needs_clarification true (with a
+concrete question) if handwriting is illegible or a mark's intent is
+ambiguous. Always clarify if you cannot tell WHICH element a mark points at.
+NEVER guess a region or an intent. Output ONLY the JSON."""
 
 
 def read_markup(
     clean_bytes: bytes,
     marked_bytes: bytes,
     known_form_elements: tuple[dict[str, str], ...] = (),
+    *,
+    designer_instruction: str | None = None,
+    ordered_local_instructions: tuple[str | None, ...] | None = None,
 ) -> dict:
     """Read the designer's marks: clean render vs marked copy, structured
     change requests out. Post-rule: any annotation under 0.6 confidence flips
     needs_clarification — a half-read mark is asked about, never executed.
     Raises RenderUnavailable on provider failure (explicit request, fails
     loudly)."""
+    overall_instruction = (
+        designer_instruction.strip() if designer_instruction is not None else ""
+    )
+    local_instructions = (
+        tuple(
+            normalized if (normalized := (instruction or "").strip()) else None
+            for instruction in ordered_local_instructions
+        )
+        if ordered_local_instructions is not None else None
+    )
     known = (
         "\nKNOWN DESIGN-FORM ELEMENTS (use only these stable IDs): "
         + str(list(known_form_elements))
         if known_form_elements else ""
     )
+    if local_instructions is not None:
+        ordered_context = "\n".join(
+            f"{index}. LOCAL INSTRUCTION: {instruction}"
+            if instruction is not None else
+            f"{index}. NO LOCAL INSTRUCTION "
+            "(use the overall instruction as fallback)"
+            for index, instruction in enumerate(local_instructions, start=1)
+        )
+        instruction_context = (
+            "\nOVERALL DESIGNER INSTRUCTION (context and fallback only):\n"
+            f"{overall_instruction or '[none supplied]'}\n"
+            "ORDERED SNAPSHOT MARKS (return exactly one annotation per mark, "
+            "in this same order):\n"
+            f"{ordered_context}\n"
+            "A LOCAL INSTRUCTION overrides the overall instruction for "
+            "that mark. A mark with NO LOCAL INSTRUCTION may use the overall "
+            "instruction. Do not copy the overall instruction onto a mark "
+            "that has a LOCAL INSTRUCTION."
+        )
+    else:
+        instruction_context = (
+        "\nDESIGNER INSTRUCTION (authoritative change intent):\n"
+        f"{overall_instruction}\n"
+        "Use this sentence as WHAT to change for every returned annotation. "
+        "Use vision only to locate WHERE each visible mark points. Do not "
+        "replace, expand, or infer a different change. If the marked location "
+        "is ambiguous, set needs_clarification true."
+        if overall_instruction else
+        "\nNo separate designer instruction was supplied. A visible mark alone "
+        "does not state change intent. Accept intent only from legible text on "
+        "the marked image; otherwise ask what should change."
+        )
     data = _vision_json_2img(
         _MARKUP_SYSTEM,
         clean_bytes,
         marked_bytes,
-        "Read the designer's marks on the second image." + known,
+        "Read the designer's marks on the second image."
+        + instruction_context
+        + known,
     )
     annotations = []
-    for a in data.get("annotations") or []:
-        if not isinstance(a, dict):
-            continue
+    regions_without_intent = []
+    raw_annotations = [
+        item for item in data.get("annotations") or []
+        if isinstance(item, dict)
+    ]
+    ordered_count_mismatch = (
+        local_instructions is not None
+        and len(raw_annotations) != len(local_instructions)
+    )
+    for annotation_index, a in enumerate(raw_annotations):
         region = str(a.get("region_description") or "").strip()
-        change = str(a.get("change_instruction") or "").strip()
-        if not region or not change:
+        handwriting = str(a.get("handwriting") or "").strip()
+        model_change = str(a.get("change_instruction") or "").strip()
+        local_instruction = (
+            local_instructions[annotation_index]
+            if local_instructions is not None
+            and annotation_index < len(local_instructions)
+            else None
+        )
+        change = local_instruction or overall_instruction or model_change
+        if not region:
+            continue
+        if (
+            local_instruction is None
+            and not overall_instruction
+            and (not handwriting or not change)
+        ):
+            regions_without_intent.append(region)
             continue
         annotations.append({
             "region_description": region,
             "change_instruction": change,
             "target_section": a.get("target_section"),
             "target_element_id": a.get("target_element_id"),
-            "handwriting": str(a.get("handwriting") or ""),
+            "handwriting": handwriting,
             "confidence": float(a.get("confidence") or 0.0),
         })
-    needs = bool(data.get("needs_clarification"))
+    needs = bool(data.get("needs_clarification")) or ordered_count_mismatch
     clarification = str(data.get("clarification") or "")
+    if ordered_count_mismatch and not clarification:
+        clarification = (
+            "the marked regions could not be matched one-to-one with the "
+            "ordered annotations; review the marks and try again"
+        )
+    if regions_without_intent and not needs:
+        needs = True
+        clarification = clarification or (
+            "what should change in the marked "
+            + "; ".join(regions_without_intent)
+            + "?"
+        )
     low = [a for a in annotations if a["confidence"] < 0.6]
     if low and not needs:
         needs = True
         clarification = clarification or (
             "some marks were hard to read with confidence — restate: "
             + "; ".join(a["region_description"] for a in low))
+    understood_as = str(data.get("understood_as") or "")
+    if (overall_instruction or local_instructions is not None) and annotations:
+        understood_as = (
+            "Understood as: "
+            + "; ".join(
+                f"({index}) {annotation['change_instruction']} at "
+                f"{annotation['region_description']}"
+                for index, annotation in enumerate(annotations, start=1)
+            )
+            + " — nothing else changes."
+        )
     return {"annotations": annotations,
-            "understood_as": str(data.get("understood_as") or ""),
+            "understood_as": understood_as,
             "needs_clarification": needs,
             "clarification": clarification}
 
@@ -1560,6 +1662,20 @@ def mask_from_markup(clean_bytes: bytes, marked_bytes: bytes,
     marked = Image.open(io.BytesIO(marked_bytes)).convert("RGB")
     if clean.size != marked.size:
         return None
+    from facetta.markup_snapshot import (
+        MarkupAuthorizationMaskError,
+        embedded_markup_authorization_mask,
+    )
+
+    try:
+        semantic_mask = embedded_markup_authorization_mask(
+            marked_bytes,
+            expected_size=clean.size,
+        )
+    except MarkupAuthorizationMaskError:
+        return None
+    if semantic_mask is not None:
+        return semantic_mask
     diff = ImageChops.difference(clean, marked).convert("L")
     mask = diff.point(lambda p: 255 if p > 24 else 0)
     if mask.getbbox() is None:

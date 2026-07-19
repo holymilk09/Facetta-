@@ -15,16 +15,219 @@ from facetta.provider_errors import RenderUnavailable
 PairInspector = Callable[[str, bytes, bytes, str], dict]
 
 
+class VisionProviderUnavailable(RenderUnavailable):
+    """A vision request could not run because its provider was unavailable.
+
+    This is intentionally narrower than ``RenderUnavailable``. Invalid JSON,
+    response-shape drift, and other evaluator-contract failures must stay on
+    the original provider path and fail closed instead of being reinterpreted
+    by a second reviewer.
+    """
+
+
+def _is_provider_unavailability(exc: Exception) -> bool:
+    """Classify only authentication, authorization, and availability errors."""
+
+    import httpx
+
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        return status in {401, 403, 408, 429} or status >= 500
+    return isinstance(exc, httpx.TransportError)
+
+
 def _image_uri(content: bytes) -> str:
     encoded = base64.b64encode(content).decode()
     return f"data:{sniff_media_type(content)};base64,{encoded}"
+
+
+def _response_output_text(payload: object) -> str:
+    """Extract the first assistant text block from a Responses API payload."""
+    if not isinstance(payload, dict):
+        raise ValueError("OpenAI returned a non-object response")
+    direct = payload.get("output_text")
+    if isinstance(direct, str) and direct.strip():
+        return direct
+    output = payload.get("output")
+    if not isinstance(output, list):
+        raise ValueError("OpenAI response did not contain output items")
+    for item in output:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if (isinstance(block, dict)
+                    and block.get("type") == "output_text"
+                    and isinstance(block.get("text"), str)):
+                return block["text"]
+    raise ValueError("OpenAI response did not contain output text")
+
+
+def _openai_text_format(response_schema: dict | None) -> dict:
+    """Build a Responses API text format without mutating caller schema.
+
+    Pydantic emits ``default`` keywords and omits defaulted properties from
+    ``required``. OpenAI strict Structured Outputs does not support defaults
+    and requires every object property to be listed as required; nullable
+    values stay expressible through Pydantic's ``anyOf`` string/null form.
+    """
+
+    if response_schema is None:
+        return {"type": "json_object"}
+    if not isinstance(response_schema, dict):
+        raise TypeError("response_schema must be a JSON Schema object")
+
+    # JSON round-trip both deep-copies and proves the schema is transport-safe.
+    schema = json.loads(json.dumps(response_schema))
+
+    def normalize(node: object) -> None:
+        if isinstance(node, list):
+            for item in node:
+                normalize(item)
+            return
+        if not isinstance(node, dict):
+            return
+        node.pop("default", None)
+        properties = node.get("properties")
+        if isinstance(properties, dict):
+            node["required"] = list(properties)
+            node["additionalProperties"] = False
+        for value in node.values():
+            normalize(value)
+
+    normalize(schema)
+    return {
+        "type": "json_schema",
+        "name": "facetta_vision_contract",
+        "description": "One strict Facetta visual-reading contract.",
+        "strict": True,
+        "schema": schema,
+    }
+
+
+def openai_vision_json(system: str, image_bytes: bytes,
+                       user_text: str,
+                       response_schema: dict | None = None) -> dict:
+    """Run one OpenAI vision request and return one JSON object.
+
+    This is the OpenAI-only QA fallback for prompt-created concepts. It keeps
+    the same fail-closed evaluator contract as Grok instead of treating a
+    generated image as accepted merely because the primary QA provider is not
+    configured.
+    """
+    key = env_value("OPENAI_API_KEY")
+    if not key:
+        raise RenderUnavailable(
+            "no OPENAI_API_KEY configured — validation needs a vision key")
+
+    import httpx
+
+    try:
+        response = httpx.post(
+            "https://api.openai.com/v1/responses",
+            timeout=120.0,
+            headers={"Authorization": f"Bearer {key}"},
+            json={
+                "model": os.environ.get(
+                    "FACETTA_OPENAI_VISION", "gpt-5.4-mini"),
+                "store": False,
+                "input": [
+                    {
+                        "role": "developer",
+                        "content": [{"type": "input_text", "text": system}],
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "input_image",
+                                "image_url": _image_uri(image_bytes),
+                                "detail": "high",
+                            },
+                            {"type": "input_text", "text": user_text},
+                        ],
+                    },
+                ],
+                "text": {"format": _openai_text_format(response_schema)},
+                "max_output_tokens": 1400,
+            },
+        )
+        response.raise_for_status()
+        data = json.loads(_response_output_text(response.json()))
+        if not isinstance(data, dict):
+            raise ValueError(f"provider returned non-object JSON: {data!r}")
+        return data
+    except Exception as exc:
+        raise RenderUnavailable(
+            f"OpenAI vision inspect failed: {exc}") from exc
+
+
+def openai_vision_json_pair(
+    system: str,
+    image_a: bytes,
+    image_b: bytes,
+    user_text: str,
+) -> dict:
+    """Run one fail-closed OpenAI vision comparison over two images."""
+    key = env_value("OPENAI_API_KEY")
+    if not key:
+        raise RenderUnavailable(
+            "no OPENAI_API_KEY configured — validation needs a vision key")
+
+    import httpx
+
+    try:
+        response = httpx.post(
+            "https://api.openai.com/v1/responses",
+            timeout=120.0,
+            headers={"Authorization": f"Bearer {key}"},
+            json={
+                "model": os.environ.get(
+                    "FACETTA_OPENAI_VISION", "gpt-5.4-mini"),
+                "store": False,
+                "input": [
+                    {
+                        "role": "developer",
+                        "content": [{"type": "input_text", "text": system}],
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "input_image",
+                                "image_url": _image_uri(image_a),
+                                "detail": "high",
+                            },
+                            {
+                                "type": "input_image",
+                                "image_url": _image_uri(image_b),
+                                "detail": "high",
+                            },
+                            {"type": "input_text", "text": user_text},
+                        ],
+                    },
+                ],
+                "text": {"format": {"type": "json_object"}},
+                "max_output_tokens": 1800,
+            },
+        )
+        response.raise_for_status()
+        data = json.loads(_response_output_text(response.json()))
+        if not isinstance(data, dict):
+            raise ValueError(f"provider returned non-object JSON: {data!r}")
+        return data
+    except Exception as exc:
+        raise RenderUnavailable(
+            f"OpenAI vision comparison failed: {exc}") from exc
 
 
 def vision_json(system: str, image_bytes: bytes, user_text: str) -> dict:
     """Run one Grok vision request and return one JSON object."""
     key = env_value("XAI_KEY")
     if not key:
-        raise RenderUnavailable(
+        raise VisionProviderUnavailable(
             "no XAI_KEY configured — the spec agent needs a vision key")
 
     import httpx
@@ -53,7 +256,12 @@ def vision_json(system: str, image_bytes: bytes, user_text: str) -> dict:
             raise ValueError(f"provider returned non-object JSON: {data!r}")
         return data
     except Exception as exc:
-        raise RenderUnavailable(f"vision inspect failed: {exc}") from exc
+        error_type = (
+            VisionProviderUnavailable
+            if _is_provider_unavailability(exc)
+            else RenderUnavailable
+        )
+        raise error_type(f"vision inspect failed: {exc}") from exc
 
 
 def vision_json_pair(
@@ -65,7 +273,7 @@ def vision_json_pair(
     """Run one Grok vision request over a reference/candidate image pair."""
     key = env_value("XAI_KEY")
     if not key:
-        raise RenderUnavailable(
+        raise VisionProviderUnavailable(
             "no XAI_KEY configured — validation needs a key")
 
     import httpx
@@ -96,7 +304,63 @@ def vision_json_pair(
             raise ValueError("non-object JSON")
         return data
     except Exception as exc:
-        raise RenderUnavailable(f"consistency check failed: {exc}") from exc
+        error_type = (
+            VisionProviderUnavailable
+            if _is_provider_unavailability(exc)
+            else RenderUnavailable
+        )
+        raise error_type(f"consistency check failed: {exc}") from exc
+
+
+def configured_vision_json(
+    system: str,
+    image_bytes: bytes,
+    user_text: str,
+    response_schema: dict | None = None,
+) -> dict:
+    """Use one configured single-image inspector with deterministic priority.
+
+    XAI remains primary when configured. OpenAI is used only when XAI is
+    absent, so a failed primary request cannot silently create a second paid
+    inspection or change the evidence source mid-request.
+    """
+
+    if env_value("XAI_KEY"):
+        return vision_json(system, image_bytes, user_text)
+    if env_value("OPENAI_API_KEY"):
+        return openai_vision_json(
+            system,
+            image_bytes,
+            user_text,
+            response_schema,
+        )
+    raise RenderUnavailable(
+        "no configured vision service is available for this inspection"
+    )
+
+
+def configured_vision_json_pair(
+    system: str,
+    image_a: bytes,
+    image_b: bytes,
+    user_text: str,
+) -> dict:
+    """Use the configured pair inspector with a deterministic priority.
+
+    XAI remains the primary reviewer whenever its key is configured. OpenAI is
+    the configuration fallback, allowing Refine markup interpretation to use
+    the same vision provider already available to image QA. We intentionally
+    do not retry a failed XAI request against OpenAI here: provider errors stay
+    visible and fail closed instead of silently creating a second paid audit.
+    """
+
+    if env_value("XAI_KEY"):
+        return vision_json_pair(system, image_a, image_b, user_text)
+    if env_value("OPENAI_API_KEY"):
+        return openai_vision_json_pair(system, image_a, image_b, user_text)
+    raise RenderUnavailable(
+        "no XAI_KEY or OPENAI_API_KEY configured — validation needs a vision key"
+    )
 
 
 _CONSISTENCY_SYSTEM = """\

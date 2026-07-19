@@ -5,7 +5,7 @@ import test from 'node:test';
 import type {
   ApiErrorCategory, ApiResult, CatalogPreviewResult, ProjectDetail, StudioJobRecord,
 } from '../trusted/types';
-import { createStudioGateway } from './gateway';
+import { createStudioGateway, reconcileStartingFactQuestions } from './gateway';
 import { createStudioJobTestHarness } from './studioJobTestHarness';
 
 const ok = <T>(data: T, status = 200): ApiResult<T> => ({ data, error: null, status });
@@ -132,6 +132,28 @@ test('Studio facade owns project and Activity reads and normalizes trusted error
   const activity = await gateway.listStudioJobs('designer_1');
   assert.equal(activity.data, null);
   assert.equal(activity.error?.category, 'unavailable');
+  assert.equal(activity.error?.retryable, true);
+});
+
+test('Studio facade preserves provider failures for designer-safe error guidance', async () => {
+  const gateway = createStudioGateway(fakeClient({
+    listStudioJobs: async () => ({
+      data: null,
+      error: {
+        code: 'HTTP_503',
+        message: 'Image service unavailable.',
+        category: 'provider' as const,
+        status: 503,
+        retryable: true,
+      },
+      status: 503,
+    }),
+  }));
+
+  const activity = await gateway.listStudioJobs('designer_1');
+  assert.equal(activity.data, null);
+  assert.equal(activity.error?.category, 'provider');
+  assert.equal(activity.error?.status, 503);
   assert.equal(activity.error?.retryable, true);
 });
 
@@ -781,6 +803,85 @@ test('Starting facts send only typed changed paths while retaining the opaque co
   });
 });
 
+test('Starting facts fail closed when a setting correction retains a contradictory source question', async () => {
+  let promoteRequest: any = null;
+  const gateway = createStudioGateway(fakeClient({
+    confirmCreativeCandidateDesign: async () => ({
+      data: {
+        confirmation_token: 'confirmation-token-1234567890123456',
+        expires_at: '2099-01-01T00:00:00Z',
+        candidate_id: 'candidate_1', candidate_sha256: 'a'.repeat(64),
+        spec_visual_hash: 'b'.repeat(16),
+        fact_groups: [{ key: 'setting', label: 'Setting', facts: [
+          {
+            key: 'style', label: 'Setting', value: '6_prong_basket',
+            path: 'setting.style', raw_value: '6_prong_basket', authority: 'estimated',
+          },
+          {
+            key: 'prong_count', label: 'Prongs', value: '6',
+            path: null, raw_value: 6, authority: 'estimated',
+          },
+        ] }],
+        unresolved_source_questions: [
+          'Review 6_prong_basket setting with 6 prongs against the selected visual.',
+        ],
+        audit_eligibility: { eligible: false, state: 'not_ready', reason: 'Source review remains.' },
+      }, error: null, status: 200,
+    }),
+    promoteCreativeCandidate: async (_projectId, _candidateId, request) => {
+      promoteRequest = request;
+      return { data: project('asset_corrected'), error: null, status: 201 };
+    },
+  }));
+  const loaded = await gateway.loadDesignConfirmation({
+    projectId: 'project_1', sourceAssetId: 'candidate_1', createdBy: 'designer_1',
+  });
+  assert.equal(loaded.error, null);
+  if (loaded.error !== null) return;
+  const changed = {
+    ...loaded.data,
+    designerAcknowledged: true,
+    factGroups: loaded.data.factGroups.map((group) => ({
+      ...group,
+      facts: group.facts.map((fact) => fact.path === 'setting.style'
+        ? {
+          ...fact, value: '4_prong_basket', rawValue: '4_prong_basket',
+          authority: 'designer_supplied' as const,
+        }
+        : fact),
+    })),
+  };
+
+  const staleAudit = await gateway.auditDesignConfirmation(changed);
+  assert.equal(staleAudit.error, null);
+  if (staleAudit.error !== null) return;
+  assert.equal(staleAudit.data.status, 'fail');
+  assert.match(staleAudit.data.issues.join(' '), /question no longer matches/i);
+  const forgedSave = await gateway.saveDesignConfirmation({
+    ...staleAudit.data, status: 'pass', issues: [],
+  });
+  assert.equal(forgedSave.error?.code, 'CONFIRM_FACTS_INVALID');
+  assert.equal(promoteRequest, null);
+
+  const synchronized = {
+    ...changed,
+    unresolvedQuestions: reconcileStartingFactQuestions(
+      changed.unresolvedQuestions, 'setting.style', '4_prong_basket',
+    ),
+  };
+  const audit = await gateway.auditDesignConfirmation(synchronized);
+  assert.equal(audit.error, null);
+  if (audit.error !== null) return;
+  assert.equal(audit.data.status, 'pass');
+  const saved = await gateway.saveDesignConfirmation(audit.data);
+  assert.equal(saved.error, null);
+  const forwardedPromoteRequest = promoteRequest as any;
+  assert.notEqual(forwardedPromoteRequest, null);
+  assert.deepEqual(forwardedPromoteRequest.corrections, [
+    { path: 'setting.style', value: '4_prong_basket' },
+  ]);
+});
+
 test('Starting facts preserve Factory source questions without blocking Studio', async () => {
   let promoted = false;
   const gateway = createStudioGateway(fakeClient({
@@ -1005,6 +1106,103 @@ test('Views fail closed when fidelity checks reject a candidate', async () => {
     createdBy: 'designer_1', view: 'side',
   });
   const result = await gateway.acceptLineArtView({ candidateId: 'candidate_fail', createdBy: 'designer_1' });
+  assert.equal(result.error?.code, 'VIEW_QUALITY_REJECTED');
+  assert.equal(accepted, false);
+});
+
+test('Views preserve warning severity and allow explicit acceptance of mixed warning evidence', async () => {
+  let accepted = false;
+  const acceptedProject = project();
+  acceptedProject.derived_assets = [{
+    ...asset('view_warning_asset', 1), capability: 'LINE_ART', parent_asset_id: 'asset_1',
+  }];
+  const warningQuality = {
+    verdict: 'warn' as const, accepted: false, review_required: true, score: 0.82,
+    summary: 'Geometry preserved; presentation needs review.',
+    failed_checks: ['unintended_drift'], warnings: ['Expected photo-to-line-art change.'],
+    checks: [{
+      key: 'geometry', label: 'Geometry', verdict: 'pass' as const,
+      severity: 'hard' as const, message: 'Matched source.',
+    }, {
+      key: 'unintended_drift', label: 'Unintended drift', verdict: 'fail' as const,
+      severity: 'warning' as const, message: 'Expected photo-to-line-art change.',
+    }],
+  };
+  const gateway = createStudioGateway(fakeClient({
+    createLineArt: async () => ok({
+      status: 'confirmation_required' as const, project_id: 'project_1',
+      image_run_id: 'run_warning', quality_report: warningQuality,
+      routing: { attempt_count: 1, used_retry: false, used_fallback: false, cache_hit: false, run_id: 'run_warning' },
+      view: 'three_quarter' as const,
+      candidate: {
+        run_id: 'run_warning', candidate_id: 'candidate_warning',
+        preview_url: 'https://example.test/warning.png', qa: warningQuality,
+        operation: 'VISUAL_ONLY_EDIT' as const, requested_change: 'Three-quarter line art',
+        asset_capability: 'LINE_ART',
+      }, next: 'Review the warning.',
+    }, 202),
+    acceptStudioViewCandidate: async () => {
+      accepted = true;
+      return ok({
+        status: 'accepted' as const, project_id: 'project_1', source_asset_id: 'asset_1',
+        design_version: 1, asset_id: 'view_warning_asset', project: acceptedProject,
+      }, 201);
+    },
+  }));
+  const previewResult = await gateway.previewLineArtView({
+    projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
+    createdBy: 'designer_1', view: 'three_quarter',
+  });
+  assert.equal(previewResult.error, null);
+  assert.deepEqual(previewResult.data?.checks.map((check) => ({
+    id: check.id, verdict: check.verdict, severity: check.severity,
+  })), [{ id: 'geometry', verdict: 'pass', severity: 'hard' }, {
+    id: 'unintended_drift', verdict: 'warn', severity: 'warning',
+  }]);
+  const result = await gateway.acceptLineArtView({
+    candidateId: 'candidate_warning', createdBy: 'designer_1',
+  });
+  assert.equal(result.error, null);
+  assert.equal(accepted, true);
+});
+
+test('Views gateway blocks a hard failed check even when the overall verdict is warn', async () => {
+  let accepted = false;
+  const malformedQuality = {
+    verdict: 'warn' as const, accepted: false, review_required: true, score: 0.3,
+    summary: 'Inconsistent warning payload.', failed_checks: ['geometry'], warnings: [],
+    checks: [{
+      key: 'geometry', label: 'Geometry', verdict: 'fail' as const,
+      severity: 'hard' as const, message: 'Geometry changed.',
+    }, {
+      key: 'presentation', label: 'Presentation', verdict: 'fail' as const,
+      severity: 'warning' as const, message: 'Presentation changed.',
+    }],
+  };
+  const gateway = createStudioGateway(fakeClient({
+    createLineArt: async () => ok({
+      status: 'confirmation_required' as const, project_id: 'project_1',
+      image_run_id: 'run_malformed', quality_report: malformedQuality,
+      routing: { attempt_count: 1, used_retry: false, used_fallback: false, cache_hit: false, run_id: 'run_malformed' },
+      view: 'side' as const,
+      candidate: {
+        run_id: 'run_malformed', candidate_id: 'candidate_malformed',
+        preview_url: 'https://example.test/malformed.png', qa: malformedQuality,
+        operation: 'VISUAL_ONLY_EDIT' as const, requested_change: 'Side line art',
+        asset_capability: 'LINE_ART',
+      }, next: 'Do not save.',
+    }, 202),
+    acceptStudioViewCandidate: async () => { accepted = true; return ok({} as never, 201); },
+  }));
+  const previewResult = await gateway.previewLineArtView({
+    projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
+    createdBy: 'designer_1', view: 'side',
+  });
+  assert.equal(previewResult.data?.checks[0]?.severity, 'hard');
+  assert.equal(previewResult.data?.checks[0]?.verdict, 'reject');
+  const result = await gateway.acceptLineArtView({
+    candidateId: 'candidate_malformed', createdBy: 'designer_1',
+  });
   assert.equal(result.error?.code, 'VIEW_QUALITY_REJECTED');
   assert.equal(accepted, false);
 });

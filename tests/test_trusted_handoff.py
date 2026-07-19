@@ -173,6 +173,13 @@ def test_factory_pack_requires_and_exports_exact_approval(trusted_client):
     manifest_response = client.get(f"/projects/{project_id}/factory-pack")
     assert manifest_response.status_code == 200, manifest_response.text
     manifest = manifest_response.json()
+    canonical_manifest = dict(manifest)
+    manifest_sha256 = canonical_manifest.pop("manifest_sha256")
+    assert manifest_sha256 == hashlib.sha256((
+        json.dumps(
+            canonical_manifest, indent=2, sort_keys=True, ensure_ascii=False,
+        ) + "\n"
+    ).encode("utf-8")).hexdigest()
     assert manifest["asset_id"] == asset_id
     assert manifest["design_version"] == 1
     assert manifest["checklist"]["id"] == checklist["checklist_id"]
@@ -209,6 +216,34 @@ def test_factory_pack_requires_and_exports_exact_approval(trusted_client):
 
     archive_response = client.get(f"/projects/{project_id}/factory-pack.zip")
     assert archive_response.status_code == 200, archive_response.text
+    exact_archive = client.get(
+        f"/projects/{project_id}/factory-pack.zip",
+        params={
+            "expected_asset_id": asset_id,
+            "expected_design_version": 1,
+            "expected_manifest_sha256": manifest_sha256,
+        },
+    )
+    assert exact_archive.status_code == 200, exact_archive.text
+    assert exact_archive.content == archive_response.content
+    stale_archive = client.get(
+        f"/projects/{project_id}/factory-pack.zip",
+        params={
+            "expected_asset_id": "ast_other_revision",
+            "expected_design_version": 1,
+            "expected_manifest_sha256": manifest_sha256,
+        },
+    )
+    assert stale_archive.status_code == 409
+    assert stale_archive.json()["code"] == "stale_factory_pack_identity"
+    incomplete_archive = client.get(
+        f"/projects/{project_id}/factory-pack.zip",
+        params={"expected_asset_id": asset_id},
+    )
+    assert incomplete_archive.status_code == 422
+    assert incomplete_archive.json()["code"] == (
+        "factory_pack_identity_incomplete"
+    )
     repeated = client.get(f"/projects/{project_id}/factory-pack.zip")
     assert repeated.content == archive_response.content
     with zipfile.ZipFile(io.BytesIO(archive_response.content)) as archive:
@@ -219,7 +254,10 @@ def test_factory_pack_requires_and_exports_exact_approval(trusted_client):
         }
         assert set(archive.namelist()) == expected_names
         stored = json.loads(archive.read("approval-manifest.json"))
-        assert stored == manifest
+        assert stored == canonical_manifest
+        assert hashlib.sha256(
+            archive.read("approval-manifest.json")
+        ).hexdigest() == manifest_sha256
         assert archive.read("approved-reference.png") == source
         assert "RING" in archive.read("facetta-sheet.svg").decode()
         schedule = archive.read("facetta-schedule-1.svg").decode()
@@ -373,6 +411,43 @@ def test_legacy_necklace_stays_readable_but_category_blocks_factory_release(
     pack = client.get(f"/projects/{project['root_id']}/factory-pack")
     assert pack.status_code == 409, pack.text
     assert pack.json()["code"] == "factory_category_not_released"
+
+
+def test_three_stone_ring_stays_readable_but_topology_blocks_factory_release(
+    trusted_client,
+):
+    client, Session = trusted_client
+    raw = copy.deepcopy(HALO_SPEC)
+    raw["template"] = "three_stone_prong"
+    project, _ = _persist_necklace_project(Session, raw)
+    _approve(client, project["active_asset_id"])
+
+    detail = client.get(f"/projects/{project['root_id']}").json()
+
+    assert detail["state"] == "approved"
+    assert detail["factory_ready"] is False
+    assert detail["spec"]["template"] == "three_stone_prong"
+    assert (
+        "factory_template_not_released", "template", "three_stone_prong",
+    ) in {
+        (blocker["code"], blocker["subject_kind"], blocker["subject_id"])
+        for blocker in detail["factory_blockers"]
+    }
+    template_blocker = next(
+        blocker for blocker in detail["factory_blockers"]
+        if blocker["code"] == "factory_template_not_released"
+    )
+    assert "will not substitute a generic or different ring drawing" in (
+        template_blocker["detail"]
+    )
+
+    pack = client.get(f"/projects/{project['root_id']}/factory-pack")
+    assert pack.status_code == 409, pack.text
+    assert pack.json()["code"] == "factory_template_not_released"
+
+    archive = client.get(f"/projects/{project['root_id']}/factory-pack.zip")
+    assert archive.status_code == 409, archive.text
+    assert archive.json()["code"] == "factory_template_not_released"
 
 
 def test_dimensioned_referenced_necklace_stays_readable_but_is_not_released_for_factory(

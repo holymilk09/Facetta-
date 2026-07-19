@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
-from PIL import Image
+from PIL import Image, ImageDraw
 from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -20,8 +20,16 @@ from conftest import EXAMPLE_SPEC, audited_import_spec
 
 from facetta.api import projects as projects_api
 from facetta.creative_workflow import (
+    generate_creative_render,
     get_creative_prompt_generator,
     get_creative_render_generator,
+)
+from facetta.creative_symmetry import JEWELRY_SYMMETRY_CONTRACT
+from facetta.creative_comparability import (
+    MAIN_VIEW_CONTRACT,
+    MAIN_VIEW_REPAIR_CONTRACT,
+    MainViewComparabilityAudit,
+    get_main_view_comparability_inspector,
 )
 from facetta.db import (
     Base,
@@ -53,6 +61,7 @@ from facetta.image_agent import (
     RingQualityEvaluator,
     build_image_plan,
 )
+from facetta.image_agent.contracts import ImageRoute
 from facetta.image_agent.planning import route_for_attempt
 from facetta.image_agent.prompts import (
     compile_correction_prompt,
@@ -67,6 +76,7 @@ from facetta.project_backbone import (
     persist_creative_project,
     persist_prompt_creative_project,
 )
+from facetta.provider_errors import RenderUnavailable
 from facetta.revision_component_map import (
     RevisionComponent,
     RevisionComponentMap,
@@ -74,6 +84,13 @@ from facetta.revision_component_map import (
 )
 from facetta.revision_component_map_store import add_revision_component_map
 from facetta.spec import Spec
+from facetta.source_understanding import (
+    SourceVisibleFactsBrief,
+    VisibleCenterStoneFacts,
+    VisibleSideStoneFacts,
+    compile_rough_drawing_intent_brief,
+    get_source_understanding_inspector,
+)
 
 
 def _png(color: tuple[int, int, int]) -> bytes:
@@ -233,6 +250,198 @@ def _prompt_creative_result(variant: int):
             )
 
     return JewelryImageAgent(Provider(), Evaluator()).run(plan)
+
+
+def _prompt_creative_result_for_instruction(
+    instruction: str,
+    variant: int,
+    *,
+    color_offset: int = 0,
+):
+    """Prompt fixture that proves the provider plan bound caller instructions."""
+
+    plan = build_image_plan(
+        ImageOperation.CREATIVE_GENERATE,
+        instruction,
+        variant=variant,
+    )
+
+    class Provider:
+        def execute(self, *_args, **_kwargs):
+            return ProviderImage(image_bytes=_png((
+                40 + color_offset,
+                90 + variant,
+                55,
+            )))
+
+    class Evaluator:
+        def evaluate(self, *_args, **_kwargs):
+            return ImageQualityReport(
+                verdict=QualityVerdict.WARN,
+                checks=(QualityCheck(
+                    code="requested_component_count_preserved",
+                    passed=True,
+                    severity=CheckSeverity.HARD,
+                    message="requested stone count is preserved",
+                ),),
+                score=94,
+            )
+
+    return JewelryImageAgent(Provider(), Evaluator()).run(plan)
+
+
+def _studio_ring(
+    *,
+    bbox: tuple[int, int, int, int],
+    canvas: int = 256,
+) -> bytes:
+    """Simple studio fixture with a complete, multi-part jewelry silhouette."""
+
+    image = Image.new("RGB", (canvas, canvas), (246, 242, 235))
+    draw = ImageDraw.Draw(image)
+    width = max(7, round((bbox[2] - bbox[0]) * 0.075))
+    draw.ellipse(bbox, outline=(110, 72, 28), width=width)
+    center_x = (bbox[0] + bbox[2]) // 2
+    stone_radius = max(8, round((bbox[2] - bbox[0]) * 0.095))
+    stone_y = bbox[1] + max(stone_radius, width // 2)
+    for offset in (-stone_radius * 2, 0, stone_radius * 2):
+        draw.ellipse(
+            (
+                center_x + offset - stone_radius,
+                stone_y - stone_radius,
+                center_x + offset + stone_radius,
+                stone_y + stone_radius,
+            ),
+            fill=(45, 112, 148),
+            outline=(92, 60, 24),
+            width=max(2, width // 4),
+        )
+    output = io.BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()
+
+
+def _prompt_creative_result_with_image(
+    instruction: str,
+    variant: int,
+    image: bytes,
+):
+    plan = build_image_plan(
+        ImageOperation.CREATIVE_GENERATE,
+        instruction,
+        variant=variant,
+    )
+
+    class Provider:
+        def execute(self, *_args, **_kwargs):
+            return ProviderImage(image_bytes=image)
+
+    class Evaluator:
+        def evaluate(self, *_args, **_kwargs):
+            return ImageQualityReport(
+                verdict=QualityVerdict.WARN,
+                checks=(QualityCheck(
+                    code="requested_component_count_preserved",
+                    passed=True,
+                    severity=CheckSeverity.HARD,
+                    message="requested stone count is preserved",
+                ),),
+                score=94,
+            )
+
+    return JewelryImageAgent(Provider(), Evaluator()).run(plan)
+
+
+def _comparison_result(
+    source: bytes,
+    instruction: str,
+    *,
+    preserve_identity: bool = True,
+    camera_reference_image: bytes | None = None,
+):
+    plan = build_image_plan(
+        ImageOperation.REFERENCE_RENDER,
+        instruction,
+        source_image=source,
+        quality_source_image=source,
+        camera_reference_image=camera_reference_image,
+        variant=0,
+    )
+
+    class Provider:
+        def execute(self, *_args, **_kwargs):
+            color = hashlib.sha256(source).digest()[:3]
+            return ProviderImage(image_bytes=_png(tuple(color)))
+
+    class Evaluator:
+        def evaluate(self, *_args, **_kwargs):
+            required = (
+                "requested_presentation_applied",
+                "source_design_preserved",
+                "visible_components_preserved",
+                "local_geometry_preserved",
+                "stone_shape_and_cut_family_preserved",
+            )
+            return ImageQualityReport(
+                verdict=QualityVerdict.WARN,
+                checks=tuple(QualityCheck(
+                    code=code,
+                    passed=(preserve_identity or code != "source_design_preserved"),
+                    severity=(
+                        CheckSeverity.HARD
+                        if preserve_identity else CheckSeverity.WARNING
+                    ),
+                    message=code,
+                ) for code in required),
+                score=96 if preserve_identity else 40,
+            )
+
+    return JewelryImageAgent(Provider(), Evaluator()).run(
+        plan,
+        source_image=source,
+        quality_source_image=source,
+        camera_reference_image=camera_reference_image,
+    )
+
+
+def test_camera_reference_render_has_bounded_transport_retry_budget(monkeypatch):
+    camera_reference = _png((12, 34, 56))
+    captured: dict[str, object] = {}
+    sentinel = object()
+
+    class CapturingAgent:
+        def __init__(self, *_args, **kwargs):
+            captured["attempt_routes"] = kwargs.get("attempt_routes")
+
+        def run(self, plan, **kwargs):
+            captured["plan"] = plan
+            captured["run_kwargs"] = kwargs
+            return sentinel
+
+    monkeypatch.setattr(
+        "facetta.creative_workflow.JewelryImageAgent",
+        CapturingAgent,
+    )
+
+    result = generate_creative_render(
+        SOURCE,
+        "match only the camera while preserving this ring",
+        2,
+        quality_source_image=SOURCE,
+        camera_reference_image=camera_reference,
+    )
+
+    assert result is sentinel
+    assert captured["attempt_routes"] == (
+        ImageRoute.OPENAI_EDIT,
+        ImageRoute.OPENAI_EDIT,
+        ImageRoute.OPENAI_EDIT,
+    )
+    assert captured["run_kwargs"] == {
+        "source_image": SOURCE,
+        "quality_source_image": SOURCE,
+        "camera_reference_image": camera_reference,
+    }
 
 
 def test_prompt_creative_plan_is_category_neutral_and_review_only():
@@ -483,6 +692,90 @@ def test_reference_render_qa_hard_fails_silent_redesign():
     }
 
 
+def test_low_information_drawing_qa_accepts_professional_interpretation():
+    plan = build_image_plan(
+        ImageOperation.REFERENCE_RENDER,
+        (
+            "Interpret this loose sketch as an emerald and gold ring.\n\n"
+            f"{compile_rough_drawing_intent_brief()}\n\n"
+            f"{JEWELRY_SYMMETRY_CONTRACT}"
+        ),
+        source_image=SOURCE,
+    )
+    inspection = CreativeRenderInspection(
+        coherent_jewelry_render=True,
+        complete_piece_visible=True,
+        source_design_preserved=True,
+        # A polished interpretation cannot honestly prove these literal facts
+        # from the loose marks, and they are intentionally not acceptance gates.
+        visible_components_preserved=False,
+        local_geometry_preserved=False,
+        repeated_element_pattern_preserved=False,
+        stone_shape_and_cut_family_preserved=False,
+        requested_presentation_applied=True,
+        symmetry_expectation_matches=True,
+        text_or_branding_detected=False,
+        score=91,
+    )
+    report = RingQualityEvaluator(
+        creative_inspector=_CreativeInspector(inspection),
+        require_cross_inspection=False,
+        require_render_cross_inspection=False,
+    ).evaluate(
+        plan,
+        _png((80, 60, 40)),
+        source_image=SOURCE,
+        mask_bytes=None,
+    )
+
+    assert report.verdict is QualityVerdict.WARN
+    checks = {check.code: check for check in report.checks}
+    assert checks["source_design_preserved"].passed is True
+    assert checks["jewelry_symmetry"].passed is True
+    assert "visible_components_preserved" not in checks
+    assert "local_geometry_preserved" not in checks
+    assert "repeated_element_pattern_preserved" not in checks
+    assert "stone_shape_and_cut_family_preserved" not in checks
+
+
+def test_finished_source_without_rough_contract_keeps_literal_fidelity_gates():
+    plan = build_image_plan(
+        ImageOperation.REFERENCE_RENDER,
+        "Polish this finished render without redesigning it",
+        source_image=SOURCE,
+    )
+    inspection = CreativeRenderInspection(
+        coherent_jewelry_render=True,
+        complete_piece_visible=True,
+        source_design_preserved=True,
+        visible_components_preserved=False,
+        local_geometry_preserved=False,
+        repeated_element_pattern_preserved=False,
+        stone_shape_and_cut_family_preserved=False,
+        requested_presentation_applied=True,
+        text_or_branding_detected=False,
+        score=40,
+    )
+    report = RingQualityEvaluator(
+        creative_inspector=_CreativeInspector(inspection),
+        require_cross_inspection=False,
+        require_render_cross_inspection=False,
+    ).evaluate(
+        plan,
+        _png((80, 60, 40)),
+        source_image=SOURCE,
+        mask_bytes=None,
+    )
+
+    assert report.verdict is QualityVerdict.FAIL
+    assert {check.code for check in report.failed_checks} >= {
+        "visible_components_preserved",
+        "local_geometry_preserved",
+        "repeated_element_pattern_preserved",
+        "stone_shape_and_cut_family_preserved",
+    }
+
+
 def test_reference_render_qa_rejects_attractive_local_pattern_drift():
     plan = build_image_plan(
         ImageOperation.REFERENCE_RENDER,
@@ -592,6 +885,21 @@ def creative_client():
             yield db
 
     app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_main_view_comparability_inspector] = (
+        lambda: lambda _first, _second: MainViewComparabilityAudit(
+            first_complete_piece_visible=True,
+            second_complete_piece_visible=True,
+            camera_view_matches=True,
+            camera_elevation_matches=True,
+            image_plane_rotation_matches=True,
+            crop_and_frame_fill_match=True,
+            review_scale_matches=True,
+            background_family_matches=True,
+            comparable=True,
+            score=98,
+            notes=("shared primary framing confirmed",),
+        )
+    )
     client = TestClient(app)
     client.app_state["session_factory"] = Session
     try:
@@ -875,6 +1183,1512 @@ def test_production_create_requires_valid_job_before_provider_cost(
     assert drawing_replay.status_code == 409
     assert drawing_replay.json()["code"] == "studio_job_terminal"
     assert len(drawing_calls) == 1
+
+
+def test_prompt_create_bundles_consistent_review_views_without_extra_charge(
+    creative_client,
+):
+    client, Session = creative_client
+    comparison_calls: list[tuple[bytes, str, int]] = []
+
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: lambda _instruction, variant: _prompt_creative_result(variant)
+    )
+
+    def compare(source: bytes, instruction: str, variant: int, **_kwargs):
+        comparison_calls.append((source, instruction, variant))
+        return _comparison_result(source, instruction)
+
+    app.dependency_overrides[get_creative_render_generator] = lambda: compare
+    job_id = _running_create_job(client, requested_outputs=2)
+    response = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=2),
+        "comparison_views": ["three_quarter"],
+        "studio_job_id": job_id,
+    })
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert len(comparison_calls) == 2
+    assert {variant for _source, _instruction, variant in comparison_calls} == {0}
+    assert all(
+        "approximately 35 degrees" in instruction
+        for _source, instruction, _variant in comparison_calls
+    )
+    candidates = body["creative_candidates"]
+    assert len(candidates) == 2
+    assert all(
+        [view["view"] for view in candidate["views"]]
+        == ["primary", "three_quarter"]
+        for candidate in candidates
+    )
+    assert all(
+        candidate["views"][1]["asset_id"] != candidate["asset_id"]
+        for candidate in candidates
+    )
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        # The paired angle is included review evidence for each 15-credit
+        # direction, never an extra requested or charged Studio output.
+        assert job.requested_outputs == 2
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        comparisons = list(db.scalars(select(ImageAsset).where(
+            ImageAsset.capability
+            == "CREATIVE_COMPARISON_THREE_QUARTER"
+        )))
+        assert len(comparisons) == 2
+        assert all(row.design_version is None for row in comparisons)
+        all_runs = list(db.scalars(select(ImageRun)))
+        assert len(all_runs) == 4
+        primary_ids = {candidate["asset_id"] for candidate in candidates}
+        comparison_by_hash = {
+            hashlib.sha256(bytes(row.image)).hexdigest(): row
+            for row in comparisons
+        }
+        comparison_runs = [
+            run for run in all_runs
+            if run.operation == ImageOperation.REFERENCE_RENDER.value
+        ]
+        assert len(comparison_runs) == 2
+        for run in comparison_runs:
+            # A comparison is still review evidence, not an accepted revision;
+            # its run therefore binds by output hash while accepted_asset_id
+            # honestly remains empty until an explicit designer decision.
+            assert run.accepted_asset_id is None
+            output_hash = db.scalar(select(ImageAttempt.output_hash).where(
+                ImageAttempt.run_id == run.id,
+                ImageAttempt.attempt_number == 1,
+            ))
+            comparison = comparison_by_hash[output_hash]
+            assert run.source_asset_id == comparison.parent_asset_id
+            assert run.source_asset_id in primary_ids
+            primary = db.get(ImageAsset, run.source_asset_id)
+            assert primary is not None
+            assert run.source_hash == hashlib.sha256(
+                bytes(primary.image)
+            ).hexdigest()
+            assert comparison.root_id == primary.root_id == body["root_id"]
+            response_view = next(
+                view
+                for candidate in candidates
+                if candidate["asset_id"] == primary.id
+                for view in candidate["views"]
+                if view["view"] == "three_quarter"
+            )
+            assert response_view["asset_id"] == comparison.id
+            assert response_view["sha256"] == hashlib.sha256(
+                bytes(comparison.image)
+            ).hexdigest()
+
+
+@pytest.mark.parametrize("source_kind", ["prompt", "drawing"])
+def test_create_applies_and_audits_one_shared_primary_view_contract(
+    creative_client,
+    source_kind,
+):
+    client, Session = creative_client
+    provider_instructions: list[str] = []
+    compared: list[tuple[bytes, bytes]] = []
+
+    def inspect(first: bytes, second: bytes) -> MainViewComparabilityAudit:
+        compared.append((first, second))
+        return MainViewComparabilityAudit(
+            first_complete_piece_visible=True,
+            second_complete_piece_visible=True,
+            camera_view_matches=True,
+            camera_elevation_matches=True,
+            image_plane_rotation_matches=True,
+            crop_and_frame_fill_match=True,
+            review_scale_matches=True,
+            background_family_matches=True,
+            comparable=True,
+            score=97,
+            notes=("like-for-like primary presentation",),
+        )
+
+    app.dependency_overrides[get_main_view_comparability_inspector] = (
+        lambda: inspect
+    )
+    if source_kind == "prompt":
+        def generate_prompt(instruction: str, variant: int):
+            provider_instructions.append(instruction)
+            return _prompt_creative_result(variant)
+
+        app.dependency_overrides[get_creative_prompt_generator] = (
+            lambda: generate_prompt
+        )
+        route = "/projects/from-prompt"
+        payload = _prompt_request(variation_count=3)
+    else:
+        def generate_drawing(
+            source: bytes,
+            instruction: str,
+            variant: int,
+        ):
+            provider_instructions.append(instruction)
+            return _creative_result_for_source(source, instruction, variant)
+
+        app.dependency_overrides[get_creative_render_generator] = (
+            lambda: generate_drawing
+        )
+        route = "/projects/from-drawing"
+        payload = _request(variation_count=3)
+
+    job_id = _running_create_job(client, requested_outputs=3)
+    response = client.post(route, json={
+        **payload,
+        "studio_job_id": job_id,
+    })
+
+    assert response.status_code == 201, response.text
+    assert len(provider_instructions) == 3
+    assert all(MAIN_VIEW_CONTRACT in text for text in provider_instructions)
+    assert all(
+        JEWELRY_SYMMETRY_CONTRACT in text
+        for text in provider_instructions
+    )
+    assert len(compared) == 2
+    assert compared[0][0] == compared[1][0]
+    assert compared[0][1] != compared[1][1]
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "reviewing"
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        runs = list(db.scalars(select(ImageRun).order_by(ImageRun.variant)))
+        assert len(runs) == 3
+        checks_by_variant = {
+            run.variant: [
+                check
+                for attempt in db.scalars(select(ImageAttempt).where(
+                    ImageAttempt.run_id == run.id,
+                ))
+                for check in attempt.qa_checks
+                if check["code"] == "cross_direction_main_view_comparable"
+            ]
+            for run in runs
+        }
+        assert checks_by_variant[runs[0].variant] == []
+        assert all(
+            checks_by_variant[run.variant][0]["passed"] is True
+            for run in runs[1:]
+        )
+        assert all(
+            checks_by_variant[run.variant][0]["evidence"]["contract"]
+            == MAIN_VIEW_CONTRACT
+            for run in runs[1:]
+        )
+
+
+def test_prompt_create_repairs_only_mismatched_later_direction_and_keeps_evidence(
+    creative_client,
+):
+    client, Session = creative_client
+    prompt_instructions: list[str] = []
+    prompt_outputs: list[bytes] = []
+    repair_calls: list[tuple[bytes, str, int, bytes]] = []
+    audits = iter((False, False, False, True))
+
+    def generate(instruction: str, variant: int):
+        prompt_instructions.append(instruction)
+        result = _prompt_creative_result_for_instruction(
+            instruction,
+            variant,
+            color_offset=len(prompt_instructions) * 5,
+        )
+        prompt_outputs.append(result.image_bytes)
+        return result
+
+    def repair(
+        source: bytes,
+        instruction: str,
+        variant: int,
+        *,
+        camera_reference_image: bytes,
+        **_kwargs,
+    ):
+        repair_calls.append((
+            source,
+            instruction,
+            variant,
+            camera_reference_image,
+        ))
+        return _comparison_result(
+            source,
+            instruction,
+            camera_reference_image=camera_reference_image,
+        )
+
+    def inspect(_first: bytes, _second: bytes) -> MainViewComparabilityAudit:
+        passed = next(audits)
+        return MainViewComparabilityAudit(
+            first_complete_piece_visible=True,
+            second_complete_piece_visible=True,
+            camera_view_matches=passed,
+            camera_elevation_matches=passed,
+            image_plane_rotation_matches=True,
+            crop_and_frame_fill_match=passed,
+            review_scale_matches=passed,
+            background_family_matches=True,
+            comparable=passed,
+            differences=(
+                () if passed else (
+                    "Direction 2 is lower, tighter, and larger than Direction 1",
+                )
+            ),
+            score=96 if passed else 42,
+        )
+
+    app.dependency_overrides[get_creative_prompt_generator] = lambda: generate
+    app.dependency_overrides[get_creative_render_generator] = lambda: repair
+    app.dependency_overrides[get_main_view_comparability_inspector] = (
+        lambda: inspect
+    )
+    job_id = _running_create_job(client, requested_outputs=2)
+    response = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=2),
+        "studio_job_id": job_id,
+    })
+
+    assert response.status_code == 201, response.text
+    assert len(prompt_instructions) == 2
+    assert len(repair_calls) == 1
+    assert all(
+        MAIN_VIEW_REPAIR_CONTRACT not in instruction
+        for instruction in prompt_instructions
+    )
+    rejected_bytes = _png((50, 95, 55))
+    (
+        repair_source,
+        repair_instruction,
+        repair_variant,
+        camera_reference,
+    ) = repair_calls[0]
+    assert repair_source == rejected_bytes
+    assert camera_reference == prompt_outputs[0]
+    assert camera_reference != repair_source
+    assert repair_variant == 5
+    assert MAIN_VIEW_REPAIR_CONTRACT in repair_instruction
+    assert "lower, tighter, and larger" in repair_instruction
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "reviewing"
+        assert job.requested_outputs == 2
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert db.scalar(select(func.count()).select_from(Project)) == 1
+        candidates = list(db.scalars(select(ImageAsset).where(
+            ImageAsset.capability == "CREATIVE_RENDER",
+        )))
+        assert len(candidates) == 2
+        assert all(bytes(row.image) != rejected_bytes for row in candidates)
+        runs = list(db.scalars(select(ImageRun).order_by(ImageRun.created_at)))
+        assert len(runs) == 3
+        rejected = next(run for run in runs if run.status == "failed")
+        assert rejected.accepted_asset_id is None
+        assert rejected.project_root_id == response.json()["root_id"]
+        repaired = next(
+            run for run in runs
+            if run.status == "review_required"
+            and run.source_hash == hashlib.sha256(rejected_bytes).hexdigest()
+        )
+        repaired_checks = [
+            check
+            for attempt in db.scalars(select(ImageAttempt).where(
+                ImageAttempt.run_id == repaired.id,
+            ))
+            for check in attempt.qa_checks
+        ]
+        assert any(
+            check["code"] == "source_design_preserved"
+            and check["passed"] is True
+            for check in repaired_checks
+        )
+        assert any(
+            check["code"] == "cross_direction_main_view_comparable"
+            and check["passed"] is True
+            for check in repaired_checks
+        )
+
+
+def test_prompt_create_normalizes_framing_without_provider_repair(
+    creative_client,
+):
+    client, Session = creative_client
+    reference = _studio_ring(bbox=(30, 30, 226, 226))
+    loose_lower = _studio_ring(bbox=(56, 72, 206, 222))
+    outputs = iter((reference, loose_lower))
+    inspections: list[tuple[bytes, bytes]] = []
+    repair_calls = 0
+
+    def generate(instruction: str, variant: int):
+        return _prompt_creative_result_with_image(
+            instruction,
+            variant,
+            next(outputs),
+        )
+
+    def repair(*_args, **_kwargs):
+        nonlocal repair_calls
+        repair_calls += 1
+        raise AssertionError("framing-only mismatch must not call a provider")
+
+    def inspect(first: bytes, second: bytes) -> MainViewComparabilityAudit:
+        inspections.append((first, second))
+        return MainViewComparabilityAudit(
+            first_complete_piece_visible=True,
+            second_complete_piece_visible=True,
+            camera_view_matches=True,
+            camera_elevation_matches=True,
+            image_plane_rotation_matches=True,
+            crop_and_frame_fill_match=False,
+            review_scale_matches=False,
+            background_family_matches=True,
+            comparable=False,
+            differences=("Direction 2 is smaller and lower in the frame",),
+            score=76,
+        )
+
+    app.dependency_overrides[get_creative_prompt_generator] = lambda: generate
+    app.dependency_overrides[get_creative_render_generator] = lambda: repair
+    app.dependency_overrides[get_main_view_comparability_inspector] = (
+        lambda: inspect
+    )
+    job_id = _running_create_job(client, requested_outputs=2)
+    response = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=2),
+        "studio_job_id": job_id,
+    })
+
+    assert response.status_code == 201, response.text
+    assert repair_calls == 0
+    # A successful deterministic normalization is not sent through a second,
+    # stochastic vision audit that can contradict the original camera facts.
+    assert len(inspections) == 1
+    assert inspections[0] == (reference, loose_lower)
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "reviewing"
+        assert job.completed_outputs == job.charged_outputs == 0
+        assets = list(db.scalars(select(ImageAsset).where(
+            ImageAsset.capability == "CREATIVE_RENDER",
+        )))
+        assert len(assets) == 2
+        normalized = next(
+            bytes(asset.image)
+            for asset in assets
+            if bytes(asset.image) != reference
+        )
+        assert normalized != loose_lower
+        assert any(bytes(asset.image) == normalized for asset in assets)
+        assert all(bytes(asset.image) != loose_lower for asset in assets)
+        runs = list(db.scalars(select(ImageRun).order_by(ImageRun.created_at)))
+        assert len(runs) == 3
+        rejected = next(run for run in runs if run.status == "failed")
+        assert rejected.accepted_asset_id is None
+        derivative = next(
+            run for run in runs
+            if run.status == "review_required" and run.variant == 5
+        )
+        attempt = db.scalar(select(ImageAttempt).where(
+            ImageAttempt.run_id == derivative.id,
+        ))
+        assert attempt is not None
+        # The provider attempt remains bound to its original pixels. The
+        # derivative hash and exact affine operation live in append-only QA.
+        assert attempt.output_hash == hashlib.sha256(loose_lower).hexdigest()
+        normalization = next(
+            check
+            for check in attempt.qa_checks
+            if check["code"] == "deterministic_presentation_normalized"
+        )
+        evidence = normalization["evidence"]
+        assert evidence["source_sha256"] == attempt.output_hash
+        assert evidence["output_sha256"] == hashlib.sha256(normalized).hexdigest()
+        assert evidence["provider_calls"] == 0
+        assert evidence["generative_model_used"] is False
+        comparison = next(
+            check
+            for check in attempt.qa_checks
+            if check["code"] == "cross_direction_main_view_comparable"
+        )
+        assert comparison["passed"] is True
+        assert comparison["evidence"]["audit"]["comparable"] is True
+        assert comparison["evidence"]["audit"]["differences"] == []
+
+
+def _create_normalized_prompt_project(client: TestClient) -> tuple[dict, bytes]:
+    """Create two directions where Direction 2 is an affine derivative."""
+
+    reference = _studio_ring(bbox=(30, 30, 226, 226))
+    loose_lower = _studio_ring(bbox=(56, 72, 206, 222))
+    outputs = iter((reference, loose_lower))
+
+    def generate(instruction: str, variant: int):
+        return _prompt_creative_result_with_image(
+            instruction, variant, next(outputs),
+        )
+
+    def inspect(_first: bytes, _second: bytes) -> MainViewComparabilityAudit:
+        return MainViewComparabilityAudit(
+            first_complete_piece_visible=True,
+            second_complete_piece_visible=True,
+            camera_view_matches=True,
+            camera_elevation_matches=True,
+            image_plane_rotation_matches=True,
+            crop_and_frame_fill_match=False,
+            review_scale_matches=False,
+            background_family_matches=True,
+            comparable=False,
+            differences=("Direction 2 is smaller and lower in the frame",),
+            score=76,
+        )
+
+    app.dependency_overrides[get_creative_prompt_generator] = lambda: generate
+    app.dependency_overrides[get_main_view_comparability_inspector] = (
+        lambda: inspect
+    )
+    response = client.post(
+        "/projects/from-prompt", json=_prompt_request(variation_count=2),
+    )
+    assert response.status_code == 201, response.text
+    return response.json(), loose_lower
+
+
+def test_creative_direction_commit_accepts_hash_bound_affine_derivative(
+    creative_client,
+):
+    client, Session = creative_client
+    project, raw_provider_image = _create_normalized_prompt_project(client)
+    candidates = [
+        item["asset_id"] for item in project["creative_candidates"]
+    ]
+    selected_id = candidates[1]
+    job_id = _reviewing_create_job(
+        client, project_id=project["root_id"], requested_outputs=2,
+    )
+
+    committed = client.post(
+        f"/projects/{project['root_id']}/creative-directions/commit",
+        json={
+            "selected_candidate_id": selected_id,
+            "retained": [{
+                "candidate_id": candidates[0],
+                "label": "Sibling direction",
+            }],
+            "created_by": "usr_designer",
+            "studio_job_id": job_id,
+        },
+    )
+    assert committed.status_code == 200, committed.text
+
+    with Session() as db:
+        revision = db.scalar(select(ProjectRevisionRecord).where(
+            ProjectRevisionRecord.asset_id == selected_id,
+        ))
+        assert revision is not None
+        run = db.get(ImageRun, revision.raw_intent["image_run_id"])
+        selected_asset = db.get(ImageAsset, selected_id)
+        assert run is not None
+        assert selected_asset is not None
+        attempt = next(
+            attempt
+            for attempt in db.scalars(select(ImageAttempt).where(
+                ImageAttempt.run_id == run.id,
+            ))
+            if any(
+                check["code"] == "deterministic_presentation_normalized"
+                for check in attempt.qa_checks
+            )
+        )
+        raw_sha256 = hashlib.sha256(raw_provider_image).hexdigest()
+        derivative_sha256 = hashlib.sha256(
+            bytes(selected_asset.image)
+        ).hexdigest()
+        assert raw_sha256 != derivative_sha256
+        assert attempt.output_hash == raw_sha256
+        normalization = next(
+            check for check in attempt.qa_checks
+            if check["code"] == "deterministic_presentation_normalized"
+        )
+        assert normalization["evidence"]["source_sha256"] == raw_sha256
+        assert normalization["evidence"]["output_sha256"] == derivative_sha256
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "succeeded"
+        assert job.completed_outputs == job.charged_outputs == 2
+
+
+def test_creative_direction_commit_rejects_tampered_affine_derivative_proof(
+    creative_client,
+):
+    client, Session = creative_client
+    project, _raw_provider_image = _create_normalized_prompt_project(client)
+    candidates = [
+        item["asset_id"] for item in project["creative_candidates"]
+    ]
+    selected_id = candidates[1]
+    with Session() as db:
+        attempts = list(db.scalars(select(ImageAttempt).join(
+            ImageRun, ImageRun.id == ImageAttempt.run_id,
+        ).where(ImageRun.project_root_id == project["root_id"])))
+        attempt = next(
+            item for item in attempts
+            if any(
+                check["code"] == "deterministic_presentation_normalized"
+                for check in item.qa_checks
+            )
+        )
+        checks = copy.deepcopy(attempt.qa_checks)
+        normalization = next(
+            check for check in checks
+            if check["code"] == "deterministic_presentation_normalized"
+        )
+        normalization["evidence"]["output_sha256"] = "0" * 64
+        db.execute(
+            update(ImageAttempt)
+            .where(ImageAttempt.id == attempt.id)
+            .values(qa_checks=checks)
+        )
+        db.commit()
+
+    job_id = _reviewing_create_job(
+        client, project_id=project["root_id"], requested_outputs=2,
+    )
+    rejected = client.post(
+        f"/projects/{project['root_id']}/creative-directions/commit",
+        json={
+            "selected_candidate_id": selected_id,
+            "retained": [{
+                "candidate_id": candidates[0],
+                "label": "Sibling direction",
+            }],
+            "created_by": "usr_designer",
+            "studio_job_id": job_id,
+        },
+    )
+    assert rejected.status_code == 409
+    assert "missing or ambiguous generation provenance" in rejected.json()[
+        "detail"
+    ]
+    with Session() as db:
+        stored = db.get(Project, project["root_id"])
+        job = db.get(StudioJobRecord, job_id)
+        assert stored is not None
+        assert stored.selected_candidate_asset_id is None
+        assert db.scalar(
+            select(func.count()).select_from(ProjectRevisionRecord)
+        ) == 0
+        assert job is not None
+        assert job.status == "reviewing"
+        assert job.completed_outputs == job.charged_outputs == 0
+
+
+def test_creative_direction_commit_rejects_ambiguous_affine_derivative_proof(
+    creative_client,
+):
+    client, Session = creative_client
+    project, _raw_provider_image = _create_normalized_prompt_project(client)
+    candidates = [
+        item["asset_id"] for item in project["creative_candidates"]
+    ]
+    selected_id = candidates[1]
+    with Session() as db:
+        attempts = list(db.scalars(select(ImageAttempt).join(
+            ImageRun, ImageRun.id == ImageAttempt.run_id,
+        ).where(ImageRun.project_root_id == project["root_id"])))
+        attempt = next(
+            item for item in attempts
+            if any(
+                check["code"] == "deterministic_presentation_normalized"
+                for check in item.qa_checks
+            )
+        )
+        run = db.get(ImageRun, attempt.run_id)
+        assert run is not None
+        duplicate_run = ImageRun(
+            id="run_ambiguous_affine_derivative",
+            project_root_id=run.project_root_id,
+            source_asset_id=run.source_asset_id,
+            operation=run.operation,
+            normalized_intent=dict(run.normalized_intent),
+            prompt_version=run.prompt_version,
+            input_hash=run.input_hash,
+            source_hash=run.source_hash,
+            mask_hash=run.mask_hash,
+            spec_visual_hash=run.spec_visual_hash,
+            source_spec_visual_hash=run.source_spec_visual_hash,
+            variant=run.variant,
+            status=run.status,
+            accepted_asset_id=None,
+            error_category=run.error_category,
+            created_by=run.created_by,
+            created_at=utcnow(),
+        )
+        duplicate_attempt = ImageAttempt(
+            id="iat_ambiguous_affine_derivative",
+            run_id=duplicate_run.id,
+            attempt_number=attempt.attempt_number,
+            provider=attempt.provider,
+            model=attempt.model,
+            cached=attempt.cached,
+            qa_verdict=attempt.qa_verdict,
+            qa_checks=copy.deepcopy(attempt.qa_checks),
+            output_hash=attempt.output_hash,
+            usage=dict(attempt.usage),
+            created_at=utcnow(),
+        )
+        db.add_all([duplicate_run, duplicate_attempt])
+        db.commit()
+
+    job_id = _reviewing_create_job(
+        client, project_id=project["root_id"], requested_outputs=2,
+    )
+    rejected = client.post(
+        f"/projects/{project['root_id']}/creative-directions/commit",
+        json={
+            "selected_candidate_id": selected_id,
+            "retained": [{
+                "candidate_id": candidates[0],
+                "label": "Sibling direction",
+            }],
+            "created_by": "usr_designer",
+            "studio_job_id": job_id,
+        },
+    )
+    assert rejected.status_code == 409
+    assert "missing or ambiguous generation provenance" in rejected.json()[
+        "detail"
+    ]
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert db.scalar(
+            select(func.count()).select_from(ProjectRevisionRecord)
+        ) == 0
+        assert job is not None
+        assert job.status == "reviewing"
+        assert job.completed_outputs == job.charged_outputs == 0
+
+
+def test_creative_direction_commit_keeps_raw_hash_as_primary_path(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: (lambda _instruction, variant: _prompt_creative_result(variant))
+    )
+    created = client.post(
+        "/projects/from-prompt", json=_prompt_request(variation_count=1),
+    )
+    assert created.status_code == 201, created.text
+    project = created.json()
+    candidate_id = project["creative_candidates"][0]["asset_id"]
+    job_id = _reviewing_create_job(
+        client, project_id=project["root_id"], requested_outputs=1,
+    )
+    committed = client.post(
+        f"/projects/{project['root_id']}/creative-directions/commit",
+        json={
+            "selected_candidate_id": candidate_id,
+            "retained": [],
+            "created_by": "usr_designer",
+            "studio_job_id": job_id,
+        },
+    )
+    assert committed.status_code == 200, committed.text
+    with Session() as db:
+        candidate = db.get(ImageAsset, candidate_id)
+        revision = db.scalar(select(ProjectRevisionRecord).where(
+            ProjectRevisionRecord.asset_id == candidate_id,
+        ))
+        assert candidate is not None
+        assert revision is not None
+        run = db.get(ImageRun, revision.raw_intent["image_run_id"])
+        assert run is not None
+        candidate_sha256 = hashlib.sha256(bytes(candidate.image)).hexdigest()
+        attempt = db.scalar(select(ImageAttempt).where(
+            ImageAttempt.run_id == run.id,
+            ImageAttempt.output_hash == candidate_sha256,
+        ))
+        assert attempt is not None
+        assert all(
+            check["code"] != "deterministic_presentation_normalized"
+            for check in attempt.qa_checks
+        )
+
+
+def test_creative_direction_commit_rejects_secondary_view_as_provenance(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: (lambda _instruction, variant: _prompt_creative_result(variant))
+    )
+    created = client.post(
+        "/projects/from-prompt", json=_prompt_request(variation_count=1),
+    )
+    assert created.status_code == 201, created.text
+    project = created.json()
+    candidate_id = project["creative_candidates"][0]["asset_id"]
+    with Session() as db:
+        candidate = db.get(ImageAsset, candidate_id)
+        assert candidate is not None
+        candidate_sha256 = hashlib.sha256(bytes(candidate.image)).hexdigest()
+        primary_attempt = db.scalar(select(ImageAttempt).join(
+            ImageRun, ImageRun.id == ImageAttempt.run_id,
+        ).where(
+            ImageRun.project_root_id == project["root_id"],
+            ImageAttempt.output_hash == candidate_sha256,
+        ))
+        assert primary_attempt is not None
+        db.execute(
+            update(ImageAttempt)
+            .where(ImageAttempt.id == primary_attempt.id)
+            .values(output_hash="0" * 64)
+        )
+        secondary_run = ImageRun(
+            id="run_secondary_comparison_view",
+            project_root_id=project["root_id"],
+            source_asset_id=candidate_id,
+            operation=ImageOperation.REFERENCE_RENDER.value,
+            normalized_intent={"requested_change": "three-quarter view"},
+            prompt_version="comparison_view.v1",
+            input_hash="1" * 64,
+            source_hash=candidate_sha256,
+            mask_hash=None,
+            spec_visual_hash=None,
+            source_spec_visual_hash=None,
+            variant=0,
+            status="review_required",
+            accepted_asset_id=None,
+            error_category=None,
+            created_by="usr_designer",
+            created_at=utcnow(),
+        )
+        db.add_all([
+            secondary_run,
+            ImageAttempt(
+                id="iat_secondary_comparison_view",
+                run_id=secondary_run.id,
+                attempt_number=1,
+                provider="fixture",
+                model="fixture",
+                cached=False,
+                qa_verdict="warn",
+                qa_checks=[],
+                output_hash=candidate_sha256,
+                usage={},
+                created_at=utcnow(),
+            ),
+        ])
+        db.commit()
+
+    job_id = _reviewing_create_job(
+        client, project_id=project["root_id"], requested_outputs=1,
+    )
+    rejected = client.post(
+        f"/projects/{project['root_id']}/creative-directions/commit",
+        json={
+            "selected_candidate_id": candidate_id,
+            "retained": [],
+            "created_by": "usr_designer",
+            "studio_job_id": job_id,
+        },
+    )
+    assert rejected.status_code == 409
+    assert "missing or ambiguous generation provenance" in rejected.json()[
+        "detail"
+    ]
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert db.scalar(
+            select(func.count()).select_from(ProjectRevisionRecord)
+        ) == 0
+        assert job is not None
+        assert job.status == "reviewing"
+        assert job.completed_outputs == job.charged_outputs == 0
+
+
+def test_prompt_create_adjudicates_stochastic_camera_claim_before_normalizing(
+    creative_client,
+):
+    client, Session = creative_client
+    reference = _studio_ring(bbox=(30, 30, 226, 226))
+    loose_lower = _studio_ring(bbox=(56, 72, 206, 222))
+    outputs = iter((reference, loose_lower))
+    repair_calls = 0
+    inspections = 0
+
+    def generate(instruction: str, variant: int):
+        return _prompt_creative_result_with_image(
+            instruction,
+            variant,
+            next(outputs),
+        )
+
+    def repair(*_args, **_kwargs):
+        nonlocal repair_calls
+        repair_calls += 1
+        raise AssertionError("conflicting camera claim must not call a provider")
+
+    camera_claim = MainViewComparabilityAudit(
+        first_complete_piece_visible=True,
+        second_complete_piece_visible=True,
+        camera_view_matches=False,
+        camera_elevation_matches=True,
+        image_plane_rotation_matches=True,
+        crop_and_frame_fill_match=False,
+        review_scale_matches=False,
+        background_family_matches=True,
+        comparable=False,
+        differences=("candidate may use a different camera",),
+        score=28,
+    )
+    framing_only = camera_claim.model_copy(update={
+        "camera_view_matches": True,
+        "differences": ("candidate is smaller and lower in the frame",),
+        "score": 82,
+    })
+    audits = iter((camera_claim, framing_only, framing_only))
+
+    def inspect(_first: bytes, _second: bytes) -> MainViewComparabilityAudit:
+        nonlocal inspections
+        inspections += 1
+        return next(audits)
+
+    app.dependency_overrides[get_creative_prompt_generator] = lambda: generate
+    app.dependency_overrides[get_creative_render_generator] = lambda: repair
+    app.dependency_overrides[get_main_view_comparability_inspector] = (
+        lambda: inspect
+    )
+    job_id = _running_create_job(client, requested_outputs=2)
+    response = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=2),
+        "studio_job_id": job_id,
+    })
+
+    assert response.status_code == 201, response.text
+    assert inspections == 3
+    assert repair_calls == 0
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "reviewing"
+        assert job.completed_outputs == job.charged_outputs == 0
+        attempts = list(db.scalars(select(ImageAttempt)))
+        comparison = next(
+            check
+            for attempt in attempts
+            for check in attempt.qa_checks
+            if (
+                check["code"] == "cross_direction_main_view_comparable"
+                and check["passed"] is True
+            )
+        )
+        adjudication = comparison["evidence"]["adjudication"]
+        assert adjudication["disposition"] == "framing_only_consensus"
+        assert adjudication["observation_count"] == 3
+        assert adjudication["reference_sha256"] == hashlib.sha256(
+            reference
+        ).hexdigest()
+        assert adjudication["candidate_sha256"] == hashlib.sha256(
+            loose_lower
+        ).hexdigest()
+        assert comparison["evidence"]["audited_candidate_sha256"] == (
+            adjudication["candidate_sha256"]
+        )
+
+
+def test_prompt_create_camera_disagreement_fails_without_image_repair(
+    creative_client,
+):
+    client, Session = creative_client
+    reference = _studio_ring(bbox=(30, 30, 226, 226))
+    loose_lower = _studio_ring(bbox=(56, 72, 206, 222))
+    outputs = iter((reference, loose_lower))
+    repair_calls = 0
+
+    def generate(instruction: str, variant: int):
+        return _prompt_creative_result_with_image(
+            instruction,
+            variant,
+            next(outputs),
+        )
+
+    def repair(*_args, **_kwargs):
+        nonlocal repair_calls
+        repair_calls += 1
+        raise AssertionError("uncertain camera evidence must not call a provider")
+
+    camera_claim = MainViewComparabilityAudit(
+        first_complete_piece_visible=True,
+        second_complete_piece_visible=True,
+        camera_view_matches=False,
+        camera_elevation_matches=True,
+        image_plane_rotation_matches=True,
+        crop_and_frame_fill_match=False,
+        review_scale_matches=False,
+        background_family_matches=True,
+        comparable=False,
+    )
+    framing_only = camera_claim.model_copy(update={
+        "camera_view_matches": True,
+    })
+    audits = iter((camera_claim, framing_only, camera_claim))
+
+    app.dependency_overrides[get_creative_prompt_generator] = lambda: generate
+    app.dependency_overrides[get_creative_render_generator] = lambda: repair
+    app.dependency_overrides[get_main_view_comparability_inspector] = (
+        lambda: lambda _first, _second: next(audits)
+    )
+    job_id = _running_create_job(client, requested_outputs=2)
+    response = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=2),
+        "studio_job_id": job_id,
+    })
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == (
+        "creative_main_view_comparability_uncertain"
+    )
+    assert "no camera repair was attempted" in response.json()["detail"]
+    assert repair_calls == 0
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "failed"
+        assert job.completed_outputs == job.charged_outputs == 0
+        comparison = next(
+            check
+            for attempt in db.scalars(select(ImageAttempt))
+            for check in attempt.qa_checks
+            if check["code"] == "cross_direction_main_view_comparable"
+        )
+        assert comparison["evidence"]["adjudication"]["disposition"] == (
+            "uncertain_disagreement"
+        )
+
+
+def test_prompt_create_rejects_untrusted_framing_normalization_without_save(
+    creative_client,
+):
+    client, Session = creative_client
+    reference = _studio_ring(bbox=(30, 30, 226, 226))
+    checkerboard = Image.new("RGB", (256, 256), (245, 245, 245))
+    draw = ImageDraw.Draw(checkerboard)
+    for y in range(0, 256, 16):
+        for x in range(0, 256, 16):
+            if (x // 16 + y // 16) % 2:
+                draw.rectangle((x, y, x + 15, y + 15), fill=(80, 80, 80))
+    output = io.BytesIO()
+    checkerboard.save(output, format="PNG")
+    untrusted = output.getvalue()
+    outputs = iter((reference, untrusted))
+    repair_calls = 0
+
+    def generate(instruction: str, variant: int):
+        return _prompt_creative_result_with_image(
+            instruction,
+            variant,
+            next(outputs),
+        )
+
+    def repair(*_args, **_kwargs):
+        nonlocal repair_calls
+        repair_calls += 1
+        raise AssertionError("untrusted segmentation must fail closed")
+
+    app.dependency_overrides[get_creative_prompt_generator] = lambda: generate
+    app.dependency_overrides[get_creative_render_generator] = lambda: repair
+    app.dependency_overrides[get_main_view_comparability_inspector] = (
+        lambda: lambda _first, _second: MainViewComparabilityAudit(
+            first_complete_piece_visible=True,
+            second_complete_piece_visible=True,
+            camera_view_matches=True,
+            camera_elevation_matches=True,
+            image_plane_rotation_matches=True,
+            crop_and_frame_fill_match=False,
+            review_scale_matches=False,
+            background_family_matches=True,
+            comparable=False,
+            differences=("Direction 2 is smaller in the frame",),
+            score=70,
+        )
+    )
+    job_id = _running_create_job(client, requested_outputs=2)
+    response = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=2),
+        "studio_job_id": job_id,
+    })
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == (
+        "creative_presentation_normalization_untrusted"
+    )
+    assert repair_calls == 0
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "failed"
+        assert job.completed_outputs == job.charged_outputs == 0
+        runs = list(db.scalars(select(ImageRun)))
+        assert len(runs) == 2
+        assert sum(run.status == "failed" for run in runs) == 1
+
+
+def test_prompt_create_rejects_tampered_normalization_proof_without_reaudit(
+    creative_client,
+):
+    client, Session = creative_client
+    reference = _studio_ring(bbox=(30, 30, 226, 226))
+    loose_lower = _studio_ring(bbox=(56, 72, 206, 222))
+    outputs = iter((reference, loose_lower))
+    inspections = 0
+
+    def generate(instruction: str, variant: int):
+        return _prompt_creative_result_with_image(
+            instruction,
+            variant,
+            next(outputs),
+        )
+
+    def inspect(_first: bytes, _second: bytes) -> MainViewComparabilityAudit:
+        nonlocal inspections
+        inspections += 1
+        return MainViewComparabilityAudit(
+            first_complete_piece_visible=True,
+            second_complete_piece_visible=True,
+            camera_view_matches=True,
+            camera_elevation_matches=True,
+            image_plane_rotation_matches=True,
+            crop_and_frame_fill_match=False,
+            review_scale_matches=False,
+            background_family_matches=True,
+            comparable=False,
+            differences=("Direction 2 is smaller in the frame",),
+            score=72,
+        )
+
+    real_normalize = projects_api.normalize_main_view_result
+
+    def tampered_normalize(reference_image: bytes, result):
+        normalized = real_normalize(reference_image, result)
+
+        def tamper(check):
+            if check.code != "deterministic_presentation_normalized":
+                return check
+            return check.model_copy(update={
+                "evidence": {
+                    **check.evidence,
+                    "output_sha256": "0" * 64,
+                },
+            })
+
+        return normalized.model_copy(update={
+            "quality": normalized.quality.model_copy(update={
+                "checks": tuple(tamper(check) for check in normalized.quality.checks),
+            }),
+            "run": normalized.run.model_copy(update={
+                "attempts": tuple(
+                    attempt.model_copy(update={
+                        "qa_checks": tuple(
+                            tamper(check) for check in attempt.qa_checks
+                        ),
+                    })
+                    for attempt in normalized.run.attempts
+                ),
+            }),
+        })
+
+    app.dependency_overrides[get_creative_prompt_generator] = lambda: generate
+    app.dependency_overrides[get_main_view_comparability_inspector] = (
+        lambda: inspect
+    )
+    job_id = _running_create_job(client, requested_outputs=2)
+    with patch.object(
+        projects_api,
+        "normalize_main_view_result",
+        tampered_normalize,
+    ):
+        response = client.post("/projects/from-prompt", json={
+            **_prompt_request(variation_count=2),
+            "studio_job_id": job_id,
+        })
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == (
+        "creative_presentation_normalization_untrusted"
+    )
+    assert inspections == 1
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "failed"
+        assert job.completed_outputs == job.charged_outputs == 0
+
+
+def test_prompt_camera_repair_fails_closed_when_camera_role_is_dropped(
+    creative_client,
+):
+    client, Session = creative_client
+    prompt_outputs: list[bytes] = []
+    repair_camera_references: list[bytes] = []
+
+    def generate(instruction: str, variant: int):
+        result = _prompt_creative_result_for_instruction(instruction, variant)
+        prompt_outputs.append(result.image_bytes)
+        return result
+
+    def repair(
+        source: bytes,
+        instruction: str,
+        _variant: int,
+        *,
+        camera_reference_image: bytes,
+        **_kwargs,
+    ):
+        repair_camera_references.append(camera_reference_image)
+        # Simulate a generator that accepted the keyword but failed to bind it
+        # into the immutable plan. The API must reject this result before save.
+        return _comparison_result(source, instruction)
+
+    def inspect(_first: bytes, _second: bytes) -> MainViewComparabilityAudit:
+        return MainViewComparabilityAudit(
+            first_complete_piece_visible=True,
+            second_complete_piece_visible=True,
+            camera_view_matches=False,
+            camera_elevation_matches=False,
+            image_plane_rotation_matches=True,
+            crop_and_frame_fill_match=False,
+            review_scale_matches=False,
+            background_family_matches=True,
+            comparable=False,
+            differences=("Direction 2 uses the wrong camera",),
+            score=40,
+        )
+
+    app.dependency_overrides[get_creative_prompt_generator] = lambda: generate
+    app.dependency_overrides[get_creative_render_generator] = lambda: repair
+    app.dependency_overrides[get_main_view_comparability_inspector] = (
+        lambda: inspect
+    )
+    job_id = _running_create_job(client, requested_outputs=2)
+    response = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=2),
+        "studio_job_id": job_id,
+    })
+
+    assert response.status_code == 500, response.text
+    assert response.json()["code"] == (
+        "creative_main_view_repair_camera_binding_mismatch"
+    )
+    assert repair_camera_references == [prompt_outputs[0]]
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "failed"
+        assert job.completed_outputs == job.charged_outputs == 0
+        assert len(list(db.scalars(select(ImageRun)))) == 3
+
+
+def test_uploaded_create_repairs_from_exact_rejected_direction(
+    creative_client,
+):
+    client, Session = creative_client
+    calls: list[tuple[bytes, str, int, bytes | None]] = []
+    audits = iter((False, False, False, True))
+
+    def generate(
+        source: bytes,
+        instruction: str,
+        variant: int,
+        *,
+        camera_reference_image: bytes | None = None,
+        **_kwargs,
+    ):
+        calls.append((source, instruction, variant, camera_reference_image))
+        if camera_reference_image is not None:
+            return _comparison_result(
+                source,
+                instruction,
+                camera_reference_image=camera_reference_image,
+            )
+        return _creative_result_for_source(source, instruction, variant)
+
+    def inspect(_first: bytes, _second: bytes) -> MainViewComparabilityAudit:
+        passed = next(audits)
+        return MainViewComparabilityAudit(
+            first_complete_piece_visible=True,
+            second_complete_piece_visible=True,
+            camera_view_matches=passed,
+            camera_elevation_matches=passed,
+            image_plane_rotation_matches=True,
+            crop_and_frame_fill_match=passed,
+            review_scale_matches=passed,
+            background_family_matches=True,
+            comparable=passed,
+            differences=(() if passed else ("Direction 2 is too tightly cropped",)),
+            score=97 if passed else 50,
+        )
+
+    app.dependency_overrides[get_creative_render_generator] = lambda: generate
+    app.dependency_overrides[get_main_view_comparability_inspector] = (
+        lambda: inspect
+    )
+    job_id = _running_create_job(client, requested_outputs=2)
+    response = client.post("/projects/from-drawing", json={
+        **_request(variation_count=2),
+        "studio_job_id": job_id,
+    })
+
+    assert response.status_code == 201, response.text
+    assert len(calls) == 3
+    assert all(
+        source == SOURCE
+        for source, _instruction, _variant, _camera_reference in calls[:2]
+    )
+    rejected_direction = _png((70, 58, 30))
+    assert calls[2][0] == rejected_direction
+    assert calls[2][2] == calls[1][2] == 8
+    assert MAIN_VIEW_REPAIR_CONTRACT in calls[2][1]
+    assert calls[2][3] == _png((70, 57, 30))
+    assert calls[2][3] != calls[2][0]
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "reviewing"
+        assert job.completed_outputs == job.charged_outputs == 0
+        runs = list(db.scalars(select(ImageRun)))
+        assert len(runs) == 3
+        assert sum(run.status == "failed" for run in runs) == 1
+        source_hashes = [run.source_hash for run in runs]
+        assert source_hashes.count(hashlib.sha256(SOURCE).hexdigest()) == 2
+        assert hashlib.sha256(rejected_direction).hexdigest() in source_hashes
+
+
+def test_camera_repair_cannot_bypass_identity_or_count_qa(
+    creative_client,
+):
+    client, Session = creative_client
+    prompt_calls = 0
+    repair_calls = 0
+
+    def generate(instruction: str, variant: int):
+        nonlocal prompt_calls
+        prompt_calls += 1
+        return _prompt_creative_result_for_instruction(instruction, variant)
+
+    def repair(
+        source: bytes,
+        instruction: str,
+        _variant: int,
+        *,
+        camera_reference_image: bytes,
+        **_kwargs,
+    ):
+        nonlocal repair_calls
+        repair_calls += 1
+        result = _comparison_result(
+            source,
+            instruction,
+            camera_reference_image=camera_reference_image,
+        )
+        failed_count = QualityCheck(
+            code="requested_component_count_preserved",
+            passed=False,
+            severity=CheckSeverity.HARD,
+            message="requested three stones were not preserved",
+        )
+        return result.model_copy(update={
+            "quality": result.quality.model_copy(update={
+                "checks": (*result.quality.checks, failed_count),
+            }),
+        })
+
+    app.dependency_overrides[get_creative_prompt_generator] = lambda: generate
+    app.dependency_overrides[get_creative_render_generator] = lambda: repair
+    app.dependency_overrides[get_main_view_comparability_inspector] = (
+        lambda: lambda _first, _second: MainViewComparabilityAudit(
+            first_complete_piece_visible=True,
+            second_complete_piece_visible=True,
+            camera_view_matches=False,
+            camera_elevation_matches=False,
+            image_plane_rotation_matches=True,
+            crop_and_frame_fill_match=False,
+            review_scale_matches=False,
+            background_family_matches=True,
+            comparable=False,
+            differences=("Direction 2 uses a lower camera",),
+            score=45,
+        )
+    )
+    job_id = _running_create_job(client, requested_outputs=2)
+    response = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=2),
+        "studio_job_id": job_id,
+    })
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "creative_main_view_repair_qa_unconfirmed"
+    assert prompt_calls == 2
+    assert repair_calls == 1
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "failed"
+        assert job.completed_outputs == job.charged_outputs == 0
+        assert len(list(db.scalars(select(ImageRun)))) == 3
+
+
+def test_create_fails_closed_when_primary_views_are_not_comparable(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: lambda instruction, variant: (
+            _prompt_creative_result_for_instruction(instruction, variant)
+        )
+    )
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: lambda source, instruction, _variant,
+        camera_reference_image=None, **_kwargs: (
+            _comparison_result(
+                source,
+                instruction,
+                camera_reference_image=camera_reference_image,
+            )
+        )
+    )
+    app.dependency_overrides[get_main_view_comparability_inspector] = (
+        lambda: lambda _first, _second: MainViewComparabilityAudit(
+            first_complete_piece_visible=True,
+            second_complete_piece_visible=True,
+            camera_view_matches=True,
+            camera_elevation_matches=False,
+            image_plane_rotation_matches=True,
+            crop_and_frame_fill_match=False,
+            review_scale_matches=False,
+            background_family_matches=True,
+            comparable=False,
+            differences=(
+                "Direction 2 is photographed from higher and fills less of the frame",
+            ),
+            score=54,
+        )
+    )
+    job_id = _running_create_job(client, requested_outputs=2)
+    response = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=2),
+        "studio_job_id": job_id,
+    })
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "creative_main_views_incomparable"
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "failed"
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert job.active_design_id is None
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        runs = list(db.scalars(select(ImageRun).order_by(ImageRun.created_at)))
+        assert len(runs) == 3
+        assert sum(run.status == "failed" for run in runs) == 2
+        assert all(
+            run.error_category == "quality"
+            for run in runs if run.status == "failed"
+        )
+        failed_checks = [
+            check
+            for run in runs if run.status == "failed"
+            for attempt in db.scalars(select(ImageAttempt).where(
+                ImageAttempt.run_id == run.id,
+            ))
+            for check in attempt.qa_checks
+            if check["code"] == "cross_direction_main_view_comparable"
+        ]
+        assert len(failed_checks) == 2
+        assert all(check["passed"] is False for check in failed_checks)
+        assert all(
+            check["evidence"]["audit"]["review_scale_matches"] is False
+            for check in failed_checks
+        )
+
+
+def test_prompt_create_fails_closed_when_companion_identity_is_unconfirmed(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: lambda _instruction, variant: _prompt_creative_result(variant)
+    )
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: lambda source, instruction, _variant, **_kwargs: (
+            _comparison_result(
+                source,
+                instruction,
+                preserve_identity=False,
+            )
+        )
+    )
+    job_id = _running_create_job(client, requested_outputs=1)
+    response = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=1),
+        "comparison_views": ["three_quarter"],
+        "studio_job_id": job_id,
+    })
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "creative_comparison_qa_unconfirmed"
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "failed"
+        assert job.charged_outputs == 0
+
+
+def test_create_rejects_unknown_or_duplicate_comparison_view_before_provider(
+    creative_client,
+):
+    client, _Session = creative_client
+    called = False
+
+    def generate(_instruction: str, variant: int):
+        nonlocal called
+        called = True
+        return _prompt_creative_result(variant)
+
+    app.dependency_overrides[get_creative_prompt_generator] = lambda: generate
+    unknown = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=1),
+        "comparison_views": ["side"],
+    })
+    duplicate = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=1),
+        "comparison_views": ["three_quarter", "three_quarter"],
+    })
+    assert unknown.status_code == 422
+    assert duplicate.status_code == 422
+    assert called is False
 
 
 @pytest.mark.parametrize("source_kind", ["prompt", "drawing"])
@@ -1358,6 +3172,8 @@ def test_from_prompt_persists_independent_candidates_without_source_or_spec(
     assert selected_body["selected_candidate_asset_id"] == selected_id
     assert selected_body["active_asset_id"] == selected_id
     assert selected_body["confirmable_pre_spec"] is True
+
+
     assert selected_body["cover_asset_id"] == selected_id
     assert "spec" not in selected_body
 
@@ -1376,6 +3192,116 @@ def test_from_prompt_persists_independent_candidates_without_source_or_spec(
             "CREATIVE_GENERATE", "CREATIVE_GENERATE", "CREATIVE_GENERATE"]
         assert [run.variant for run in runs] == [4, 5, 6]
         assert all(run.source_asset_id is None for run in runs)
+
+
+def test_from_prompt_keeps_valid_directions_when_another_direction_fails(
+    creative_client,
+):
+    client, Session = creative_client
+    job_id = _running_create_job(client, requested_outputs=3)
+
+    def generate(instruction: str, variant: int):
+        if variant == 5:
+            plan = build_image_plan(
+                ImageOperation.CREATIVE_GENERATE,
+                instruction,
+                variant=variant,
+            )
+            raise ImageQualityFailure(
+                "one direction failed prompt fidelity",
+                report=ImageQualityReport(
+                    verdict=QualityVerdict.FAIL,
+                    checks=(QualityCheck(
+                        code="requested_direction_applied",
+                        passed=False,
+                        severity=CheckSeverity.HARD,
+                        message="requested three-stone layout was not applied",
+                    ),),
+                    score=20,
+                ),
+                attempts=(),
+                plan=plan,
+            )
+        return _prompt_creative_result(variant)
+
+    app.dependency_overrides[get_creative_prompt_generator] = lambda: generate
+    response = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=3),
+        "studio_job_id": job_id,
+    })
+    assert response.status_code == 201, response.text
+    project = response.json()
+    assert len(project["creative_candidates"]) == 2
+
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        runs = list(db.scalars(
+            select(ImageRun).where(ImageRun.project_root_id == project["root_id"])
+        ))
+        assert job is not None
+        assert job.status == "reviewing"
+        assert job.requested_outputs == 3
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert len(runs) == 3
+        assert sum(run.status == "failed" for run in runs) == 1
+        assert all(
+            run.accepted_asset_id is None
+            for run in runs if run.status == "failed"
+        )
+
+    selected_id = project["creative_candidates"][0]["asset_id"]
+    selected = client.post(
+        f"/projects/{project['root_id']}/creative-candidates/{selected_id}/select",
+        json={"created_by": "usr_designer", "studio_job_id": job_id},
+    )
+    assert selected.status_code == 200, selected.text
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "succeeded"
+        assert job.completed_outputs == 2
+        assert job.charged_outputs == 2
+
+
+def test_from_prompt_all_failed_directions_remain_zero_charge_evidence(
+    creative_client,
+):
+    client, Session = creative_client
+    job_id = _running_create_job(client, requested_outputs=2)
+
+    def fail(instruction: str, variant: int):
+        plan = build_image_plan(
+            ImageOperation.CREATIVE_GENERATE,
+            instruction,
+            variant=variant,
+        )
+        raise ImageQualityFailure(
+            "direction failed prompt fidelity",
+            report=ImageQualityReport(
+                verdict=QualityVerdict.FAIL,
+                checks=(),
+                score=0,
+            ),
+            attempts=(),
+            plan=plan,
+        )
+
+    app.dependency_overrides[get_creative_prompt_generator] = lambda: fail
+    response = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=2),
+        "studio_job_id": job_id,
+    })
+    assert response.status_code == 422
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "failed"
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 2
 
 
 def test_from_prompt_advisory_references_are_bound_and_persisted_by_role(
@@ -1829,10 +3755,18 @@ def test_creative_direction_commit_is_atomic_billed_once_and_retry_safe(
         "studio_job_id": job_id,
     }
 
-    committed = client.post(
-        f"/projects/{project['root_id']}/creative-directions/commit",
-        json=payload,
-    )
+    # A database/clock with equal timestamp resolution for the selected
+    # direction and its retained siblings must still leave Original strictly
+    # most recent after the one atomic user action.
+    frozen_commit_at = utcnow() + timedelta(days=1)
+    with (
+        patch("facetta.api.projects.utcnow", return_value=frozen_commit_at),
+        patch("facetta.studio_history.utcnow", return_value=frozen_commit_at),
+    ):
+        committed = client.post(
+            f"/projects/{project['root_id']}/creative-directions/commit",
+            json=payload,
+        )
     assert committed.status_code == 200, committed.text
     body = committed.json()
     assert body["project"]["selected_candidate_asset_id"] == candidates[1]
@@ -1889,6 +3823,9 @@ def test_creative_direction_commit_is_atomic_billed_once_and_retry_safe(
         assert [branch.branched_from_asset_id for branch in branches] == [
             candidates[0], candidates[3]
         ]
+        assert all(
+            original.updated_at > branch.updated_at for branch in branches
+        )
         assert job is not None
         assert job.status == "succeeded"
         assert job.completed_outputs == 4
@@ -1941,6 +3878,33 @@ def test_creative_direction_commit_is_atomic_billed_once_and_retry_safe(
         assert matching_attempt is not None
         original_revision_id = original_revision.id
 
+    family_id = body["retained_variations"][0]["family_id"]
+    family = client.get(f"/studio/families/{family_id}")
+    assert family.status_code == 200, family.text
+    family_variations = family.json()["variations"]
+    recently_active = max(
+        family_variations,
+        key=lambda variation: variation["updated_at"],
+    )
+    assert recently_active["root_id"] == project["root_id"]
+    assert recently_active["cover_asset_id"] == candidates[1]
+
+    # A real later action on a sibling must still supersede the Original;
+    # only atomic-commit side effects are prevented from claiming recency.
+    with Session() as db:
+        original = db.get(Project, project["root_id"])
+        later_branch = db.get(Project, branch_ids[0])
+        assert original is not None and later_branch is not None
+        later_branch.updated_at = original.updated_at + timedelta(seconds=1)
+        db.commit()
+    refreshed_family = client.get(f"/studio/families/{family_id}")
+    assert refreshed_family.status_code == 200, refreshed_family.text
+    genuinely_recent = max(
+        refreshed_family.json()["variations"],
+        key=lambda variation: variation["updated_at"],
+    )
+    assert genuinely_recent["root_id"] == branch_ids[0]
+
     history = client.get(f"/studio/projects/{project['root_id']}/history")
     assert history.status_code == 200, history.text
     stored_original = next(
@@ -1963,6 +3927,182 @@ def test_creative_direction_commit_is_atomic_billed_once_and_retry_safe(
         assert db.scalar(
             select(func.count()).select_from(ProjectRevisionRecord)
         ) == 3
+
+
+def test_creative_direction_commit_reopens_retained_view_bundle_exactly_once(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: (lambda _instruction, variant: _prompt_creative_result(variant))
+    )
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: (
+            lambda source, instruction, _variant, **_kwargs:
+            _comparison_result(source, instruction)
+        )
+    )
+    created = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=2),
+        "comparison_views": ["three_quarter"],
+    })
+    assert created.status_code == 201, created.text
+    project = created.json()
+    selected, sibling = [
+        item["asset_id"] for item in project["creative_candidates"]
+    ]
+    sibling_source_view = next(
+        view
+        for candidate in project["creative_candidates"]
+        if candidate["asset_id"] == sibling
+        for view in candidate["views"]
+        if view["view"] == "three_quarter"
+    )
+    job_id = _reviewing_create_job(
+        client, project_id=project["root_id"], requested_outputs=2,
+    )
+    payload = {
+        "selected_candidate_id": selected,
+        "retained": [{"candidate_id": sibling, "label": "Second direction"}],
+        "created_by": "usr_designer",
+        "studio_job_id": job_id,
+    }
+
+    committed = client.post(
+        f"/projects/{project['root_id']}/creative-directions/commit",
+        json=payload,
+    )
+    assert committed.status_code == 200, committed.text
+    body = committed.json()
+    assert [
+        view["view"] for view in body["project"]["active_revision"]["views"]
+    ] == ["primary", "three_quarter"]
+    retained = body["retained_variations"][0]["project"]
+    retained_root_id = retained["root_id"]
+    assert [
+        view["view"] for view in retained["active_revision"]["views"]
+    ] == ["primary", "three_quarter"]
+    retained_view = retained["active_revision"]["views"][1]
+    assert retained_view["sha256"] == sibling_source_view["sha256"]
+    assert retained_view["asset_id"] != sibling_source_view["asset_id"]
+
+    reopened = client.get(f"/projects/{retained_root_id}")
+    assert reopened.status_code == 200, reopened.text
+    assert reopened.json()["active_revision"]["views"] == retained[
+        "active_revision"
+    ]["views"]
+
+    retried = client.post(
+        f"/projects/{project['root_id']}/creative-directions/commit",
+        json=payload,
+    )
+    assert retried.status_code == 200, retried.text
+    assert retried.json()["retained_variations"][0]["project"][
+        "active_revision"
+    ]["views"] == retained["active_revision"]["views"]
+
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.completed_outputs == 2
+        assert job.charged_outputs == 2
+        retained_views = list(db.scalars(select(ImageAsset).where(
+            ImageAsset.root_id == retained_root_id,
+            ImageAsset.capability == "CREATIVE_COMPARISON_THREE_QUARTER",
+        )))
+        assert len(retained_views) == 1
+        retained_record = db.scalar(select(ProjectRevisionRecord).where(
+            ProjectRevisionRecord.asset_id == retained_root_id,
+        ))
+        assert retained_record is not None
+        lineage = retained_record.raw_intent["companion_views"]
+        assert len(lineage) == 1
+        assert lineage[0]["source_asset_id"] == sibling_source_view["asset_id"]
+        assert lineage[0]["retained_asset_id"] == retained_views[0].id
+        assert lineage[0]["output_sha256"] == retained_view["sha256"]
+        assert db.get(ImageRun, lineage[0]["source_image_run_id"]) is not None
+
+
+def test_creative_direction_commit_rejects_tampered_companion_qa_atomically(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: (lambda _instruction, variant: _prompt_creative_result(variant))
+    )
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: (
+            lambda source, instruction, _variant, **_kwargs:
+            _comparison_result(source, instruction)
+        )
+    )
+    created = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=2),
+        "comparison_views": ["three_quarter"],
+    }).json()
+    selected, sibling = [
+        item["asset_id"] for item in created["creative_candidates"]
+    ]
+    job_id = _reviewing_create_job(
+        client, project_id=created["root_id"], requested_outputs=2,
+    )
+    with Session() as db:
+        comparison_run = db.scalar(select(ImageRun).where(
+            ImageRun.project_root_id == created["root_id"],
+            ImageRun.source_asset_id == sibling,
+            ImageRun.operation == ImageOperation.REFERENCE_RENDER.value,
+        ))
+        assert comparison_run is not None
+        attempt = db.scalar(select(ImageAttempt).where(
+            ImageAttempt.run_id == comparison_run.id,
+        ))
+        assert attempt is not None
+        tampered_checks = [
+            {
+                **check,
+                "passed": False,
+            }
+            if check.get("code") == "source_design_preserved"
+            else check
+            for check in attempt.qa_checks
+        ]
+        db.execute(
+            update(ImageAttempt)
+            .where(ImageAttempt.id == attempt.id)
+            .values(qa_checks=tampered_checks)
+        )
+        db.commit()
+
+    response = client.post(
+        f"/projects/{created['root_id']}/creative-directions/commit",
+        json={
+            "selected_candidate_id": selected,
+            "retained": [{
+                "candidate_id": sibling,
+                "label": "Must not persist",
+            }],
+            "created_by": "usr_designer",
+            "studio_job_id": job_id,
+        },
+    )
+    assert response.status_code == 409
+    assert "identity-preservation evidence" in response.json()["detail"]
+    with Session() as db:
+        project = db.get(Project, created["root_id"])
+        job = db.get(StudioJobRecord, job_id)
+        assert project is not None and job is not None
+        assert project.selected_candidate_asset_id is None
+        assert project.family_id is None
+        assert job.status == "reviewing"
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert db.get(StudioCreateDecisionRecord, created["root_id"]) is None
+        assert db.scalar(select(func.count()).select_from(Project).where(
+            Project.branched_from_project_root_id == created["root_id"]
+        )) == 0
+        assert db.scalar(
+            select(func.count()).select_from(ProjectRevisionRecord)
+        ) == 0
 
 
 @pytest.mark.parametrize("evidence_state", ["missing", "ambiguous"])
@@ -2292,6 +4432,164 @@ def test_from_drawing_persists_variations_without_inventing_a_spec(
             "REFERENCE_RENDER", "REFERENCE_RENDER"]
         assert [run.variant for run in runs] == [7, 8]
         assert all(run.status == "review_required" for run in runs)
+
+
+def test_from_drawing_inspects_source_once_and_binds_brief_to_every_variation(
+    creative_client,
+):
+    client, _Session = creative_client
+    inspected: list[tuple[bytes, str]] = []
+    instructions: list[str] = []
+
+    def understand(source: bytes, source_kind: str) -> SourceVisibleFactsBrief:
+        inspected.append((source, source_kind))
+        return SourceVisibleFactsBrief(
+            source_kind="drawing",
+            category="ring",
+            center_stone=VisibleCenterStoneFacts(
+                shape_or_cut_family="oval",
+                visible_color="green",
+            ),
+            visible_center_claw_or_prong_count=4,
+            side_stones=VisibleSideStoneFacts(
+                left_count=3,
+                right_count=3,
+                shape_or_cut_family="round",
+            ),
+            repeated_motifs=(
+                "three round shoulder stones on each side",
+            ),
+            band_or_silhouette="slender continuous ring band",
+        )
+
+    def generate(source: bytes, instruction: str, variant: int):
+        assert source == SOURCE
+        instructions.append(instruction)
+        return _creative_result(variant)
+
+    app.dependency_overrides[get_source_understanding_inspector] = (
+        lambda: understand
+    )
+    app.dependency_overrides[get_creative_render_generator] = lambda: generate
+
+    response = client.post("/projects/from-drawing", json=_request())
+
+    assert response.status_code == 201, response.text
+    assert inspected == [(SOURCE, "drawing")]
+    assert len(instructions) == 2
+    assert instructions[0] == instructions[1]
+    assert instructions[0].startswith(
+        "Render this exact jewelry design in polished yellow gold"
+    )
+    assert "exactly 4 separately visible" in instructions[0]
+    assert "left=3; right=3" in instructions[0]
+    assert "Hidden, underside, off-frame, and internal construction: UNKNOWN" in (
+        instructions[0]
+    )
+
+
+def test_from_photograph_source_understanding_failure_is_zero_charge_fail_closed(
+    creative_client,
+    monkeypatch,
+):
+    client, Session = creative_client
+    generator_calls: list[int] = []
+
+    def unavailable(_source: bytes, _source_kind: str):
+        raise RenderUnavailable("vision transport unavailable")
+
+    def generate(_source: bytes, _instruction: str, variant: int):
+        generator_calls.append(variant)
+        return _creative_result(variant)
+
+    app.dependency_overrides[get_source_understanding_inspector] = (
+        lambda: unavailable
+    )
+    app.dependency_overrides[get_creative_render_generator] = lambda: generate
+    monkeypatch.setenv("FACETTA_ENV", "production")
+    job_id = _running_create_job(client, requested_outputs=1)
+
+    response = client.post("/projects/from-drawing", json={
+        **_request(variation_count=1),
+        "source_kind": "photograph",
+        "studio_job_id": job_id,
+    })
+
+    assert response.status_code == 503, response.text
+    assert response.json()["code"] == "source_understanding_unavailable"
+    assert generator_calls == []
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "failed"
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert job.error_code == "source_understanding_unavailable"
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 0
+
+
+def test_rough_drawing_source_understanding_failure_still_generates_pre_spec_design(
+    creative_client,
+):
+    client, Session = creative_client
+    calls: list[tuple[bytes, str, int]] = []
+
+    def unavailable(_source: bytes, _source_kind: str):
+        raise RenderUnavailable("rough sketch was not reliably inventoryable")
+
+    def generate(source: bytes, instruction: str, variant: int):
+        calls.append((source, instruction, variant))
+        return _creative_result(variant)
+
+    app.dependency_overrides[get_source_understanding_inspector] = (
+        lambda: unavailable
+    )
+    app.dependency_overrides[get_creative_render_generator] = lambda: generate
+    job_id = _running_create_job(client, requested_outputs=1)
+    instruction = "Turn this loose pencil sketch into a polished ruby pendant"
+
+    response = client.post("/projects/from-drawing", json={
+        **_request(variation_count=1),
+        "instruction": instruction,
+        "studio_job_id": job_id,
+    })
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert len(calls) == 1
+    source, compiled, variant = calls[0]
+    assert source == SOURCE
+    assert variant == 7
+    assert compiled.startswith(instruction)
+    assert "ROUGH DRAWING INTENT FALLBACK" in compiled
+    assert "written instruction" in compiled
+    assert "NOT A SPECIFICATION" in compiled
+    assert body["state"] == "refining"
+    assert body["factory_ready"] is False
+    assert "design_id" not in body
+    assert "latest_design_version" not in body
+    assert "spec" not in body
+    assert [item["capability"] for item in body["creative_candidates"]] == [
+        "CREATIVE_RENDER"
+    ]
+
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        # Generation produces a temporary review candidate. The job remains in
+        # review and carries no charge until the designer explicitly accepts a
+        # direction into canonical history.
+        assert job.status == "reviewing"
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert db.scalar(select(func.count()).select_from(Project)) == 1
+        assert db.scalar(select(func.count()).select_from(Design)) == 0
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
+        run = db.scalar(select(ImageRun))
+        assert run is not None
+        assert run.operation == "REFERENCE_RENDER"
 
 
 @pytest.mark.parametrize(
@@ -2951,13 +5249,13 @@ def test_confirm_design_projects_typed_designer_facts_and_exact_hashes(
         for fact in group["facts"]
     }
     assert facts["length"]["authority"] == "estimated"
-    assert facts["length"]["path"] is None
+    assert facts["length"]["path"] == "stone.dimensions_mm.length"
     assert facts["length"]["raw_value"] == 8.6
     assert facts["band_width"]["authority"] == "designer_supplied"
     assert facts["band_width"]["path"] == "band.width_mm"
     assert facts["band_width"]["raw_value"] == 1.8
     assert facts["species"]["authority"] == "suggested"
-    assert facts["species"]["path"] is None
+    assert facts["species"]["path"] == "stone.species"
     assert facts["species"]["raw_value"] == "sapphire"
     assert any(
         fact["path"] == "stone.color.trade"
@@ -2982,6 +5280,141 @@ def test_confirm_design_projects_typed_designer_facts_and_exact_hashes(
         assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
         assert db.scalar(select(func.count()).select_from(
             StudioConfirmationDraft)) == 1
+
+
+@pytest.mark.parametrize(
+    ("provider_inventory", "expected_group_label"),
+    [
+        (
+            {
+                "main_stone_count": 1,
+                "accent_species": "diamond",
+                "accent_cut": "round_brilliant",
+                "accent_count": 2,
+            },
+            "Accent group 1",
+        ),
+        (
+            {
+                "main_stone_count": 3,
+                "accent_species": None,
+                "accent_cut": None,
+                "accent_count": 0,
+            },
+            "Matching side stones",
+        ),
+    ],
+)
+def test_confirm_design_uses_openai_three_stone_draft_without_persistence(
+    creative_client,
+    monkeypatch,
+    provider_inventory,
+    expected_group_label,
+):
+    """Starting Facts may read through OpenAI, but promotion still owns truth."""
+
+    from facetta.image_agent import vision as vision_module
+
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: (
+            lambda _source, _instruction, selected: _creative_result(selected)
+        )
+    )
+    created = client.post(
+        "/projects/from-drawing", json=_request(variation_count=1)
+    ).json()
+    project_id = created["id"]
+    candidate_id = created["creative_candidates"][0]["asset_id"]
+    assert client.post(
+        f"/projects/{project_id}/creative-candidates/{candidate_id}/select",
+        json={"created_by": "usr_designer"},
+    ).status_code == 200
+
+    values = {"XAI_KEY": None, "OPENAI_API_KEY": "openai-key"}
+    calls: list[str] = []
+    monkeypatch.setattr(
+        vision_module,
+        "env_value",
+        lambda key, default=None: values.get(key, default),
+    )
+    monkeypatch.setattr(
+        vision_module,
+        "vision_json",
+        lambda *_args: pytest.fail("XAI must not run without XAI_KEY"),
+    )
+    monkeypatch.setattr(
+        vision_module,
+        "openai_vision_json",
+        lambda *_args: calls.append("openai") or {
+            "jewelry_type": "ring",
+            "halo": False,
+            "species": "diamond",
+            "cut": "round_brilliant",
+            "center_length_mm": 6.5,
+            "center_width_mm": 6.5,
+            "metal_material": "gold",
+            "metal_color": "yellow",
+            "setting_style": "prong_4",
+            "main_stone_position": "center",
+            "chain_style": None,
+            **provider_inventory,
+        },
+    )
+
+    response = client.post(
+        f"/projects/{project_id}/creative-candidates/{candidate_id}/"
+        "confirm-design",
+        json={
+            "created_by": "usr_designer",
+            "run_independent_audit": False,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert calls == ["openai"]
+    body = response.json()
+    assert body["candidate_id"] == candidate_id
+    assert len(body["confirmation_token"]) >= 32
+    groups = {group["key"]: group for group in body["fact_groups"]}
+    design_facts = {
+        fact["key"]: fact for fact in groups["design"]["facts"]
+    }
+    assert design_facts["template"]["raw_value"] == "three_stone_prong"
+    assert groups["center_stone"]["label"] == "Center stone"
+    assert groups["accents"]["label"] == "Side and accent stones"
+    assert groups["accents"]["facts"] == [{
+        "key": "group_1",
+        "label": expected_group_label,
+        "value": "2 x diamond, round_brilliant · side",
+        "raw_value": "2 x diamond, round_brilliant · side",
+        "authority": "suggested",
+        "path": None,
+    }]
+    stone_questions = [
+        question for question in body["unresolved_source_questions"]
+        if " stone" in question
+    ]
+    assert stone_questions == [
+        "Review 1 diamond round_brilliant stone at center "
+        "against the selected visual.",
+        "Review 2 diamond round_brilliant stones at side "
+        "against the selected visual.",
+    ]
+    represented_counts = [
+        int(question.removeprefix("Review ").split(" ", 1)[0])
+        for question in stone_questions
+    ]
+    assert sum(represented_counts) == 3
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(
+            StudioConfirmationDraft
+        )) == 1
+        assert db.scalar(select(func.count()).select_from(Design)) == 0
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord
+        )) == 0
 
 
 def test_confirm_design_exposes_source_questions_without_internal_control_copy(
@@ -3049,6 +5482,119 @@ def test_confirm_design_exposes_source_questions_without_internal_control_copy(
     assert "qa" not in projection_text
 
 
+def test_promotion_preserves_pre_spec_edit_provenance_hash_and_history(
+    creative_client,
+    monkeypatch,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: (
+            lambda _source, _instruction, selected: _creative_result(selected)
+        )
+    )
+    created = client.post(
+        "/projects/from-drawing", json=_request(variation_count=1)
+    ).json()
+    project_id = created["id"]
+    candidate_id = created["creative_candidates"][0]["asset_id"]
+    assert client.post(
+        f"/projects/{project_id}/creative-candidates/{candidate_id}/select",
+        json={"created_by": "usr_designer"},
+    ).status_code == 200
+
+    edit_id = "ast_pre_spec_edit"
+    edit_bytes = _png((218, 181, 92))
+    edit_sha256 = hashlib.sha256(edit_bytes).hexdigest()
+    with Session() as db:
+        candidate = db.get(ImageAsset, candidate_id)
+        project = db.get(Project, project_id)
+        assert candidate is not None and project is not None
+        now = utcnow()
+        db.add(ImageAsset(
+            id=edit_id,
+            root_id=project_id,
+            parent_asset_id=candidate_id,
+            capability="LOCALIZED_EDIT",
+            instruction="Warm the metal while preserving every contour",
+            image=edit_bytes,
+            media_type="image/png",
+            created_by="usr_designer",
+            created_at=now,
+        ))
+        db.add(ProjectRevisionRecord(
+            id="prr_pre_spec_edit",
+            asset_id=edit_id,
+            action="edit",
+            raw_intent={"kind": "plain_language_refine"},
+            interpretation={
+                "source_sha256": hashlib.sha256(
+                    bytes(candidate.image)
+                ).hexdigest(),
+                "output_sha256": edit_sha256,
+            },
+            change_summary="Applied one pre-spec visual refinement.",
+            created_by="usr_designer",
+            created_at=now,
+        ))
+        project.selected_candidate_asset_id = edit_id
+        project.updated_at = now
+        db.commit()
+
+    before = client.get(f"/projects/{project_id}")
+    assert before.status_code == 200, before.text
+    before_body = before.json()
+    before_edit = next(
+        item for item in before_body["revisions"]
+        if item["asset_id"] == edit_id
+    )
+    assert before_edit["provenance"] == "localized_edit"
+    assert before_edit["legacy_provenance"] is False
+    assert before_edit["sha256"] == edit_sha256
+
+    monkeypatch.setattr(
+        "facetta.api.projects.from_photo",
+        lambda _request: Spec.model_validate(audited_import_spec(EXAMPLE_SPEC)),
+    )
+    confirmation = client.post(
+        f"/projects/{project_id}/creative-candidates/{edit_id}/confirm-design",
+        json={"created_by": "usr_designer"},
+    )
+    assert confirmation.status_code == 200, confirmation.text
+    promoted = client.post(
+        f"/projects/{project_id}/creative-candidates/{edit_id}/promote",
+        json={
+            "created_by": "usr_designer",
+            "confirmation_token": confirmation.json()["confirmation_token"],
+        },
+    )
+    assert promoted.status_code == 200, promoted.text
+    after_body = promoted.json()
+    after_edit = next(
+        item for item in after_body["revisions"]
+        if item["asset_id"] == edit_id
+    )
+    assert after_edit["provenance"] == "localized_edit"
+    assert after_edit["legacy_provenance"] is False
+    assert after_edit["sha256"] == edit_sha256
+    assert [
+        item["asset_id"] for item in after_body["revisions"]
+    ][:2] == [candidate_id, edit_id]
+
+    history = client.get(f"/studio/projects/{project_id}/history")
+    assert history.status_code == 200, history.text
+    historical_edit = next(
+        item for item in history.json()["revisions"]
+        if item["asset_id"] == edit_id
+    )
+    assert historical_edit["action"] == "edit"
+    assert historical_edit["interpretation"]["output_sha256"] == edit_sha256
+    with Session() as db:
+        stored = db.get(ImageAsset, edit_id)
+        assert stored is not None
+        assert bytes(stored.image) == edit_bytes
+        assert hashlib.sha256(bytes(stored.image)).hexdigest() == edit_sha256
+
+
 def test_starting_fact_corrections_promote_atomically_with_exact_provenance(
     creative_client,
     monkeypatch,
@@ -3101,6 +5647,7 @@ def test_starting_fact_corrections_promote_atomically_with_exact_provenance(
             "confirmation_token": token,
             "corrections": [
                 {"path": "stone.color.trade", "value": "Cornflower Blue"},
+                {"path": "setting.style", "value": "6_prong_basket"},
                 {"path": "metal.finish", "value": "brushed"},
                 {"path": "band.width_mm", "value": 2.0},
                 {"path": "ring_size.value", "value": 7.0},
@@ -3120,8 +5667,8 @@ def test_starting_fact_corrections_promote_atomically_with_exact_provenance(
         assert stored.spec["metal"]["color"] == "yellow"
         assert stored.spec["metal"]["finish"] == "brushed"
         assert stored.spec["stone"]["color"]["trade"] == "Cornflower Blue"
-        assert stored.spec["setting"]["style"] == "4_prong_basket"
-        assert stored.spec["setting"]["prong_count"] == 4
+        assert stored.spec["setting"]["style"] == "6_prong_basket"
+        assert stored.spec["setting"]["prong_count"] == 6
         assert stored.spec["setting"]["prong_tip_mm"] == 0.9
         assert stored.spec["band"]["width_mm"] == 2.0
         assert stored.spec["ring_size"]["value"] == 7.0
@@ -3139,18 +5686,21 @@ def test_starting_fact_corrections_promote_atomically_with_exact_provenance(
         assert record is not None
         assert record.raw_intent["fact_corrections"] == {
             "stone.color.trade": "Cornflower Blue",
+            "setting.style": "6_prong_basket",
             "metal.finish": "brushed",
             "band.width_mm": 2.0,
             "ring_size.value": 7.0,
         }
         assert record.raw_intent["original_fact_values"] == {
             "stone.color.trade": "Royal Blue",
+            "setting.style": "4_prong_basket",
             "metal.finish": "high_polish",
             "band.width_mm": 1.8,
             "ring_size.value": 6.5,
         }
         assert set(record.interpretation["fact_authority"]) == {
             "stone.color.trade",
+            "setting.style",
             "metal.finish",
             "band.width_mm",
             "ring_size.value",
@@ -3158,16 +5708,19 @@ def test_starting_fact_corrections_promote_atomically_with_exact_provenance(
         assert set(record.interpretation["fact_authority"].values()) == {
             "designer_supplied"
         }
-        assert record.interpretation["derived_fact_adjustments"] == {}
+        assert record.interpretation["derived_fact_adjustments"] == {
+            "setting.prong_count": {
+                "before": 4,
+                "after": 6,
+                "authority": "deterministic_component_rule",
+            },
+        }
         assert record.interpretation["untouched_inferred_facts_preserved"] is True
 
 
 @pytest.mark.parametrize(("path", "value", "code"), [
     ("notes_to_factory", "skip review", "fact_path_not_reviewable"),
-    ("stone.species", "sapphire", "fact_path_not_reviewable"),
     ("stone.color", {"trade": "Royal Blue"}, "fact_path_not_reviewable"),
-    ("metal.material", "platinum", "fact_path_not_reviewable"),
-    ("setting.style", "bezel", "fact_path_not_reviewable"),
     ("band.width_mm", "wide", "fact_value_invalid"),
     ("stone.color.trade", "unobtainium", "fact_revision_invalid"),
 ])

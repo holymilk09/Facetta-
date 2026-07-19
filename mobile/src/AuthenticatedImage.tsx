@@ -17,6 +17,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { PREVIEW_AUTH_BYPASS } from './config';
 import { theme } from './theme';
 
 type AuthHeaders = Readonly<Record<string, string>> | undefined;
@@ -276,7 +277,8 @@ export function AuthenticatedImage({
     catch { return null; }
   })();
   const sameOrigin = resolvedUri === null ? uri === null : new URL(resolvedUri).origin === context.allowedOrigin;
-  if (uri !== null && (!sameOrigin || !headers?.Authorization)) {
+  const authRequired = !PREVIEW_AUTH_BYPASS;
+  if (uri !== null && (!sameOrigin || (authRequired && !headers?.Authorization))) {
     return (
       <View
         accessibilityLabel={`${accessibilityLabel ?? 'Protected image'} unavailable: ${sameOrigin ? 'sign in required' : 'untrusted image origin'}`}

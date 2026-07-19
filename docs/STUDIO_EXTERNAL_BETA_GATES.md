@@ -64,7 +64,7 @@ zero exit code from one run ID.
 - The source directory contains the exact 144 files and SHA-256 values pinned
   by `docs/evals/frozen-founder-corpus-v1/manifest.json`.
 - `config.json` matches the manifest and every frozen implementation pin.
-- The independently reviewed assignment bundle resolves the 1,044 logical
+- The independently reviewed assignment bundle resolves the 1,102 logical
   ring-quality rows to source-specific `execute` or `not_applicable`
   assignments and preassigns one `corpus_run_id`. Unresolved rows make zero
   provider calls and cannot enter capture. A reviewed `not_applicable` row
@@ -91,10 +91,10 @@ PYTHONPATH=src .venv/bin/python scripts/plan_frozen_corpus_capture.py \
 ```
 
 The repository production definition reports 144 integrity sources, 58 ring
-quality sources, 1,044 logical evaluation sequences, and zero execution-ready
+quality sources, 1,102 logical evaluation sequences, and zero execution-ready
 rows until assignments and keys are enrolled. Planning and validation make
 zero provider calls. Once enrolled, `planned_evaluation_sequence_count` remains
-`1,044`; only `execution_ready_sequence_count` contributes to the live attempt
+`1,102`; only `execution_ready_sequence_count` contributes to the live attempt
 ceiling, while `not_applicable_sequence_count` remains hash-bound end to end.
 
 ### Secured execution handoff
@@ -103,7 +103,7 @@ The repository does not contain a paid live executor. A separately secured
 operator must resolve and pin every assignment, preassign the `corpus_run_id`,
 enroll the executor authority, mount the verified source directory beneath the
 evidence root, and enforce an account-level dollar budget before provider work.
-The `3,132` maximum is an image-attempt ceiling, not a total request or dollar
+The `3,306` maximum is an image-attempt ceiling, not a total request or dollar
 ceiling. The operator must also review and pin one exact fallback contract;
 the frozen routing label must not be used to infer a different live-runner
 fallback silently.
@@ -273,7 +273,7 @@ test "$FINAL_EXIT" -eq 0
 
 ### Corpus pass criteria
 
-- Source integrity is `144/144`; the exact 58-source ring workload and 1,044
+- Source integrity is `144/144`; the exact 58-source ring workload and 1,102
   logical rows are covered without missing or extra assignments.
 - The replay's reviewed non-applicable projection exactly matches the frozen
   assignment plan. Any omitted, rewritten, duplicated, or attempted
@@ -332,8 +332,11 @@ FACETTA_STAGING_USER_B_CANDIDATE_FIXTURES_JSON
 
 Each candidate-fixtures value is a JSON object with exactly `catalog`,
 `visual`, `markup`, `view`, and `presentation` keys. Every value contains only
-the pre-seeded candidate's `run_id` and `candidate_id`. The probe validates and
-hash-binds these IDs but never prints the JSON or access tokens.
+the pre-seeded candidate's `run_id`, `candidate_id`, `source_asset_id`, and
+`studio_job_id`. The source must equal that principal's seeded active asset;
+the five candidate jobs must be distinct and present in the principal's own
+Studio-job list. The probe validates and hash-binds this lineage but never
+prints the JSON or access tokens.
 
 The base URL must be an exact HTTPS origin. The live `/health` response must
 report the same immutable deployment revision and the initialized PostgreSQL
@@ -362,8 +365,12 @@ test "$STAGING_EXIT" -eq 0
 
 The owner reads must succeed, cross-owner reads and enumeration must fail with
 the expected status, unauthenticated reads must return `401`, and every
-legacy/admin/OpenAPI/docs surface in the probe must remain hidden. The v6 probe
-also uses read-only `OPTIONS` discovery to require that every operation in the
+legacy/admin/OpenAPI/docs surface in the probe must remain hidden. The v7 probe
+fetches each principal's own Studio-job list plus all five own candidate lists.
+Each seeded job and candidate fixture must appear exactly once. Duplicate or
+malformed rows, the other principal's identifiers, and mismatched project or
+source-asset or candidate-job lineage fail closed before the evidence can pass.
+It also uses read-only `OPTIONS` discovery to require that every operation in the
 canonical production-hidden mutation inventory is absent. A `405` is acceptable
 only when its non-empty `Allow` header excludes the retired method; a missing
 header fails closed, while a safe collision with a retained `GET` does not.

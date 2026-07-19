@@ -511,6 +511,8 @@ def test_text_brief_scoped_color_refinement_reaches_exact_factory_pack(
     manifest_response = client.get(f"/projects/{root_id}/factory-pack")
     assert manifest_response.status_code == 200, manifest_response.text
     manifest = manifest_response.json()
+    canonical_manifest = dict(manifest)
+    manifest_sha256 = canonical_manifest.pop("manifest_sha256")
     assert manifest["project_id"] == root_id
     assert manifest["design_id"] == design_id
     assert manifest["design_version"] == 2
@@ -562,7 +564,17 @@ def test_text_brief_scoped_color_refinement_reaches_exact_factory_pack(
         packed_manifest = json.loads(archive.read("approval-manifest.json"))
         assert packed_spec == v2
         assert archive.read("approved-reference.png") == SPEC_RENDER_V2
-        assert packed_manifest == manifest
+        # ``manifest_sha256`` is response-envelope evidence for the canonical
+        # approval-manifest bytes.  It cannot be embedded in the manifest it
+        # hashes without creating a self-referential identity.  The archive
+        # therefore stores the canonical document and the API exposes its
+        # independently verifiable SHA-256 alongside that document.
+        packed_manifest_bytes = archive.read("approval-manifest.json")
+        assert packed_manifest == canonical_manifest
+        assert _sha256(packed_manifest_bytes) == manifest_sha256
+        assert "approval-manifest.json" not in {
+            item["name"] for item in canonical_manifest["files"]
+        }
         for item in manifest["files"]:
             assert _sha256(archive.read(item["name"])) == item["sha256"]
 

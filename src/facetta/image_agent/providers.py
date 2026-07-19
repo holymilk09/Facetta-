@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Protocol
 
+import httpx
+
+from facetta.config import env_value
 from facetta.image_agent.contracts import (
     ImageAgentPlan,
     ImageOperation,
@@ -12,7 +15,6 @@ from facetta.image_agent.contracts import (
 )
 from facetta.image_agent.errors import ProviderCallError
 from facetta.provider_errors import RenderUnavailable
-from facetta.config import env_value
 
 
 ROUTE_METADATA = {
@@ -23,6 +25,46 @@ ROUTE_METADATA = {
     ImageRoute.OPENAI_GENERATE: ("openai", "gpt-image-2"),
     ImageRoute.OPENAI_EDIT: ("openai", "gpt-image-2"),
 }
+
+
+_XAI_QUOTA_EXHAUSTION_MARKERS = (
+    "all available credits",
+    "used all available credits",
+    "insufficient credits",
+    "spending limit",
+    "monthly spending limit",
+    "reached its spending limit",
+    "insufficient_quota",
+    "quota exhausted",
+)
+
+
+def _provider_call_error(
+    route: ImageRoute,
+    exc: RenderUnavailable,
+) -> ProviderCallError:
+    """Classify only deterministic xAI quota 403s as fast-fallback errors."""
+
+    if route not in {ImageRoute.GROK_GENERATE, ImageRoute.GROK_EDIT}:
+        return ProviderCallError(str(exc))
+
+    cause: BaseException | None = exc
+    while cause is not None:
+        if isinstance(cause, httpx.HTTPStatusError):
+            response = cause.response
+            detail = response.text.casefold()
+            if response.status_code == 403 and any(
+                marker in detail for marker in _XAI_QUOTA_EXHAUSTION_MARKERS
+            ):
+                return ProviderCallError(
+                    str(exc),
+                    code="xai_quota_exhausted",
+                    retryable=False,
+                    fallback_eligible=True,
+                )
+            break
+        cause = cause.__cause__
+    return ProviderCallError(str(exc))
 
 
 def configured_fallback_provider() -> str | None:
@@ -58,6 +100,32 @@ def available_fallback_route(route: ImageRoute) -> ImageRoute:
     )
 
 
+def available_configured_route(route: ImageRoute) -> ImageRoute:
+    """Use an actually configured provider without spending dead attempts.
+
+    The route remains task-compatible (generate vs edit). When xAI is
+    configured it stays primary. If it is absent, the configured fallback is
+    promoted for the whole bounded retry budget instead of being tried only
+    after two guaranteed credential failures.
+    """
+
+    editing = route in {
+        ImageRoute.GROK_EDIT,
+        ImageRoute.FLUX_KONTEXT_EDIT,
+        ImageRoute.OPENAI_EDIT,
+    }
+    if route in {ImageRoute.GROK_GENERATE, ImageRoute.GROK_EDIT}:
+        if env_value("XAI_KEY"):
+            return route
+        provider = configured_fallback_provider()
+        if provider == "openai":
+            return ImageRoute.OPENAI_EDIT if editing else ImageRoute.OPENAI_GENERATE
+        if provider == "fal":
+            return ImageRoute.FLUX_KONTEXT_EDIT if editing else ImageRoute.FLUX_GENERATE
+        return route
+    return available_fallback_route(route)
+
+
 class ImageProvider(Protocol):
     def execute(
         self,
@@ -67,6 +135,7 @@ class ImageProvider(Protocol):
         *,
         source_image: bytes | None,
         mask_bytes: bytes | None,
+        camera_reference_image: bytes | None = None,
     ) -> ProviderImage: ...
 
 
@@ -86,7 +155,14 @@ class RenderPrimitiveProvider:
         *,
         source_image: bytes | None,
         mask_bytes: bytes | None,
+        camera_reference_image: bytes | None = None,
     ) -> ProviderImage:
+        if camera_reference_image is not None:
+            raise ProviderCallError(
+                "ordered camera-reference edits require the OpenAI image route",
+                code="camera_reference_route_unsupported",
+                retryable=False,
+            )
         if route in {ImageRoute.OPENAI_GENERATE, ImageRoute.OPENAI_EDIT}:
             raise ProviderCallError(
                 "OpenAI comparison routes require OpenAIImageProvider",
@@ -148,7 +224,7 @@ class RenderPrimitiveProvider:
         except ProviderCallError:
             raise
         except RenderUnavailable as exc:
-            raise ProviderCallError(str(exc)) from exc
+            raise _provider_call_error(route, exc) from exc
         if not image:
             raise ProviderCallError("image provider returned an empty candidate")
         return ProviderImage(image_bytes=image, cached=cached)
@@ -157,9 +233,10 @@ class RenderPrimitiveProvider:
 class RoutedImageProvider:
     """Dispatch canonical routes without exposing providers to product code."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, openai_quality: str = "medium") -> None:
         self._render = RenderPrimitiveProvider()
         self._openai: ImageProvider | None = None
+        self._openai_quality = openai_quality
 
     def execute(
         self,
@@ -169,18 +246,20 @@ class RoutedImageProvider:
         *,
         source_image: bytes | None,
         mask_bytes: bytes | None,
+        camera_reference_image: bytes | None = None,
     ) -> ProviderImage:
         if route in {ImageRoute.OPENAI_GENERATE, ImageRoute.OPENAI_EDIT}:
             if self._openai is None:
                 from facetta.image_agent.openai_provider import OpenAIImageProvider
 
-                self._openai = OpenAIImageProvider()
+                self._openai = OpenAIImageProvider(quality=self._openai_quality)
             return self._openai.execute(
                 plan,
                 route,
                 prompt,
                 source_image=source_image,
                 mask_bytes=mask_bytes,
+                camera_reference_image=camera_reference_image,
             )
         return self._render.execute(
             plan,
@@ -188,4 +267,5 @@ class RoutedImageProvider:
             prompt,
             source_image=source_image,
             mask_bytes=mask_bytes,
+            camera_reference_image=camera_reference_image,
         )

@@ -237,7 +237,7 @@ describe('StudioPresentWorkspace', () => {
     await waitFor(() => expect(acceptPresentationCandidate).toHaveBeenCalledWith({
       candidateId: 'candidate_1', createdBy: 'designer',
     }));
-    expect(await screen.findByText(/Saved presentation .* Review recommended/)).toBeTruthy();
+    expect(await screen.findByText(/Saved presentation .* Needs review/)).toBeTruthy();
     expect(onProjectUpdated).toHaveBeenCalledWith({ root_id: 'project_1' });
     expect(screen.getByText('Create another presentation')).toBeTruthy();
     expect(screen.getAllByText('Open in Collections')).toHaveLength(1);

@@ -7,7 +7,7 @@ thing is physically buildable before it reaches a factory.
 
 The division of labor is the same one the rest of the product runs on:
   invent the look        · Grok text-to-image (a brand-new design)
-  read it into numbers   · a vision model (sparse, controlled-vocabulary read)
+  read it into numbers   · configured vision (sparse controlled-vocabulary read)
   make it physically real · the validator + density model (this module)
   draw every profile      · deterministic code, all from the one spec
 
@@ -19,18 +19,16 @@ correction it had to make. The engine imagines; the validator is the jeweler.
 
 from __future__ import annotations
 
-import json
 import math
-import os
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
+from facetta.image_agent.vision import configured_vision_json
 from facetta.render import RenderUnavailable, generate_image
 from facetta.spec import (
     Band, Chain, Drop, Metal, Pendant, RingSize, Setting, Spec, Stone, StoneColor,
     StoneDimensions,
 )
-from facetta.media import sniff_media_type
 from facetta.validation import (
     HALO_MARGIN_MM, STONE_GAP_MM, _surround_fit, validate_spec,
 )
@@ -89,6 +87,56 @@ class DesignRead(BaseModel):
     accent_cut: str | None = None
     accent_count: int = 0
     chain_style: str | None = None
+
+
+class _ProviderDesignRead(DesignRead):
+    """Strict transport boundary for a model-produced visual read.
+
+    ``DesignRead`` remains the sparse internal contract used by deterministic
+    completion and tests. Provider JSON must additionally match the declared
+    schema exactly; unknown fields are rejected rather than silently becoming
+    specification authority.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Provider Structured Outputs must emit the complete transport contract.
+    # Optional visual facts are required keys whose value may be null; no
+    # Pydantic defaults are exposed as unsupported JSON Schema defaults.
+    jewelry_type: str
+    halo: bool
+    species: str
+    cut: str
+    center_length_mm: float
+    center_width_mm: float
+    metal_material: str
+    metal_color: str | None
+    setting_style: str
+    main_stone_count: int
+    main_stone_position: str
+    accent_species: str | None
+    accent_cut: str | None
+    accent_count: int
+    chain_style: str | None
+
+    @model_validator(mode="after")
+    def require_coherent_visible_inventory(self):
+        if not (
+            math.isfinite(self.center_length_mm)
+            and math.isfinite(self.center_width_mm)
+            and self.center_length_mm > 0
+            and self.center_width_mm > 0
+        ):
+            raise ValueError("visible stone dimensions must be positive and finite")
+        if not 1 <= self.main_stone_count <= 64:
+            raise ValueError("visible main-stone count must be between 1 and 64")
+        if not 0 <= self.accent_count <= 64:
+            raise ValueError("visible accent count must be between 0 and 64")
+        if self.accent_count and not (self.accent_species and self.accent_cut):
+            raise ValueError(
+                "a visible accent count requires accent species and cut"
+            )
+        return self
 
 
 class ConceptInvalid(Exception):
@@ -170,50 +218,30 @@ the JSON."""
 def read_design(image_bytes: bytes, brief: str = "",
                 vocab: Vocabulary | None = None) -> DesignRead:
     """Vision reads the concept into a sparse, controlled-vocabulary spec.
-    Uses xAI (Grok) Vision; deterministic completion owns physical values."""
-    import base64
+    Uses the configured vision reader; deterministic completion owns physical
+    values. XAI remains primary when configured and OpenAI is the fallback only
+    when XAI is absent."""
 
     vocab = vocab or get_vocabulary()
     system = _READ_SYSTEM.format(
         species=", ".join(vocab.species_ids()),
         cuts=", ".join(vocab.cut_ids()),
         metals=", ".join(m["id"] for m in vocab.metals()))
-    b64 = base64.b64encode(image_bytes).decode()
-    media = sniff_media_type(image_bytes)
-
-    key = _provider_key("XAI_KEY")
-    if not key:
-        raise RenderUnavailable(
-            "no XAI_KEY configured — concept reading needs a vision key")
-
-    import httpx
-
     try:
-        response = httpx.post(
-            "https://api.x.ai/v1/chat/completions", timeout=120.0,
-            headers={"Authorization": f"Bearer {key}"},
-            json={
-                "model": os.environ.get("FACETTA_XAI_VISION", "grok-4.3"),
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": [
-                        {"type": "image_url",
-                         "image_url": {"url": f"data:{media};base64,{b64}"}},
-                        {"type": "text", "text": f"Brief: {brief or 'fine jewelry'}"},
-                    ]},
-                ],
-                "response_format": {"type": "json_object"},
-            })
-        response.raise_for_status()
-        content = response.json()["choices"][0]["message"]["content"]
+        payload = configured_vision_json(
+            system,
+            image_bytes,
+            f"Brief: {brief or 'fine jewelry'}",
+            _ProviderDesignRead.model_json_schema(),
+        )
+        read = _ProviderDesignRead.model_validate(payload)
+    except RenderUnavailable:
+        raise
     except Exception as exc:
-        raise RenderUnavailable(f"vision read failed: {exc}") from exc
-    return DesignRead.model_validate(json.loads(content))
-
-
-def _provider_key(env: str) -> str | None:
-    from facetta.render import _provider_key as pk
-    return pk(env)
+        raise RenderUnavailable(
+            f"vision read returned an invalid design contract: {exc}"
+        ) from exc
+    return DesignRead.model_validate(read.model_dump(mode="python"))
 
 
 def _round_stone(vocab: Vocabulary, species: str, cut: str, w: float, length: float,
@@ -283,6 +311,89 @@ def complete_design(read: DesignRead, brief: str = "",
             f"halo sized to {melee.count} × ⌀{mw} mm diamonds — the most that "
             f"fit the {L}×{W} mm centre with real seats")
         side_stones.append(melee)
+    else:
+        # A ring reader reports one representative main stone plus the exact
+        # visible count of that repeated group. Keep the representative as the
+        # canonical center and preserve the remaining visible stones as one
+        # side group instead of flattening a three-stone ring to a solitaire.
+        main_count = max(1, min(int(read.main_stone_count), 64))
+        if main_count > 1:
+            repeated_side_count = main_count - 1
+            side_stones.append(center.model_copy(update={
+                "count": repeated_side_count,
+                # Count is visible; exact shoulder construction is not. Keep a
+                # generic side position until a designer confirms topology.
+                "position": "side",
+            }))
+            corrections.append(
+                f"visible main-stone inventory preserved as 1 center plus "
+                f"{repeated_side_count} matching side stone"
+                f"{'s' if repeated_side_count != 1 else ''}; dimensions remain "
+                "reference estimates"
+            )
+
+        if read.accent_count > 0 and read.accent_species:
+            accent_species = (
+                read.accent_species
+                if vocab.species(read.accent_species)
+                else "diamond"
+            )
+            requested_accent_cut = read.accent_cut or "round_brilliant"
+            accent_cut = _CUT_MAP.get(
+                requested_accent_cut, requested_accent_cut,
+            )
+            if not vocab.cut(accent_cut):
+                accent_cut = "round_brilliant"
+            accent_count = max(1, min(int(read.accent_count), 64))
+            # One image can establish the accent group's visible count, species,
+            # cut family, and placement, but not production millimeters. Use a
+            # conservative proportional draft solely so deterministic density
+            # validation can run; photo_spec marks every resulting dimension as
+            # estimated_from_reference before Starting Facts is returned.
+            accent_length = max(1.0, round(L * 0.55, 1))
+            accent_width = max(1.0, round(W * 0.55, 1))
+            if accent_cut == "round_brilliant":
+                accent_length = accent_width = round(
+                    (accent_length + accent_width) / 2,
+                    1,
+                )
+            accent_depth = round(
+                accent_width * _DEPTH_FRAC.get(accent_cut, 0.63),
+                1,
+            )
+            accent_carat, _ = _round_stone(
+                vocab,
+                accent_species,
+                accent_cut,
+                accent_width,
+                accent_length,
+                accent_depth,
+            )
+            side_stones.append(Stone(
+                species=accent_species,
+                cut=accent_cut,
+                carat=max(accent_carat, 0.001),
+                dimensions_mm=StoneDimensions(
+                    length=accent_length,
+                    width=accent_width,
+                    depth=accent_depth,
+                ),
+                color=_species_color(vocab, accent_species),
+                count=accent_count,
+                position="side",
+            ))
+            corrections.append(
+                f"visible accent inventory preserved as {accent_count} "
+                f"{accent_cut} {accent_species} stone"
+                f"{'s' if accent_count != 1 else ''}; proportional dimensions "
+                "are draft estimates for designer review"
+            )
+
+        visible_stone_count = 1 + sum(stone.count for stone in side_stones)
+        if visible_stone_count == 3:
+            template = "three_stone_prong"
+        elif visible_stone_count > 1:
+            template = "multi_stone_prong"
 
     material = read.metal_material if any(
         m["id"] == read.metal_material for m in vocab.metals()) else "platinum"

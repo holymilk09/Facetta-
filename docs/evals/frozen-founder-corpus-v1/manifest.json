@@ -1245,6 +1245,7 @@
       "halo-remove",
       "halo-count",
       "leaf-motif-shape",
+      "intentional-shoulder-asymmetry",
       "background-only"
     ],
     "operation_classes": {
@@ -1261,7 +1262,8 @@
         "halo-add",
         "halo-remove",
         "halo-count",
-        "leaf-motif-shape"
+        "leaf-motif-shape",
+        "intentional-shoulder-asymmetry"
       ]
     },
     "evidence_status": "not_run"

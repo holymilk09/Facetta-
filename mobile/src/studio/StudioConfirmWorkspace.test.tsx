@@ -1,6 +1,8 @@
 /// <reference types="jest" />
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { Dimensions, Platform, StyleSheet } from 'react-native';
+import { AuthenticatedImageProvider } from '../AuthenticatedImage';
 import { StudioConfirmWorkspace } from './StudioConfirmWorkspace';
 import type { StudioDesignConfirmationReview } from './gateway';
 
@@ -12,12 +14,13 @@ const review: StudioDesignConfirmationReview = {
     { key: 'jewelry_type', label: 'Jewelry type', value: 'ring', path: null, rawValue: 'ring', authority: 'suggested' },
     { key: 'template', label: 'Design type', value: 'solitaire', path: null, rawValue: 'solitaire', authority: 'estimated' },
   ] }, { key: 'center_stone', label: 'Center stone', facts: [
-    { key: 'species', label: 'Stone', value: 'sapphire', path: null, rawValue: 'sapphire', authority: 'estimated' },
+    { key: 'species', label: 'Stone', value: 'sapphire', path: 'stone.species', rawValue: 'sapphire', authority: 'estimated' },
     { key: 'color', label: 'Color', value: 'Royal Blue', path: 'stone.color.trade', rawValue: 'Royal Blue', authority: 'estimated' },
   ] }, { key: 'setting', label: 'Setting', facts: [
-    { key: 'style', label: 'Setting', value: '4_prong_basket', path: null, rawValue: '4_prong_basket', authority: 'suggested' },
+    { key: 'style', label: 'Setting', value: '4_prong_basket', path: 'setting.style', rawValue: '4_prong_basket', authority: 'suggested' },
+    { key: 'prong_count', label: 'Prongs', value: '4', path: null, rawValue: 4, authority: 'suggested' },
   ] }, { key: 'metal', label: 'Metal', facts: [
-    { key: 'material', label: 'Metal', value: 'gold', path: null, rawValue: 'gold', authority: 'suggested' },
+    { key: 'material', label: 'Metal', value: 'gold', path: 'metal.material', rawValue: 'gold', authority: 'suggested' },
   ] }, { key: 'ring_fit', label: 'Sizing and proportions', facts: [
     { key: 'ring_size', label: 'Ring size', value: '6.5', path: 'ring_size.value', rawValue: 6.5, authority: 'designer_supplied' },
   ] }],
@@ -43,6 +46,77 @@ test('fails closed without an exact selected visual', async () => {
   expect(screen.queryByText('Save starting facts')).toBeNull();
 });
 
+test('shows the selected revision preview with an explicit inspector that stays closed initially', async () => {
+  await render(
+    <AuthenticatedImageProvider
+      allowedOrigin="https://test"
+      headers={{ Authorization: 'Bearer test-session' }}>
+      <StudioConfirmWorkspace
+        gateway={gateway()}
+        lineage={lineage}
+        createdBy="designer"
+        sourceImageUrl="https://test/exact-selected-asset.png"
+        imageRequestHeaders={{ Authorization: 'Bearer test-session' }}
+        onSaved={jest.fn()}
+      />
+    </AuthenticatedImageProvider>,
+  );
+
+  await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
+  const exactImage = screen.getByLabelText('Selected revision preview used to review starting facts');
+  expect(exactImage.props.source).toMatchObject({
+    uri: 'https://test/exact-selected-asset.png',
+    headers: { Authorization: 'Bearer test-session' },
+  });
+  expect(screen.getByTestId('confirm-mobile-layout')).toBeTruthy();
+  expect(screen.getByTestId('confirm-selected-visual-panel')).toBeTruthy();
+  expect(screen.getByTestId('confirm-facts-panel')).toBeTruthy();
+  expect(screen.getByText('Enlarge')).toBeTruthy();
+  expect(screen.queryByText('DETAIL INSPECTION')).toBeNull();
+  expect(screen.queryByLabelText('Selected revision preview detail view')).toBeNull();
+  expect(String(screen.getByLabelText('Selected revision preview notice').props.children))
+    .toMatch(/delivery note is added only to this preview/i);
+
+  await fireEvent.press(screen.getByLabelText('Inspect Selected revision preview in detail'));
+  expect(screen.getByText('DETAIL INSPECTION')).toBeTruthy();
+  expect(screen.getByLabelText('Selected revision preview detail view')).toBeTruthy();
+});
+
+test('uses a side-by-side fact review layout on wide web screens', async () => {
+  const originalPlatform = Platform.OS;
+  const originalWindow = Dimensions.get('window');
+  const originalScreen = Dimensions.get('screen');
+  Object.defineProperty(Platform, 'OS', { configurable: true, value: 'web' });
+  Dimensions.set({
+    window: { ...originalWindow, width: 1440, height: 900 },
+    screen: { ...originalScreen, width: 1440, height: 900 },
+  });
+
+  try {
+    const view = await render(<StudioConfirmWorkspace
+      gateway={gateway()}
+      lineage={lineage}
+      createdBy="designer"
+      sourceImageUrl={null}
+      onSaved={jest.fn()}
+    />);
+    await waitFor(() => expect(view.getByText('Jewelry type')).toBeTruthy());
+
+    expect(view.getByTestId('confirm-web-layout')).toBeTruthy();
+    expect(StyleSheet.flatten(view.getByTestId('confirm-web-layout').props.style))
+      .toMatchObject({ flexDirection: 'row', alignItems: 'flex-start' });
+    expect(StyleSheet.flatten(view.getByTestId('confirm-selected-visual-panel').props.style))
+      .toMatchObject({ width: 420, flexShrink: 0 });
+    expect(view.getByText('Selected visual could not be displayed.')).toBeTruthy();
+    await view.unmount();
+  } finally {
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: originalPlatform });
+    await act(async () => {
+      Dimensions.set({ window: originalWindow, screen: originalScreen });
+    });
+  }
+});
+
 test('loads projected facts and renders all designer authority labels without internal payloads', async () => {
   const withQuestion = {
     ...review,
@@ -50,7 +124,7 @@ test('loads projected facts and renders all designer authority labels without in
     sourceReview: { eligible: false, state: 'not_ready' as const, reason: 'Answer the remaining source questions first.' },
   };
   await render(<StudioConfirmWorkspace gateway={gateway({ loadDesignConfirmation: jest.fn(async () => ({ data: withQuestion, error: null, status: 200 })) })} lineage={lineage} createdBy="designer" onSaved={jest.fn()} />);
-  await waitFor(() => expect(screen.getByText('Exact selected visual')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('Selected revision preview')).toBeTruthy());
   expect(screen.getAllByText('Suggested').length).toBeGreaterThan(0);
   expect(screen.getAllByText('Estimate').length).toBeGreaterThan(0);
   expect(screen.getAllByText('Measured or supplied').length).toBeGreaterThan(0);
@@ -107,16 +181,19 @@ test('one acknowledgement-gated action audits, saves, and invokes callback in or
   expect(audited.factGroups[0].facts[0].authority).toBe('suggested');
 });
 
-test('edits independent facts while keeping coupled material, setting, and dense identity read-only', async () => {
+test('corrects visible facts and uses a one-tap coupled setting choice', async () => {
   const g = gateway();
   await render(<StudioConfirmWorkspace gateway={g} lineage={lineage} createdBy="designer" onSaved={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
 
-  expect(screen.queryByLabelText('Edit Metal')).toBeNull();
-  expect(screen.queryByLabelText('Edit Stone')).toBeNull();
+  expect(screen.getByLabelText('Edit Metal')).toBeTruthy();
+  expect(screen.getByLabelText('Edit Stone')).toBeTruthy();
   await fireEvent.press(screen.getByLabelText('Edit Color'));
   await fireEvent.changeText(screen.getByLabelText('Edit Color'), 'Cornflower Blue');
-  expect(screen.queryByLabelText('Edit Setting')).toBeNull();
+  await fireEvent.press(screen.getByLabelText('Edit Setting'));
+  await fireEvent.press(screen.getByLabelText('Set Setting to 6-prong basket'));
+  expect(screen.getByLabelText('Prongs').props.children).toBe(6);
+  expect(screen.getByText(/updates automatically with the selected setting/i)).toBeTruthy();
   await fireEvent.press(screen.getByLabelText('Edit Ring size'));
   await fireEvent.changeText(screen.getByLabelText('Edit Ring size'), '7.25');
   await fireEvent.press(screen.getByLabelText('I reviewed these starting facts'));
@@ -125,12 +202,63 @@ test('edits independent facts while keeping coupled material, setting, and dense
   await waitFor(() => expect(g.saveDesignConfirmation).toHaveBeenCalledTimes(1));
   const audited = g.auditDesignConfirmation.mock.calls[0][0] as StudioDesignConfirmationReview;
   const facts = audited.factGroups.flatMap((group) => group.facts);
-  expect(facts.find((fact) => fact.key === 'material')).toMatchObject({ path: null, rawValue: 'gold', authority: 'suggested' });
+  expect(facts.find((fact) => fact.key === 'material')).toMatchObject({ path: 'metal.material', rawValue: 'gold', authority: 'suggested' });
   expect(facts.find((fact) => fact.path === 'stone.color.trade')).toMatchObject({ rawValue: 'Cornflower Blue', authority: 'designer_supplied' });
-  expect(facts.find((fact) => fact.key === 'species')).toMatchObject({ path: null, rawValue: 'sapphire', authority: 'estimated' });
-  expect(facts.find((fact) => fact.key === 'style')).toMatchObject({ path: null, rawValue: '4_prong_basket', authority: 'suggested' });
+  expect(facts.find((fact) => fact.key === 'species')).toMatchObject({ path: 'stone.species', rawValue: 'sapphire', authority: 'estimated' });
+  expect(facts.find((fact) => fact.key === 'style')).toMatchObject({ path: 'setting.style', rawValue: '6_prong_basket', authority: 'designer_supplied' });
   expect(facts.find((fact) => fact.path === 'ring_size.value')).toMatchObject({ rawValue: 7.25, authority: 'designer_supplied' });
   expect(facts.find((fact) => fact.key === 'template')).toMatchObject({ rawValue: 'solitaire', authority: 'estimated' });
+});
+
+test('replaces a stale 6-prong source question when the setting changes to 4-prong', async () => {
+  const staleSettingReview: StudioDesignConfirmationReview = {
+    ...review,
+    factGroups: review.factGroups.map((group) => group.key !== 'setting' ? group : {
+      ...group,
+      facts: group.facts.map((fact) => fact.key === 'style'
+        ? { ...fact, value: '6_prong_basket', rawValue: '6_prong_basket' }
+        : fact.key === 'prong_count'
+          ? { ...fact, value: '6', rawValue: 6 }
+          : fact),
+    }),
+    unresolvedQuestions: [
+      'Review 6_prong_basket setting with 6 prongs against the selected visual.',
+    ],
+  };
+  const g = gateway({
+    loadDesignConfirmation: jest.fn(async () => ({
+      data: staleSettingReview, error: null, status: 200,
+    })),
+  });
+  await render(<StudioConfirmWorkspace
+    gateway={g}
+    lineage={lineage}
+    createdBy="designer"
+    onSaved={jest.fn()}
+  />);
+  await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
+
+  expect(screen.getByText(
+    /Review 6_prong_basket setting with 6 prongs against the selected visual/i,
+  )).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('Edit Setting'));
+  await fireEvent.press(screen.getByLabelText('Set Setting to 4-prong basket'));
+
+  expect(screen.queryByText(
+    /Review 6_prong_basket setting with 6 prongs against the selected visual/i,
+  )).toBeNull();
+  expect(screen.getByText(
+    '• Review the selected setting as 4-prong basket against the visual.',
+  )).toBeTruthy();
+  expect(screen.getByLabelText('Prongs').props.children).toBe(4);
+
+  await fireEvent.press(screen.getByLabelText('I reviewed these starting facts'));
+  await fireEvent.press(screen.getByText('Save starting facts'));
+  await waitFor(() => expect(g.saveDesignConfirmation).toHaveBeenCalledTimes(1));
+  const audited = g.auditDesignConfirmation.mock.calls[0][0] as StudioDesignConfirmationReview;
+  expect(audited.unresolvedQuestions).toEqual([
+    'Review the selected setting as 4-prong basket against the visual.',
+  ]);
 });
 
 test('invalid numeric edits stay local and cannot reach audit or persistence', async () => {

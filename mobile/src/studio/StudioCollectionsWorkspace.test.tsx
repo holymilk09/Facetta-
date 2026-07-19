@@ -44,7 +44,9 @@ const history = {
 
 const family = {
   family_id: 'family_orbit', owner: 'usr_designer', title: 'Sapphire orbit ring',
+  tags: ['sapphire'],
   created_at: '2026-07-12T01:00:00Z', updated_at: '2026-07-12T03:00:00Z',
+  is_favorite: false, favorited_at: null,
   variations: [
     {
       root_id: 'project_main', title: 'Sapphire orbit ring', collection: 'Orbit collection',
@@ -68,8 +70,23 @@ const family = {
 function api(overrides: Partial<StudioCollectionsApi> = {}): StudioCollectionsApi {
   return {
     listDesignFamilies: jest.fn(async () => ({ data: { families: [family] }, error: null, status: 200 })),
+    favoriteDesignFamily: jest.fn(async () => ({ data: { status: 'updated' as const }, error: null, status: 204 })),
+    unfavoriteDesignFamily: jest.fn(async () => ({ data: { status: 'updated' as const }, error: null, status: 204 })),
+    updateDesignFamilyTags: jest.fn(async (familyId: string, _owner: string, tags: string[]) => ({
+      data: { family_id: familyId, tags }, error: null, status: 200,
+    })),
     getStudioProjectHistory: jest.fn(async () => ({ data: history, error: null, status: 200 })),
     getDesignFamily: jest.fn(async () => ({ data: family, error: null, status: 200 })),
+    listWorkspaceCollections: jest.fn(async () => ({ data: { collections: [] }, error: null, status: 200 })),
+    listWorkspaceCollectionMemberships: jest.fn(async () => ({
+      data: { family_collection_ids: { [family.family_id]: [] } }, error: null, status: 200,
+    })),
+    createWorkspaceCollection: jest.fn(),
+    updateWorkspaceCollection: jest.fn(),
+    deleteWorkspaceCollection: jest.fn(),
+    listDesignFamilyCollections: jest.fn(async () => ({ data: { collections: [] }, error: null, status: 200 })),
+    addDesignFamilyToCollection: jest.fn(),
+    removeDesignFamilyFromCollection: jest.fn(),
     restoreStudioRevision: jest.fn(async () => ({
       data: {
         status: 'restored_as_new_revision' as const,
@@ -134,6 +151,412 @@ describe('StudioCollectionsWorkspace', () => {
     expect(screen.queryByText('Collections are temporarily unavailable')).toBeNull();
     expect(listDesignFamilies).toHaveBeenCalledTimes(2);
     expect(listDesignFamilies).toHaveBeenLastCalledWith('usr_designer');
+  });
+
+  test('filters family-based All Designs by search, tags, Collection, and Unfiled membership', async () => {
+    const clientCollection = {
+      id: 'collection_client', name: 'Lin commission', template: 'client' as const,
+      metadata: { client_name: 'Lin Chen' }, archived_at: null, created_at: '2026-07-12T00:00:00Z',
+      updated_at: '2026-07-12T00:00:00Z', family_count: 1,
+    };
+    const unfiledFamily = {
+      ...family,
+      family_id: 'family_unfiled',
+      title: 'Emerald leaf pendant',
+      tags: ['emerald'],
+      variations: [{
+        ...family.variations[0], root_id: 'project_emerald', title: 'Emerald leaf pendant',
+        tags: ['emerald'], cover_asset_id: 'asset_emerald',
+      }],
+    };
+    const listWorkspaceCollectionMemberships = jest.fn(async () => ({
+      data: {
+        family_collection_ids: {
+          [family.family_id]: [clientCollection.id],
+          [unfiledFamily.family_id]: [],
+        },
+      },
+      error: null,
+      status: 200,
+    }));
+    const client = api({
+      listDesignFamilies: jest.fn(async () => ({
+        data: { families: [family, unfiledFamily] }, error: null, status: 200,
+      })),
+      listWorkspaceCollections: jest.fn(async () => ({
+        data: { collections: [clientCollection] }, error: null, status: 200,
+      })),
+      listWorkspaceCollectionMemberships,
+    });
+
+    await render(
+      <StudioCollectionsWorkspace
+        api={client}
+        project={null}
+        createdBy="usr_designer"
+        {...callbacks()}
+      />,
+    );
+
+    expect(await screen.findByText('All Designs')).toBeTruthy();
+    expect(screen.getByText('Sapphire orbit ring')).toBeTruthy();
+    expect(screen.getByText('Emerald leaf pendant')).toBeTruthy();
+    expect(listWorkspaceCollectionMemberships).toHaveBeenCalledTimes(1);
+    expect(listWorkspaceCollectionMemberships).toHaveBeenCalledWith('usr_designer');
+    expect(client.listDesignFamilyCollections).not.toHaveBeenCalled();
+    expect(client.listWorkspaceCollections).toHaveBeenCalledWith({ owner: 'usr_designer' });
+
+    await fireEvent.press(screen.getByText('Unfiled'));
+    expect(screen.queryByText('Sapphire orbit ring')).toBeNull();
+    expect(screen.getByText('Emerald leaf pendant')).toBeTruthy();
+
+    await fireEvent.press(screen.getByText('Lin commission · 1'));
+    expect(screen.getByText('Sapphire orbit ring')).toBeTruthy();
+    expect(screen.queryByText('Emerald leaf pendant')).toBeNull();
+
+    await fireEvent.press(screen.getByText('All Designs'));
+    await fireEvent.changeText(screen.getByLabelText('Search designs'), 'Lin Chen');
+    expect(screen.getByText('Sapphire orbit ring')).toBeTruthy();
+    expect(screen.queryByText('Emerald leaf pendant')).toBeNull();
+    await fireEvent.changeText(screen.getByLabelText('Search designs'), 'emerald');
+    expect(screen.queryByText('Sapphire orbit ring')).toBeNull();
+    expect(screen.getByText('Emerald leaf pendant')).toBeTruthy();
+    await fireEvent.press(screen.getAllByText('#emerald')[0]);
+    expect(screen.getByText('Emerald leaf pendant')).toBeTruthy();
+  });
+
+  test('edits canonical family tags and immediately uses them for family search', async () => {
+    const updateDesignFamilyTags = jest.fn(async () => ({
+      data: { family_id: family.family_id, tags: ['bridal', 'client review'] },
+      error: null,
+      status: 200,
+    }));
+    const client = api({ updateDesignFamilyTags });
+
+    await render(
+      <StudioCollectionsWorkspace
+        api={client}
+        project={null}
+        createdBy="usr_designer"
+        {...callbacks()}
+      />,
+    );
+
+    expect(await screen.findByText('Sapphire orbit ring')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Edit tags'));
+    await fireEvent.changeText(
+      screen.getByLabelText('Tags for Sapphire orbit ring'),
+      'Bridal, client review',
+    );
+    await fireEvent.press(screen.getByText('Save tags'));
+
+    await waitFor(() => expect(updateDesignFamilyTags).toHaveBeenCalledWith(
+      family.family_id,
+      'usr_designer',
+      ['Bridal', 'client review'],
+    ));
+    expect(await screen.findByText('#bridal  #client review')).toBeTruthy();
+    await fireEvent.changeText(screen.getByLabelText('Search designs'), 'client review');
+    expect(screen.getByText('Sapphire orbit ring')).toBeTruthy();
+  });
+
+  test('loads one owner-scoped aggregate membership index for many families', async () => {
+    const manyFamilies = Array.from({ length: 24 }, (_, index) => ({
+      ...family,
+      family_id: `family_${index}`,
+      title: `Family ${index}`,
+      variations: family.variations.map((variation) => ({
+        ...variation,
+        root_id: `${variation.root_id}_${index}`,
+      })),
+    }));
+    const listWorkspaceCollectionMemberships = jest.fn(async () => ({
+      data: {
+        family_collection_ids: Object.fromEntries(manyFamilies.map((item) => [item.family_id, []])),
+      },
+      error: null,
+      status: 200,
+    }));
+    const client = api({
+      listDesignFamilies: jest.fn(async () => ({
+        data: { families: manyFamilies }, error: null, status: 200,
+      })),
+      listWorkspaceCollectionMemberships,
+    });
+
+    await render(
+      <StudioCollectionsWorkspace api={client} project={null} createdBy="usr_designer" {...callbacks()} />,
+    );
+
+    expect(await screen.findByText('Family 0')).toBeTruthy();
+    expect(screen.getByText('Family 23')).toBeTruthy();
+    expect(listWorkspaceCollectionMemberships).toHaveBeenCalledTimes(1);
+    expect(listWorkspaceCollectionMemberships).toHaveBeenCalledWith('usr_designer');
+    expect(client.listDesignFamilyCollections).not.toHaveBeenCalled();
+  });
+
+  test('keeps All Designs available when the aggregate membership index fails', async () => {
+    const client = api({
+      listWorkspaceCollectionMemberships: jest.fn(async () => ({
+        data: null,
+        error: {
+          code: 'NETWORK_ERROR', message: 'Membership index unavailable.',
+          category: 'network' as const, status: 503, retryable: true,
+        },
+        status: 503,
+      })),
+    });
+
+    await render(
+      <StudioCollectionsWorkspace api={client} project={null} createdBy="usr_designer" {...callbacks()} />,
+    );
+
+    expect(await screen.findByText('Sapphire orbit ring')).toBeTruthy();
+    expect(screen.getByText(
+      'Collection organization is temporarily unavailable. All Designs is still safe to browse.',
+    )).toBeTruthy();
+    expect(client.listDesignFamilyCollections).not.toHaveBeenCalled();
+  });
+
+  test('persists Favorites across reload and removes an unfavorited family without navigation', async () => {
+    let favoriteSaved = false;
+    const listDesignFamilies = jest.fn(async () => ({
+      data: {
+        families: [{
+          ...family,
+          is_favorite: favoriteSaved,
+          favorited_at: favoriteSaved ? '2026-07-12T04:00:00Z' : null,
+          variations: family.variations.map((variation) => ({
+            ...variation,
+            tags: [...variation.tags, 'favorite'],
+          })),
+        }],
+      },
+      error: null,
+      status: 200,
+    }));
+    const favoriteDesignFamily = jest.fn(async () => {
+      favoriteSaved = true;
+      return { data: { status: 'updated' as const }, error: null, status: 204 };
+    });
+    const unfavoriteDesignFamily = jest.fn(async () => {
+      favoriteSaved = false;
+      return { data: { status: 'updated' as const }, error: null, status: 204 };
+    });
+    const client = api({ listDesignFamilies, favoriteDesignFamily, unfavoriteDesignFamily });
+    const handlers = callbacks();
+
+    const first = await render(
+      <StudioCollectionsWorkspace api={client} project={null} createdBy="usr_designer" {...handlers} />,
+    );
+    await screen.findByText('Sapphire orbit ring');
+    await fireEvent.press(screen.getByText('Favorites'));
+    expect(screen.queryByText('Sapphire orbit ring')).toBeNull();
+    await fireEvent.press(screen.getByText('All Designs'));
+    await fireEvent.press(screen.getByLabelText('Add Sapphire orbit ring to Favorites'));
+    await waitFor(() => expect(favoriteDesignFamily).toHaveBeenCalledWith(
+      'family_orbit', 'usr_designer',
+    ));
+    expect(handlers.onOpenProject).not.toHaveBeenCalled();
+    expect(client.restoreStudioRevision).not.toHaveBeenCalled();
+    await first.unmount();
+
+    await render(
+      <StudioCollectionsWorkspace api={client} project={null} createdBy="usr_designer" {...handlers} />,
+    );
+    await screen.findByText('Sapphire orbit ring');
+    await fireEvent.press(screen.getByText('Favorites'));
+    expect(screen.getByText('Sapphire orbit ring')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('Remove Sapphire orbit ring from Favorites'));
+    await waitFor(() => expect(unfavoriteDesignFamily).toHaveBeenCalledWith(
+      'family_orbit', 'usr_designer',
+    ));
+    expect(screen.queryByText('Sapphire orbit ring')).toBeNull();
+    expect(handlers.onOpenProject).not.toHaveBeenCalled();
+  });
+
+  test('defines Recent as the latest 12 design-active families with a family-id tie break', async () => {
+    const recentFamilies = Array.from({ length: 14 }, (_, index) => ({
+      ...family,
+      family_id: `family_${String(index).padStart(2, '0')}`,
+      title: `Recent family ${String(index).padStart(2, '0')}`,
+      updated_at: index >= 12
+        ? '2026-07-14T00:00:00Z'
+        : `2026-07-${String(index + 1).padStart(2, '0')}T00:00:00Z`,
+      is_favorite: index === 0,
+      favorited_at: index === 0 ? '2026-07-30T00:00:00Z' : null,
+      variations: family.variations.map((variation) => ({
+        ...variation,
+        root_id: `${variation.root_id}_${index}`,
+      })),
+    })).reverse();
+    const client = api({
+      listDesignFamilies: jest.fn(async () => ({
+        data: { families: recentFamilies }, error: null, status: 200,
+      })),
+    });
+    await render(
+      <StudioCollectionsWorkspace api={client} project={null} createdBy="usr_designer" {...callbacks()} />,
+    );
+
+    await screen.findByText('Recent family 13');
+    await fireEvent.press(screen.getByText('Recent'));
+
+    const titles = screen.getAllByText(/^Recent family /).map((node) => node.props.children);
+    expect(titles).toEqual([
+      'Recent family 12',
+      'Recent family 13',
+      'Recent family 11',
+      'Recent family 10',
+      'Recent family 09',
+      'Recent family 08',
+      'Recent family 07',
+      'Recent family 06',
+      'Recent family 05',
+      'Recent family 04',
+      'Recent family 03',
+      'Recent family 02',
+    ]);
+    expect(screen.queryByText('Recent family 01')).toBeNull();
+    expect(screen.queryByText('Recent family 00')).toBeNull();
+  });
+
+  test('creates a flat templated Collection without filing a family during creation', async () => {
+    const createdCollection = {
+      id: 'collection_campaign', name: 'Holiday campaign', template: 'campaign' as const,
+      metadata: {}, archived_at: null, created_at: '2026-07-12T00:00:00Z',
+      updated_at: '2026-07-12T00:00:00Z', family_count: 0,
+    };
+    const createWorkspaceCollection = jest.fn(async () => ({
+      data: createdCollection, error: null, status: 201,
+    }));
+    const client = api({ createWorkspaceCollection });
+    await render(
+      <StudioCollectionsWorkspace api={client} project={null} createdBy="usr_designer" {...callbacks()} />,
+    );
+
+    await screen.findByText('All Designs');
+    await fireEvent.press(screen.getByRole('button', { name: 'New Collection' }));
+    expect(screen.getByText('General')).toBeTruthy();
+    expect(screen.getByText('Client')).toBeTruthy();
+    expect(screen.getByText('Order')).toBeTruthy();
+    expect(screen.getByText('Project')).toBeTruthy();
+    expect(screen.getByText('Season')).toBeTruthy();
+    expect(screen.getByText('Jewelry line')).toBeTruthy();
+    expect(screen.getByText('Personal study')).toBeTruthy();
+    expect(screen.getByText('Custom')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Campaign'));
+    await fireEvent.changeText(screen.getByLabelText('Collection name'), 'Holiday campaign');
+    await fireEvent.press(screen.getByRole('button', { name: 'Create Collection' }));
+
+    await waitFor(() => expect(createWorkspaceCollection).toHaveBeenCalledWith({
+      owner: 'usr_designer', name: 'Holiday campaign', template: 'campaign',
+    }));
+    expect(client.addDesignFamilyToCollection).not.toHaveBeenCalled();
+    expect(await screen.findByText('Holiday campaign is ready. Add families when you choose.')).toBeTruthy();
+    expect(screen.getByText('Sapphire orbit ring')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'New Collection' })).toBeTruthy();
+  });
+
+  test('captures optional client metadata only for a Client Collection', async () => {
+    const createdCollection = {
+      id: 'collection_client', name: 'Lin engagement', template: 'client' as const,
+      metadata: { client_name: 'Lin Chen' }, archived_at: null,
+      created_at: '2026-07-12T00:00:00Z', updated_at: '2026-07-12T00:00:00Z',
+      family_count: 0,
+    };
+    const createWorkspaceCollection = jest.fn(async () => ({
+      data: createdCollection, error: null, status: 201,
+    }));
+    const client = api({ createWorkspaceCollection });
+    await render(
+      <StudioCollectionsWorkspace api={client} project={null} createdBy="usr_designer" {...callbacks()} />,
+    );
+
+    await screen.findByText('All Designs');
+    await fireEvent.press(screen.getByRole('button', { name: 'New Collection' }));
+    expect(screen.queryByLabelText('Client name (optional)')).toBeNull();
+    await fireEvent.press(screen.getByText('Client'));
+    await fireEvent.changeText(screen.getByLabelText('Collection name'), 'Lin engagement');
+    await fireEvent.changeText(screen.getByLabelText('Client name (optional)'), '  Lin Chen  ');
+    await fireEvent.press(screen.getByRole('button', { name: 'Create Collection' }));
+
+    await waitFor(() => expect(createWorkspaceCollection).toHaveBeenCalledWith({
+      owner: 'usr_designer',
+      name: 'Lin engagement',
+      template: 'client',
+      metadata: { client_name: 'Lin Chen' },
+    }));
+    expect(await screen.findByText('Lin engagement is ready. Add families when you choose.')).toBeTruthy();
+  });
+
+  test('adds and removes the whole family from several Collections without revision mutations', async () => {
+    const clientCollection = {
+      id: 'collection_client', name: 'Lin commission', template: 'client' as const,
+      metadata: {}, archived_at: null, created_at: '2026-07-12T00:00:00Z',
+      updated_at: '2026-07-12T00:00:00Z', family_count: 0,
+    };
+    const projectCollection = { ...clientCollection, id: 'collection_project', name: 'Halo studies', template: 'project' as const };
+    const addDesignFamilyToCollection = jest.fn(async () => ({
+      data: { status: 'updated' as const }, error: null, status: 204,
+    }));
+    const removeDesignFamilyFromCollection = jest.fn(async () => ({
+      data: { status: 'updated' as const }, error: null, status: 204,
+    }));
+    const client = api({
+      listWorkspaceCollections: jest.fn(async () => ({
+        data: { collections: [clientCollection, projectCollection] }, error: null, status: 200,
+      })),
+      addDesignFamilyToCollection,
+      removeDesignFamilyFromCollection,
+    });
+    await render(
+      <StudioCollectionsWorkspace api={client} project={project} createdBy="usr_designer" {...callbacks()} />,
+    );
+
+    await screen.findByText('Organize this family');
+    await fireEvent.press(screen.getByLabelText('Add to Lin commission'));
+    await waitFor(() => expect(addDesignFamilyToCollection).toHaveBeenCalledWith(
+      'family_orbit', 'collection_client',
+    ));
+    await fireEvent.press(screen.getByLabelText('Add to Halo studies'));
+    expect(addDesignFamilyToCollection).toHaveBeenCalledWith('family_orbit', 'collection_project');
+    await fireEvent.press(screen.getByLabelText('Remove from Lin commission'));
+    expect(removeDesignFamilyFromCollection).toHaveBeenCalledWith('family_orbit', 'collection_client');
+    expect(client.restoreStudioRevision).not.toHaveBeenCalled();
+  });
+
+  test('requires explicit confirmation before safe Collection deletion', async () => {
+    const clientCollection = {
+      id: 'collection_client', name: 'Lin commission', template: 'client' as const,
+      metadata: {}, archived_at: null, created_at: '2026-07-12T00:00:00Z',
+      updated_at: '2026-07-12T00:00:00Z', family_count: 1,
+    };
+    const deleteWorkspaceCollection = jest.fn(async () => ({
+      data: { status: 'updated' as const }, error: null, status: 204,
+    }));
+    const client = api({
+      listWorkspaceCollections: jest.fn(async () => ({
+        data: { collections: [clientCollection] }, error: null, status: 200,
+      })),
+      listDesignFamilyCollections: jest.fn(async () => ({
+        data: { collections: [clientCollection] }, error: null, status: 200,
+      })),
+      deleteWorkspaceCollection,
+    });
+    await render(
+      <StudioCollectionsWorkspace api={client} project={null} createdBy="usr_designer" {...callbacks()} />,
+    );
+
+    await screen.findByText('All Designs');
+    await fireEvent.press(screen.getByText('Lin commission · 1'));
+    expect(screen.getByRole('button', { name: 'Archive Collection' })).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Delete Collection' }));
+    expect(deleteWorkspaceCollection).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByText('Confirm delete Collection'));
+    await waitFor(() => expect(deleteWorkspaceCollection).toHaveBeenCalledWith('collection_client'));
+    expect(await screen.findByText('Lin commission was deleted. Only its memberships were removed.')).toBeTruthy();
+    expect(client.restoreStudioRevision).not.toHaveBeenCalled();
   });
 
   test('ignores a stale family response after the owner scope changes', async () => {
@@ -505,8 +928,8 @@ describe('StudioCollectionsWorkspace', () => {
       />,
     );
     await screen.findByText('Revision history');
-    await fireEvent.press(screen.getByText('All families'));
-    expect(await screen.findByText('Your design families')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'All families' }));
+    expect(await screen.findByText('All Designs')).toBeTruthy();
     expect(screen.queryByText('Revision history')).toBeNull();
 
     await fireEvent.press(screen.getByText('Back to current variation'));
@@ -659,9 +1082,11 @@ describe('StudioCollectionsWorkspace', () => {
 
     await fireEvent.press(screen.getByText('Client'));
     expect(handlers.onSelectDestination).toHaveBeenCalledWith('client');
+    expect(screen.getByText('Use this revision')).toBeTruthy();
+    expect(screen.queryByText('Library')).toBeNull();
     expect(screen.queryByText('Factory')).toBeNull();
 
-    await fireEvent.press(screen.getByText('Continue refining'));
+    await fireEvent.press(screen.getByRole('button', { name: 'Continue refining' }));
     expect(handlers.onContinueRefining).toHaveBeenCalledTimes(1);
     expect(handlers.onOpenProject).not.toHaveBeenCalled();
 
@@ -687,9 +1112,32 @@ describe('StudioCollectionsWorkspace', () => {
       />,
     );
 
-    expect(await screen.findByText('Where next?')).toBeTruthy();
+    expect(await screen.findByText('Use this revision')).toBeTruthy();
+    expect(screen.queryByText('Library')).toBeNull();
     await fireEvent.press(screen.getByText('Factory'));
     expect(handlers.onSelectDestination).toHaveBeenCalledWith('factory');
+  });
+
+  test('describes pre-spec Collections assets as saved visual directions', async () => {
+    const handlers = callbacks();
+    await render(
+      <StudioCollectionsWorkspace
+        api={api()}
+        project={{ ...project, active_design_version: null }}
+        createdBy="usr_designer"
+        {...handlers}
+        destinationContext={{
+          ...handlers.destinationContext,
+          hasExactSpecification: false,
+        }}
+      />,
+    );
+
+    expect(await screen.findByText(
+      'Prepare this saved visual direction for a client or marketing. Its design history will not change.',
+    )).toBeTruthy();
+    expect(screen.queryByText(/exact saved revision/)).toBeNull();
+    expect(screen.queryByText('Factory')).toBeNull();
   });
 
   test('does not invent family data when history is unavailable, then retries the exact project', async () => {
@@ -730,7 +1178,8 @@ describe('StudioCollectionsWorkspace', () => {
 
     await fireEvent.press(screen.getByText('Retry'));
 
-    expect(await screen.findByText('Where next?')).toBeTruthy();
+    expect(await screen.findByText('Use this revision')).toBeTruthy();
+    expect(screen.queryByText('Library')).toBeNull();
     expect(screen.queryByText('Saved history is unavailable')).toBeNull();
     expect(getStudioProjectHistory).toHaveBeenCalledTimes(2);
     expect(getStudioProjectHistory).toHaveBeenLastCalledWith('project_main');

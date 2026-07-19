@@ -67,14 +67,7 @@ export function StudioReviewImage({
 
   return (
     <>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Inspect ${inspectionLabel} in detail`}
-        accessibilityHint="Opens a full-detail jewelry image inspector."
-        onPress={(event) => {
-          event.stopPropagation();
-          setOpen(true);
-        }}
+      <View
         style={[styles.thumbnailButton, style]}>
         <Image
           {...imageProps}
@@ -86,10 +79,19 @@ export function StudioReviewImage({
           source={source}
           style={styles.thumbnailImage}
         />
-        <View pointerEvents="none" style={styles.inspectBadge}>
-          <Text style={styles.inspectBadgeText}>Inspect detail</Text>
-        </View>
-      </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Inspect ${inspectionLabel} in detail`}
+          accessibilityHint="Opens a full-detail jewelry image inspector."
+          hitSlop={8}
+          onPress={(event) => {
+            event.stopPropagation();
+            setOpen(true);
+          }}
+          style={styles.inspectBadge}>
+          <Text style={styles.inspectBadgeText}>Enlarge</Text>
+        </Pressable>
+      </View>
 
       <Modal
         animationType="fade"

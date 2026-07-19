@@ -7,6 +7,8 @@ choice, the designer can rename it, and the style library loads as data.
 
 import json
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 import facetta.assistant as assistant_mod
@@ -36,6 +38,14 @@ def _mock_chat(monkeypatch, payload: dict):
 
 
 class TestAssist:
+    def test_chat_without_key_uses_shared_config_and_fails_closed(
+        self, monkeypatch,
+    ):
+        monkeypatch.setattr(assistant_mod, "env_value", lambda _key: None)
+
+        with pytest.raises(RenderUnavailable, match="no XAI_KEY configured"):
+            assistant_mod._assistant_chat("system", [], "grok")
+
     def test_asks_a_clarifying_question(self, monkeypatch):
         _mock_chat(monkeypatch, {
             "action": "ask",

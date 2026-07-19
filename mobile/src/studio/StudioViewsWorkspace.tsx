@@ -9,6 +9,7 @@ import type { ProjectDetail } from '../trusted/types';
 import type {
   ExactStudioLineage, StudioGateway, StudioViewPreview,
 } from './gateway';
+import { isStudioViewPreviewSaveable } from './gateway';
 import {
   designerCheckDetail, designerCheckLabel, designerReviewState,
 } from './designerReviewLanguage';
@@ -20,9 +21,9 @@ import { StudioComparisonInspector } from './StudioComparisonInspector';
 const VIEWS_CREDITS_PER_OUTPUT = getStudioAction('views').creditEstimate ?? 0;
 
 const VIEWS = [
-  { id: 'front', label: 'Front', detail: 'A clear straight-on geometry view.' },
-  { id: 'three_quarter', label: 'Three-quarter', detail: 'A dimensional view that keeps the full form readable.' },
-  { id: 'side', label: 'Side', detail: 'A profile view for height and setting relationships.' },
+  { id: 'front', label: 'Front', detail: 'A straight-on view of the piece.' },
+  { id: 'three_quarter', label: 'Three-quarter', detail: 'An angled view that shows the full form.' },
+  { id: 'side', label: 'Side', detail: 'A profile view that shows height and setting.' },
 ] as const;
 
 type ViewId = typeof VIEWS[number]['id'];
@@ -120,7 +121,7 @@ export function StudioViewsWorkspace({
   };
 
   const accept = async (): Promise<void> => {
-    if (previewForLineage === null || busy || previewForLineage.verdict === 'fail'
+    if (previewForLineage === null || busy || !isStudioViewPreviewSaveable(previewForLineage)
       || !reviewSourceIsActive || !comparisonReady) return;
     const requestedLineageKey = lineageKey;
     setBusy(true);
@@ -172,7 +173,8 @@ export function StudioViewsWorkspace({
   }
 
   if (previewForLineage !== null) {
-    const rejected = previewForLineage.verdict === 'fail';
+    const rejected = !isStudioViewPreviewSaveable(previewForLineage);
+    const warningReview = !rejected && previewForLineage.verdict === 'warn';
     return (
       <ScrollView contentContainerStyle={styles.workspace}>
         <Text style={styles.eyebrow}>REVIEW VIEW</Text>
@@ -229,12 +231,18 @@ export function StudioViewsWorkspace({
           />
         )}
         <View style={styles.reviewCard}>
-          <Text style={styles.reviewTitle}>{rejected ? 'This view cannot be saved' : 'Ready for your review'}</Text>
+          <Text style={styles.reviewTitle}>{rejected
+            ? 'This view cannot be saved'
+            : warningReview ? 'Review these differences before saving' : 'Ready for your review'}</Text>
           {previewForLineage.checks.length === 0 ? (
             <Text style={styles.checkDetail}>No individual check details were returned.</Text>
           ) : previewForLineage.checks.map((check) => (
             <View key={check.id} style={styles.checkRow}>
-              <Text style={[styles.checkVerdict, check.verdict === 'reject' && styles.reject]}>
+              <Text style={[
+                styles.checkVerdict,
+                check.verdict === 'warn' && styles.warning,
+                check.verdict === 'reject' && styles.reject,
+              ]}>
                 {designerReviewState(check.verdict)}
               </Text>
               <View style={styles.checkCopy}>
@@ -260,11 +268,11 @@ export function StudioViewsWorkspace({
 
   return (
     <ScrollView contentContainerStyle={styles.workspace}>
-      <Text style={styles.eyebrow}>TECHNICAL VIEWS</Text>
-      <Text style={styles.title}>See the confirmed design from another angle.</Text>
+      <Text style={styles.eyebrow}>MORE ANGLES</Text>
+      <Text style={styles.title}>See this design from another angle.</Text>
       <Text style={styles.body}>
-        Choose one line-art angle generated from this revision and its confirmed design facts.
-        You will review a temporary result before anything is saved.
+        Choose an angle. Facetta uses this exact saved revision, keeps the design fixed,
+        and shows a temporary preview before you save.
       </Text>
       {!reviewSourceIsActive && <Notice kind="info" text="This Activity result was created from an earlier revision. Only its existing preview can be reviewed or discarded." />}
       <View style={styles.viewGrid}>
@@ -282,7 +290,7 @@ export function StudioViewsWorkspace({
         ))}
       </View>
       <View style={styles.sourceCard}>
-        <Text style={styles.sourceLabel}>Confirmed saved source</Text>
+        <Text style={styles.sourceLabel}>Based on</Text>
         <Text style={styles.sourceValue}>Exact saved revision</Text>
       </View>
       {visibleNotice !== null && <Notice kind="ok" text={visibleNotice} />}
@@ -320,6 +328,7 @@ const styles = StyleSheet.create({
   reviewTitle: { color: theme.ink, fontWeight: '800', fontSize: 16 },
   checkRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
   checkVerdict: { color: theme.ok, width: 145, fontSize: 10, lineHeight: 14, fontWeight: '800', textTransform: 'uppercase' },
+  warning: { color: theme.accent },
   reject: { color: theme.danger },
   checkCopy: { flex: 1 },
   checkLabel: { color: theme.ink, fontWeight: '600' },

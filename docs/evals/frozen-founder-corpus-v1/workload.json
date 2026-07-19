@@ -90,6 +90,11 @@
         "operation_class": "structural"
       },
       {
+        "evaluation_id": "intentional-shoulder-asymmetry",
+        "kind": "edit",
+        "operation_class": "structural"
+      },
+      {
         "evaluation_id": "background-only",
         "kind": "edit",
         "operation_class": "quick_appearance"
@@ -99,7 +104,7 @@
   "evidence_status": "not_run",
   "expected_integrity_source_count": 144,
   "expected_quality_source_count": 58,
-  "manifest_sha256": "b7710d4c76ed6f903d6957e067fa17863e680ee2a728a69612c2fd4a9488c9e6",
+  "manifest_sha256": "46cdee542b285435c13af4e20945315ed1e39da3c5140ba9b682f0c3c59739f0",
   "provider_calls": 0,
   "ring_quality_evaluation_set_id": "ring-full-matrix-v1",
   "schema_version": "facetta-frozen-capture-workload.v1",

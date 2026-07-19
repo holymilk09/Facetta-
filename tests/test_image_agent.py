@@ -7,6 +7,7 @@ import hashlib
 import io
 from pathlib import Path
 
+import httpx
 import pytest
 from PIL import Image, ImageDraw
 
@@ -15,6 +16,7 @@ from facetta.image_agent import (
     CheckSeverity,
     ColoredLineArtQualityEvaluator,
     ConfirmedLineArtQualityEvaluator,
+    CreativeRenderInspection,
     DesignerEditDomain,
     EditCrossInspection,
     EditInspection,
@@ -47,9 +49,12 @@ from facetta.ring_evals import (
 from facetta.spec import Spec
 from facetta.image_agent.planning import attempt_cache_key
 from facetta.image_agent.providers import (
+    _provider_call_error,
+    available_configured_route,
     available_fallback_route,
     configured_fallback_provider,
 )
+from facetta.provider_errors import RenderUnavailable
 
 
 HALO = Spec.model_validate(HALO_SPEC)
@@ -120,6 +125,27 @@ class SequenceEvaluator:
     def evaluate(self, plan, candidate, *, source_image, mask_bytes):
         self.calls.append((plan, candidate, source_image, mask_bytes))
         return self.reports.pop(0)
+
+
+def render_failure(
+    status: int,
+    message: str,
+) -> RenderUnavailable:
+    request = httpx.Request("POST", "https://api.x.ai/v1/images/generations")
+    response = httpx.Response(
+        status,
+        request=request,
+        json={"error": {"message": message}},
+    )
+    status_error = httpx.HTTPStatusError(
+        f"HTTP {status}",
+        request=request,
+        response=response,
+    )
+    try:
+        raise RenderUnavailable("generation provider failed") from status_error
+    except RenderUnavailable as failure:
+        return failure
 
 
 class StaticInspector:
@@ -828,6 +854,293 @@ class TestRingQualityGates:
         assert result.verdict is QualityVerdict.FAIL
         failed = {c.code for c in result.failed_checks}
         assert {"spec_change", "outside_mask_drift"} <= failed
+
+    def test_masked_near_noop_fails_deterministic_effect_gate(self):
+        source = png((120, 120, 120))
+        candidate_image = Image.open(io.BytesIO(source)).convert("RGB")
+        candidate_image.putpixel((48, 48), (130, 120, 120))
+        candidate_output = io.BytesIO()
+        candidate_image.save(candidate_output, format="PNG")
+        mask_image = Image.new("L", (96, 96), 0)
+        ImageDraw.Draw(mask_image).rectangle((24, 24, 72, 72), fill=255)
+        mask_output = io.BytesIO()
+        mask_image.save(mask_output, format="PNG")
+        mask = mask_output.getvalue()
+        evaluator = RingQualityEvaluator(
+            StaticInspector(edit=faithful_edit()),
+        )
+        plan = build_image_plan(
+            ImageOperation.LOCAL_EDIT,
+            "make the center setting rose gold",
+            spec=HALO,
+            source_image=source,
+            mask_bytes=mask,
+            region_description="the center setting",
+        )
+
+        result = evaluator.evaluate(
+            plan,
+            candidate_output.getvalue(),
+            source_image=source,
+            mask_bytes=mask,
+        )
+
+        assert result.verdict is QualityVerdict.FAIL
+        effect = next(
+            check for check in result.checks
+            if check.code == "inside_mask_effect"
+        )
+        assert effect.passed is False
+        assert effect.severity is CheckSeverity.HARD
+        assert effect.evidence["changed_pixels"] == 1
+
+    def test_unmasked_appearance_edit_has_no_local_effect_gate(self):
+        source = png((120, 120, 120))
+        candidate_image = Image.open(io.BytesIO(source)).convert("RGB")
+        candidate_image.putpixel((48, 48), (130, 120, 120))
+        candidate_output = io.BytesIO()
+        candidate_image.save(candidate_output, format="PNG")
+        evaluator = RingQualityEvaluator(
+            StaticInspector(edit=faithful_edit()),
+        )
+        plan = build_image_plan(
+            ImageOperation.VISUAL_ONLY_EDIT,
+            "warm the overall presentation",
+            spec=HALO,
+            source_image=source,
+        )
+
+        result = evaluator.evaluate(
+            plan,
+            candidate_output.getvalue(),
+            source_image=source,
+            mask_bytes=None,
+        )
+
+        assert result.verdict is QualityVerdict.PASS
+        assert "inside_mask_effect" not in {
+            check.code for check in result.checks
+        }
+
+    def test_masked_reference_render_rejects_near_noop(self):
+        source = png((120, 120, 120))
+        candidate_image = Image.open(io.BytesIO(source)).convert("RGB")
+        candidate_image.putpixel((48, 48), (130, 120, 120))
+        candidate_output = io.BytesIO()
+        candidate_image.save(candidate_output, format="PNG")
+        mask_image = Image.new("L", (96, 96), 0)
+        ImageDraw.Draw(mask_image).ellipse((24, 24, 72, 72), fill=255)
+        mask_output = io.BytesIO()
+        mask_image.save(mask_output, format="PNG")
+        mask = mask_output.getvalue()
+
+        class CreativeInspector:
+            def inspect_render(self, _plan, _source, _candidate):
+                return CreativeRenderInspection(
+                    coherent_jewelry_render=True,
+                    complete_piece_visible=True,
+                    source_design_preserved=True,
+                    visible_components_preserved=True,
+                    local_geometry_preserved=True,
+                    repeated_element_pattern_preserved=True,
+                    stone_shape_and_cut_family_preserved=True,
+                    requested_presentation_applied=True,
+                    text_or_branding_detected=False,
+                    score=98,
+                )
+
+        evaluator = RingQualityEvaluator(
+            StaticInspector(edit=faithful_edit()),
+            creative_inspector=CreativeInspector(),
+        )
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            "make the marked center stone pale yellow",
+            source_image=source,
+            mask_bytes=mask,
+        )
+
+        result = evaluator.evaluate(
+            plan,
+            candidate_output.getvalue(),
+            source_image=source,
+            mask_bytes=mask,
+        )
+
+        assert result.verdict is QualityVerdict.FAIL
+        failed = {check.code for check in result.failed_checks}
+        assert "inside_mask_effect" in failed
+
+    def test_marked_local_geometry_false_negative_is_bounded_by_region_proof(self):
+        source_image = Image.new("RGB", (96, 96), (220, 220, 220))
+        candidate_image = source_image.copy()
+        candidate_draw = ImageDraw.Draw(candidate_image)
+        candidate_draw.rectangle((8, 20, 30, 42), fill=(150, 190, 230))
+        candidate_draw.rectangle((66, 20, 88, 42), fill=(180, 180, 180))
+        mask_image = Image.new("L", source_image.size, 0)
+        mask_draw = ImageDraw.Draw(mask_image)
+        mask_draw.rectangle((8, 20, 30, 42), fill=255)
+        mask_draw.rectangle((66, 20, 88, 42), fill=255)
+
+        def encoded(image: Image.Image) -> bytes:
+            output = io.BytesIO()
+            image.save(output, format="PNG")
+            return output.getvalue()
+
+        class AggregateFalseNegativeInspector:
+            def inspect_render(self, _plan, _source, _candidate):
+                return CreativeRenderInspection(
+                    coherent_jewelry_render=True,
+                    complete_piece_visible=True,
+                    source_design_preserved=False,
+                    visible_components_preserved=True,
+                    local_geometry_preserved=False,
+                    repeated_element_pattern_preserved=True,
+                    stone_shape_and_cut_family_preserved=True,
+                    requested_presentation_applied=True,
+                    text_or_branding_detected=False,
+                    major_unintended_changes=(),
+                    score=96,
+                )
+
+        source = encoded(source_image)
+        candidate = encoded(candidate_image)
+        mask = encoded(mask_image)
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            (
+                "1. Inside 'left stone': Make it pale blue. "
+                "2. Inside 'right prongs': Make the prongs finer."
+            ),
+            source_image=source,
+            mask_bytes=mask,
+            mask_provenance="designer_marked_pre_spec_region",
+            authorized_masked_change_domains=("appearance", "local_geometry"),
+            marked_region_count=2,
+        )
+        evaluator = RingQualityEvaluator(
+            StaticInspector(edit=faithful_edit()),
+            creative_inspector=AggregateFalseNegativeInspector(),
+            require_creative_cross_inspection=False,
+        )
+
+        result = evaluator.evaluate(
+            plan,
+            candidate,
+            source_image=source,
+            mask_bytes=mask,
+        )
+
+        checks = {check.code: check for check in result.checks}
+        assert result.verdict in {QualityVerdict.PASS, QualityVerdict.WARN}
+        assert checks["inside_each_mask_region_effect"].passed is True
+        assert checks["source_design_preserved"].passed is True
+        assert checks["local_geometry_preserved"].passed is True
+        assert checks["local_geometry_preserved"].evidence["resolved_by"] == (
+            "bounded_marked_region_authorization"
+        )
+
+    def test_marked_edit_cannot_hide_an_unchanged_requested_region(self):
+        source_image = Image.new("RGB", (96, 96), (220, 220, 220))
+        candidate_image = source_image.copy()
+        ImageDraw.Draw(candidate_image).rectangle(
+            (8, 20, 30, 42), fill=(150, 190, 230)
+        )
+        mask_image = Image.new("L", source_image.size, 0)
+        mask_draw = ImageDraw.Draw(mask_image)
+        mask_draw.rectangle((8, 20, 30, 42), fill=255)
+        mask_draw.rectangle((66, 20, 88, 42), fill=255)
+
+        def encoded(image: Image.Image) -> bytes:
+            output = io.BytesIO()
+            image.save(output, format="PNG")
+            return output.getvalue()
+
+        class Inspector:
+            def inspect_render(self, _plan, _source, _candidate):
+                return CreativeRenderInspection(
+                    coherent_jewelry_render=True,
+                    complete_piece_visible=True,
+                    source_design_preserved=True,
+                    visible_components_preserved=True,
+                    local_geometry_preserved=True,
+                    repeated_element_pattern_preserved=True,
+                    stone_shape_and_cut_family_preserved=True,
+                    requested_presentation_applied=True,
+                    text_or_branding_detected=False,
+                    score=96,
+                )
+
+        source = encoded(source_image)
+        candidate = encoded(candidate_image)
+        mask = encoded(mask_image)
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            "apply both marked changes",
+            source_image=source,
+            mask_bytes=mask,
+            mask_provenance="designer_marked_pre_spec_region",
+            authorized_masked_change_domains=("appearance",),
+            marked_region_count=2,
+        )
+        evaluator = RingQualityEvaluator(
+            StaticInspector(edit=faithful_edit()),
+            creative_inspector=Inspector(),
+            require_creative_cross_inspection=False,
+        )
+
+        result = evaluator.evaluate(
+            plan,
+            candidate,
+            source_image=source,
+            mask_bytes=mask,
+        )
+
+        failed = {check.code for check in result.failed_checks}
+        assert result.verdict is QualityVerdict.FAIL
+        assert "inside_each_mask_region_effect" in failed
+
+    def test_unmasked_reference_render_has_no_mask_gates(self):
+        source = png((120, 120, 120))
+
+        class CreativeInspector:
+            def inspect_render(self, _plan, _source, _candidate):
+                return CreativeRenderInspection(
+                    coherent_jewelry_render=True,
+                    complete_piece_visible=True,
+                    source_design_preserved=True,
+                    visible_components_preserved=True,
+                    local_geometry_preserved=True,
+                    repeated_element_pattern_preserved=True,
+                    stone_shape_and_cut_family_preserved=True,
+                    requested_presentation_applied=True,
+                    text_or_branding_detected=False,
+                    score=98,
+                )
+
+        evaluator = RingQualityEvaluator(
+            StaticInspector(edit=faithful_edit()),
+            creative_inspector=CreativeInspector(),
+        )
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            "warm the whole presentation",
+            source_image=source,
+        )
+
+        result = evaluator.evaluate(
+            plan,
+            png((125, 120, 120)),
+            source_image=source,
+            mask_bytes=None,
+        )
+
+        assert "inside_mask_effect" not in {
+            check.code for check in result.checks
+        }
+        assert "outside_mask_drift" not in {
+            check.code for check in result.checks
+        }
 
     @pytest.mark.parametrize("edit_id", [
         "center-cut-shape",
@@ -1931,9 +2244,10 @@ class TestClosedLoopRouting:
         JewelryImageAgent(provider, evaluator).run(plan)
         assert provider.calls[2]["route"] is ImageRoute.FLUX_GENERATE
 
-    def test_default_policy_uses_openai_generation_when_flux_is_unavailable(
+    def test_default_policy_uses_openai_for_the_full_retry_budget_when_xai_is_unavailable(
         self, monkeypatch,
     ):
+        monkeypatch.delenv("XAI_KEY", raising=False)
         monkeypatch.delenv("FAL_KEY", raising=False)
         monkeypatch.setenv("OPENAI_API_KEY", "test-only")
         provider = FakeProvider()
@@ -1947,21 +2261,23 @@ class TestClosedLoopRouting:
             "a platinum floral lariat necklace",
         )
 
-        JewelryImageAgent(
+        result = JewelryImageAgent(
             provider,
             evaluator,
             use_available_fallback=True,
         ).run(plan)
 
         assert [call["route"] for call in provider.calls] == [
-            ImageRoute.GROK_GENERATE,
-            ImageRoute.GROK_GENERATE,
+            ImageRoute.OPENAI_GENERATE,
+            ImageRoute.OPENAI_GENERATE,
             ImageRoute.OPENAI_GENERATE,
         ]
+        assert result.run.attempts[-1].fallback_reason is None
 
     def test_openai_fallback_also_runs_after_two_grok_provider_failures(
         self, monkeypatch,
     ):
+        monkeypatch.setenv("XAI_KEY", "test-only")
         monkeypatch.delenv("FAL_KEY", raising=False)
         monkeypatch.setenv("OPENAI_API_KEY", "test-only")
         provider = FakeProvider(failures={
@@ -1986,6 +2302,87 @@ class TestClosedLoopRouting:
             ImageRoute.OPENAI_GENERATE,
         ]
         assert result.run.attempts[-1].fallback_reason == "grok_provider_failed"
+
+    def test_xai_quota_403_skips_duplicate_grok_and_uses_openai_fallback(
+        self,
+        monkeypatch,
+    ):
+        monkeypatch.setenv("XAI_KEY", "test-only")
+        monkeypatch.delenv("FAL_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "test-only")
+        quota_failure = _provider_call_error(
+            ImageRoute.GROK_GENERATE,
+            render_failure(
+                403,
+                "Your team 7f3959c1 has either used all available credits or "
+                "reached its monthly spending limit. To continue making API "
+                "requests, please purchase more credits or raise your spending "
+                "limit.",
+            ),
+        )
+        provider = FakeProvider(failures={1: quota_failure})
+        plan = build_image_plan(
+            ImageOperation.CREATIVE_GENERATE,
+            "a symmetric ruby necklace",
+        )
+
+        result = JewelryImageAgent(
+            provider,
+            SequenceEvaluator(report(QualityVerdict.PASS)),
+            use_available_fallback=True,
+        ).run(plan)
+
+        assert [call["route"] for call in provider.calls] == [
+            ImageRoute.GROK_GENERATE,
+            ImageRoute.OPENAI_GENERATE,
+        ]
+        assert result.run.attempts[0].error is not None
+        assert result.run.attempts[0].error.retryable is False
+        assert result.run.attempts[0].error.code == "xai_quota_exhausted"
+        assert result.run.attempts[1].fallback_reason == "grok_provider_failed"
+
+    @pytest.mark.parametrize("status", [429, 500, 503])
+    def test_transient_xai_failures_keep_same_provider_retry(
+        self,
+        monkeypatch,
+        status,
+    ):
+        monkeypatch.setenv("XAI_KEY", "test-only")
+        monkeypatch.delenv("FAL_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "test-only")
+        transient = _provider_call_error(
+            ImageRoute.GROK_GENERATE,
+            render_failure(status, "temporarily unavailable"),
+        )
+        provider = FakeProvider(failures={1: transient})
+        plan = build_image_plan(
+            ImageOperation.CREATIVE_GENERATE,
+            "a symmetric ruby necklace",
+        )
+
+        result = JewelryImageAgent(
+            provider,
+            SequenceEvaluator(report(QualityVerdict.PASS)),
+            use_available_fallback=True,
+        ).run(plan)
+
+        assert transient.retryable is True
+        assert transient.fallback_eligible is False
+        assert [call["route"] for call in provider.calls] == [
+            ImageRoute.GROK_GENERATE,
+            ImageRoute.GROK_GENERATE,
+        ]
+        assert result.accepted is True
+
+    def test_generic_xai_403_does_not_impersonate_quota_exhaustion(self):
+        failure = _provider_call_error(
+            ImageRoute.GROK_GENERATE,
+            render_failure(403, "this key cannot access the requested model"),
+        )
+
+        assert failure.retryable is True
+        assert failure.fallback_eligible is False
+        assert failure.code == "image_provider_call_failed"
 
     def test_three_failed_candidates_raise_structured_quality_failure(self):
         provider = FakeProvider()
@@ -2071,7 +2468,10 @@ class TestClosedLoopRouting:
 def test_configured_fallback_provider_and_route_share_one_priority(
     monkeypatch, tmp_path,
 ):
-    monkeypatch.setattr("facetta.config.ENV_FILE", tmp_path / "missing.env")
+    monkeypatch.setattr(
+        "facetta.config.DEFAULT_ENV_FILES", (tmp_path / "missing.env",),
+    )
+    monkeypatch.delenv("XAI_KEY", raising=False)
     monkeypatch.delenv("FAL_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     assert configured_fallback_provider() is None
@@ -2087,12 +2487,23 @@ def test_configured_fallback_provider_and_route_share_one_priority(
     assert available_fallback_route(
         ImageRoute.FLUX_GENERATE
     ) is ImageRoute.OPENAI_GENERATE
+    assert available_configured_route(
+        ImageRoute.GROK_GENERATE
+    ) is ImageRoute.OPENAI_GENERATE
+    assert available_configured_route(
+        ImageRoute.GROK_EDIT
+    ) is ImageRoute.OPENAI_EDIT
 
     monkeypatch.setenv("FAL_KEY", "test-only")
     assert configured_fallback_provider() == "fal"
     assert available_fallback_route(
         ImageRoute.FLUX_KONTEXT_EDIT
     ) is ImageRoute.FLUX_KONTEXT_EDIT
+
+    monkeypatch.setenv("XAI_KEY", "test-only")
+    assert available_configured_route(
+        ImageRoute.GROK_GENERATE
+    ) is ImageRoute.GROK_GENERATE
 
 
 def test_material_identity_guard_reports_lost_pave_as_major():

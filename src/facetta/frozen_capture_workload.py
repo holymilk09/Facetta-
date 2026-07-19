@@ -1158,7 +1158,7 @@ def canonical_capture_payload(capture: Json) -> bytes:
 def not_applicable_assignment_rows(plan: Json) -> list[Json]:
     """Project reviewed non-applicable rows into a signed, deterministic list.
 
-    A non-applicable logical row is still part of the frozen 1,044-row scope,
+    A non-applicable logical row is still part of the frozen 1,102-row scope,
     but it must never become a provider request or a synthetic failed attempt.
     The projection retains the exact reviewed reason and plan binding so the
     capture and replay verifiers can prove that no row was silently dropped.

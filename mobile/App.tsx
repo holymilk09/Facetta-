@@ -4,7 +4,7 @@ import {
   ActivityIndicator, Pressable, SafeAreaView, ScrollView, StyleSheet, Text,
   useWindowDimensions, View,
 } from 'react-native';
-import { DEFAULT_API_URL } from './src/config';
+import { DEFAULT_API_URL, PREVIEW_AUTH_BYPASS } from './src/config';
 import { AuthenticatedImage as Image, AuthenticatedImageProvider } from './src/AuthenticatedImage';
 import {
   clearSession, hasOnboarded, loadAuthenticatedSession, markOnboarded,
@@ -22,7 +22,8 @@ import {
 } from './src/studio/contracts';
 import { StudioCollectionsWorkspace } from './src/studio/StudioCollectionsWorkspace';
 import {
-  EMPTY_STUDIO_CREATE_DRAFT, StudioCreateWorkspace, type StudioCreateDraft,
+  draftAfterGeneration, EMPTY_STUDIO_CREATE_DRAFT, StudioCreateWorkspace,
+  type StudioCreateDraft,
   type StudioCreateGenerationSuccess,
 } from './src/studio/StudioCreateWorkspace';
 import { StudioConfirmWorkspace } from './src/studio/StudioConfirmWorkspace';
@@ -74,6 +75,12 @@ interface CreateReviewState {
 }
 
 const designImage = require('./assets/studio-asymmetric-paraiba-ring-v1.png');
+const previewSession: Session = {
+  provider: 'email',
+  email: 'preview@facetta.local',
+  name: 'Preview Designer',
+  designerId: 'preview_designer',
+};
 
 function StudioCard({
   image, imageLabel, eyebrow, title, body, accent, wide, onPress,
@@ -108,9 +115,15 @@ function StudioCard({
 }
 
 export default function App() {
-  const [authLifecycleEnabled, setAuthLifecycleEnabled] = useState(() => hasOnboarded());
-  const [session, setSession] = useState<Session | null>(() => loadAuthenticatedSession());
-  const [stage, setStage] = useState<Stage>(() => authLifecycleEnabled ? 'booting' : 'onboarding');
+  const [authLifecycleEnabled, setAuthLifecycleEnabled] = useState(() => (
+    PREVIEW_AUTH_BYPASS ? false : hasOnboarded()
+  ));
+  const [session, setSession] = useState<Session | null>(() => (
+    PREVIEW_AUTH_BYPASS ? previewSession : loadAuthenticatedSession()
+  ));
+  const [stage, setStage] = useState<Stage>(() => (
+    PREVIEW_AUTH_BYPASS ? 'app' : authLifecycleEnabled ? 'booting' : 'onboarding'
+  ));
   const [tab, setTab] = useState<Tab>('studio');
   const [studioView, setStudioView] = useState<StudioView>('home');
   const [selectedActionId, setSelectedActionId] = useState<StudioWorkspaceActionId>('create');
@@ -222,7 +235,7 @@ export default function App() {
       {
         baseUrl: apiUrl.replace(/\/$/, ''),
         getAccessToken: () => sessionAccessToken(session),
-        requireAccessToken: true,
+        requireAccessToken: !PREVIEW_AUTH_BYPASS,
         onAuthenticationFailure: expireAuthenticatedSession,
       },
     ),
@@ -231,7 +244,7 @@ export default function App() {
   useEffect(() => {
     let active = true;
     setSavedFamiliesState('unknown');
-    if (sessionAccessToken(session) === null || designer.trim() === '') {
+    if ((!PREVIEW_AUTH_BYPASS && sessionAccessToken(session) === null) || designer.trim() === '') {
       return () => { active = false; };
     }
     if (studioProject !== null) {
@@ -517,7 +530,6 @@ export default function App() {
             }
             adoptAuthenticatedSession(s);
           }}
-          onShowTour={() => setStage('tour')}
         />
       </SafeAreaView>
     );
@@ -768,14 +780,19 @@ export default function App() {
                   owner: submittedOwner, submittedDraft,
                 }: StudioCreateGenerationSuccess) => {
                   if (currentDesignerRef.current !== submittedOwner) return;
-                  setCreateDraft((current) => (
-                    current === submittedDraft ? EMPTY_STUDIO_CREATE_DRAFT : current
-                  ));
+                  setCreateDraft((current) => draftAfterGeneration(current, submittedDraft));
                 },
               } : {})}
               resumeProject={createReview?.project ?? null}
               resumeStudioJobId={createReview?.studioJobId ?? null}
               onRequestReference={pickExpoStudioCreateReference}
+              onSaveForLater={(selection) => {
+                setCreateReview(null);
+                setStudioProject(selection.project);
+                setSelectedCreativeAssetId(selection.selectedAssetId);
+                setTab('studio');
+                setStudioView('home');
+              }}
               onSave={(selection) => {
                 setCreateReview(null);
                 setStudioProject(selection.project);
@@ -790,6 +807,7 @@ export default function App() {
               gateway={studioGateway}
               lineage={activityReview?.job.action_id === 'refine'
                 ? activityReview.lineage : exactStudioLineage ?? visualStudioLineage}
+              project={studioProject}
               createdBy={designer}
               sourceImageUrl={activityReview?.job.action_id === 'refine'
                 ? activityReview.sourceImageUrl : studioProject?.active_revision?.image_url ?? null}
@@ -812,6 +830,7 @@ export default function App() {
                 setStudioProject(project);
                 setSelectedCreativeAssetId(project.active_asset_id);
               }}
+              onStartNewDesign={() => openStudioAction('create')}
               destinationContext={destinationContext}
               onSelectDestination={openStudioDestination}
               imageRequestHeaders={authenticatedImageHeaders}
@@ -839,6 +858,8 @@ export default function App() {
               gateway={studioGateway}
               lineage={confirmStudioLineage}
               createdBy={designer}
+              sourceImageUrl={actionSourceImageUrl}
+              imageRequestHeaders={authenticatedImageHeaders}
               onSaved={(receipt) => {
                 setStudioProject(receipt.project);
                 setSelectedCreativeAssetId(receipt.project.active_asset_id);

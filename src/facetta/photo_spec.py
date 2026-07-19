@@ -1,17 +1,16 @@
 """Imported jewelry photograph -> designer-reviewable draft specification.
 
-Grok Vision performs only the visual read. Facetta's deterministic completion
-and validation layers remain responsible for converting that sparse read into
-physically consistent draft dimensions. Nothing from this module is persisted
-until the designer confirms the resulting specification.
+A configured vision service performs only the visual read. Facetta's
+deterministic completion and validation layers remain responsible for
+converting that sparse read into physically consistent draft dimensions.
+Nothing from this module is persisted until the designer confirms the
+resulting specification.
 """
 
 from __future__ import annotations
 
 import base64
 import binascii
-import os
-
 from facetta.concept import complete_design, read_design
 from facetta.dimension_provenance import with_reference_dimension_estimates
 from facetta.render import RenderUnavailable
@@ -24,7 +23,7 @@ class PhotoSpecInvalid(ValueError):
 
 
 class PhotoSpecUnavailable(RuntimeError):
-    """Grok Vision is not configured or could not read the reference."""
+    """No configured vision reader could safely read the reference."""
 
 
 def generate_spec_from_photo(
@@ -46,11 +45,6 @@ def generate_spec_from_photo(
     if not image:
         raise PhotoSpecInvalid("image_base64 decodes to an empty image")
 
-    if not os.environ.get("XAI_KEY"):
-        raise PhotoSpecUnavailable(
-            "XAI_KEY is not set; POST /specs/from-photo needs Grok Vision"
-        )
-
     context = (
         "Imported finished-jewelry reference. Return only visible facts. "
         "Exact dimensions remain designer-confirmed. Designer notes: "
@@ -60,7 +54,13 @@ def generate_spec_from_photo(
         visual_read = read_design(image, context)
         spec, _corrections = complete_design(visual_read, context)
     except RenderUnavailable as exc:
-        raise PhotoSpecUnavailable(str(exc)) from exc
+        # Provider names and credential details are internal configuration,
+        # not designer-facing recovery instructions. Preserve the original
+        # exception as chained diagnostic evidence while returning one stable
+        # fail-closed public contract.
+        raise PhotoSpecUnavailable(
+            "reference understanding is temporarily unavailable; try again"
+        ) from exc
     draft = with_reference_dimension_estimates(
         spec,
         source="imported finished-jewelry reference",

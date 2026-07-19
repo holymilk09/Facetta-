@@ -22,7 +22,7 @@ from threading import Lock
 from sqlalchemy import (
     JSON, Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer,
     LargeBinary, String, Text, UniqueConstraint, create_engine, event, inspect,
-    text,
+    select, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import make_url
@@ -60,6 +60,31 @@ def new_id(prefix: str) -> str:
     # Opaque + globally unique means a row can replicate between databases
     # without renumbering — the property auto-increment integers break.
     return f"{prefix}_{secrets.token_hex(8)}"
+
+
+def normalize_collection_name(name: str) -> tuple[str, str]:
+    """Return a display label and stable owner-local uniqueness key."""
+
+    display = " ".join(name.split())
+    return display, display.casefold()
+
+
+def normalize_family_tags(tags: list[str]) -> list[str]:
+    """Return stable, searchable family tags without changing legacy projects."""
+
+    normalized = {
+        " ".join(tag.split()).casefold()
+        for tag in tags
+        if isinstance(tag, str) and " ".join(tag.split())
+    }
+    return sorted(normalized)
+
+
+def legacy_collection_id(owner: str, name_key: str) -> str:
+    digest = hashlib.sha256(
+        f"facetta.workspace-collection.v1\0{owner}\0{name_key}".encode("utf-8")
+    ).hexdigest()[:16]
+    return f"col_{digest}"
 
 
 class Base(DeclarativeBase):
@@ -276,15 +301,121 @@ class DesignFamily(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     owner: Mapped[str] = mapped_column(String(32), index=True)
     title: Mapped[str] = mapped_column(String(200))
+    # Canonical organization metadata. Historical per-project tags remain
+    # readable but are never rewritten by the family migration or API.
+    tags: Mapped[list] = mapped_column(SpecJSON, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+    favorited_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "length(trim(title)) > 0",
+            name="ck_design_family_title",
+        ),
+    )
+
+
+COLLECTION_TEMPLATES = (
+    "generic",
+    "client",
+    "order",
+    "project",
+    "campaign",
+    "season",
+    "jewelry_line",
+    "personal_study",
+    "custom",
+)
+
+
+class WorkspaceCollection(Base):
+    """Optional owner-scoped organization for one or more design families.
+
+    Collections deliberately sit beside canonical Studio lineage. Archiving or
+    deleting one only changes this row and its membership rows; it cannot
+    cascade into a family, variation project, or immutable revision. ``name_key``
+    is cleared for inactive rows so a designer can reuse the visible name while
+    the soft-deleted tombstone continues to suppress legacy re-imports.
+    """
+
+    __tablename__ = "workspace_collections"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    name_key: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    template: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="generic")
+    template_metadata: Mapped[dict] = mapped_column(
+        SpecJSON, nullable=False, default=dict)
+    # Stable identity for a historical Project.collection string. Renaming,
+    # archiving, or deleting the Collection must not cause startup migration to
+    # recreate the old label or re-add deliberately removed memberships.
+    legacy_name_key: Mapped[str | None] = mapped_column(
+        String(256), nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow)
 
     __table_args__ = (
+        UniqueConstraint(
+            "owner", "name_key", name="uq_workspace_collection_active_name",
+        ),
+        UniqueConstraint(
+            "owner", "legacy_name_key",
+            name="uq_workspace_collection_legacy_name",
+        ),
         CheckConstraint(
-            "length(trim(title)) > 0",
-            name="ck_design_family_title",
+            "length(trim(name)) > 0",
+            name="ck_workspace_collection_name",
+        ),
+        CheckConstraint(
+            "template IN (" + ", ".join(
+                f"'{template}'" for template in COLLECTION_TEMPLATES
+            ) + ")",
+            name="ck_workspace_collection_template",
+        ),
+        CheckConstraint(
+            "((archived_at IS NULL AND deleted_at IS NULL "
+            "AND name_key IS NOT NULL) OR "
+            "((archived_at IS NOT NULL OR deleted_at IS NOT NULL) "
+            "AND name_key IS NULL))",
+            name="ck_workspace_collection_active_name_key",
+        ),
+    )
+
+
+class CollectionFamilyMembership(Base):
+    """Many-to-many family organization with non-resurrecting soft removal."""
+
+    __tablename__ = "collection_family_memberships"
+
+    collection_id: Mapped[str] = mapped_column(
+        ForeignKey("workspace_collections.id"), primary_key=True)
+    family_id: Mapped[str] = mapped_column(
+        ForeignKey("design_families.id"), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    removed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        Index(
+            "ix_collection_family_memberships_family_active",
+            "family_id",
+            "removed_at",
         ),
     )
 
@@ -418,6 +549,80 @@ def _validate_factory_studio_job_success(
 
 event.listen(StudioJobRecord, "before_insert", _validate_factory_studio_job_success)
 event.listen(StudioJobRecord, "before_update", _validate_factory_studio_job_success)
+
+
+class StudioContinuationPromptRecord(Base):
+    """Append-only user-authored prompt for one exact accepted Studio visual.
+
+    Provider contracts and corrective QA instructions deliberately stay out of
+    this row.  The Studio composer can therefore replay the designer's words
+    in order without exposing internal preservation language, while source
+    IDs and hashes retain exact-revision provenance even after Discard.
+    """
+
+    __tablename__ = "studio_continuation_prompts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    project_root_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.root_id"), nullable=False, index=True,
+    )
+    source_asset_id: Mapped[str] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=False, index=True,
+    )
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    intent: Mapped[dict] = mapped_column(SpecJSON, nullable=False)
+    studio_job_id: Mapped[str | None] = mapped_column(
+        ForeignKey("studio_jobs.id"), nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "project_root_id", "owner", "sequence",
+            name="uq_studio_continuation_prompt_sequence",
+        ),
+        UniqueConstraint(
+            "studio_job_id", name="uq_studio_continuation_prompt_job",
+        ),
+        CheckConstraint(
+            "sequence >= 1", name="ck_studio_continuation_prompt_sequence",
+        ),
+        CheckConstraint(
+            "length(trim(prompt)) > 0",
+            name="ck_studio_continuation_prompt_text",
+        ),
+        CheckConstraint(
+            "length(source_sha256) = 64",
+            name="ck_studio_continuation_prompt_source_hash",
+        ),
+    )
+
+
+class ImmutableStudioContinuationPromptError(RuntimeError):
+    """Raised if code attempts to rewrite designer-authored prompt history."""
+
+
+@event.listens_for(StudioContinuationPromptRecord, "before_update")
+def _reject_studio_continuation_prompt_update(
+    _mapper, _connection, _target,
+) -> None:
+    raise ImmutableStudioContinuationPromptError(
+        "Studio continuation prompts are immutable; append a new prompt"
+    )
+
+
+@event.listens_for(StudioContinuationPromptRecord, "before_delete")
+def _reject_studio_continuation_prompt_delete(
+    _mapper, _connection, _target,
+) -> None:
+    raise ImmutableStudioContinuationPromptError(
+        "Studio continuation prompts are immutable and cannot be deleted"
+    )
 
 
 class StudioPresentationCandidateRecord(Base):
@@ -721,6 +926,8 @@ class PreviewCandidateRecord(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     studio_job_id: Mapped[str | None] = mapped_column(
         ForeignKey("studio_jobs.id"), nullable=True)
+    continuation_prompt_id: Mapped[str | None] = mapped_column(
+        ForeignKey("studio_continuation_prompts.id"), nullable=True)
     payload: Mapped[dict] = mapped_column(SpecJSON, nullable=False)
     terminal_asset_id: Mapped[str | None] = mapped_column(
         ForeignKey("image_assets.id"), nullable=True)
@@ -741,6 +948,13 @@ class PreviewCandidateRecord(Base):
             unique=True,
             sqlite_where=text("studio_job_id IS NOT NULL"),
             postgresql_where=text("studio_job_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_preview_candidates_continuation_prompt_id",
+            "continuation_prompt_id",
+            unique=True,
+            sqlite_where=text("continuation_prompt_id IS NOT NULL"),
+            postgresql_where=text("continuation_prompt_id IS NOT NULL"),
         ),
         CheckConstraint(
             "kind IN ('studio_visual', 'catalog_revision')",
@@ -776,13 +990,15 @@ class PreviewCandidateRecord(Base):
 
 class Project(Base):
     """A design project = one asset chain (a hero render and all its edits,
-    views, videos, and factory drawings), filed for the designer.
+    views, presentation derivatives, and factory-review drawings).
 
-    Proven library model: owner → collection (a client folder like "Sarah K —
-    engagement", or a personal folder) → project → tags. Everything a client's
-    work produces stays under one collection, and tags + free-text search
-    locate a piece across the whole library. Metadata lives here, off the asset
-    rows, so renaming a folder never touches an image."""
+    The project is one variation inside an optional Design Family. Current
+    organization belongs to the family through ``WorkspaceCollection``
+    memberships, so one family can be Unfiled or appear in several flat
+    Collections without copying this asset chain. ``collection`` remains a
+    compatibility label for historical projects and is migrated additively;
+    it is not the canonical parent of new Studio work. Tags and free-text
+    search remain metadata, never revision or image authority."""
 
     __tablename__ = "projects"
 
@@ -1441,6 +1657,38 @@ def _apply_additive_migrations(engine) -> None:
     from sqlalchemy import inspect, text
 
     inspector = inspect(engine)
+    family_columns = {
+        c["name"] for c in inspector.get_columns("design_families")
+    }
+    families_needing_tag_bootstrap: set[str] = set()
+    if "tags" not in family_columns:
+        tags_type = SpecJSON.compile(dialect=engine.dialect)
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE design_families "
+                f"ADD COLUMN tags {tags_type}"
+            ))
+            families_needing_tag_bootstrap.update(
+                str(row[0]) for row in conn.execute(text(
+                    "SELECT id FROM design_families WHERE tags IS NULL"
+                ))
+            )
+    else:
+        with engine.connect() as conn:
+            families_needing_tag_bootstrap.update(
+                str(row[0]) for row in conn.execute(text(
+                    "SELECT id FROM design_families WHERE tags IS NULL"
+                ))
+            )
+    if "favorited_at" not in family_columns:
+        timestamp_type = DateTime(timezone=True).compile(
+            dialect=engine.dialect
+        )
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE design_families "
+                f"ADD COLUMN favorited_at {timestamp_type}"
+            ))
     existing = {c["name"] for c in inspector.get_columns("designs")}
     if "collection" not in existing:
         with engine.begin() as conn:
@@ -1513,6 +1761,124 @@ def _apply_additive_migrations(engine) -> None:
                 "ON projects (family_id, variation_index) "
                 "WHERE family_id IS NOT NULL AND variation_index IS NOT NULL"
             ))
+
+    # Bootstrap each legacy family exactly once from all of its historical
+    # variations. A later designer removal is not resurrected on startup,
+    # because only rows that were NULL when the additive column appeared are
+    # eligible. Project tags remain byte-for-byte untouched.
+    if families_needing_tag_bootstrap:
+        with engine.begin() as conn:
+            historical_tags: dict[str, list[str]] = {
+                family_id: [] for family_id in families_needing_tag_bootstrap
+            }
+            rows = conn.execute(
+                select(Project.family_id, Project.tags).where(
+                    Project.family_id.in_(families_needing_tag_bootstrap)
+                )
+            )
+            for family_id, project_tags in rows:
+                if isinstance(family_id, str) and isinstance(project_tags, list):
+                    historical_tags[family_id].extend(
+                        tag for tag in project_tags if isinstance(tag, str)
+                    )
+            for family_id, tags in historical_tags.items():
+                conn.execute(
+                    DesignFamily.__table__.update()
+                    .where(DesignFamily.id == family_id)
+                    .values(tags=normalize_family_tags(tags))
+                )
+
+    # Promote historical string labels into the optional family organization
+    # layer. This never assigns a family, changes a project, or touches an
+    # asset/revision. Projects that predate families still make their old
+    # Collection visible, but remain unfiled until a real family exists.
+    # Membership tombstones make the import idempotent without resurrecting a
+    # designer's later remove/archive/delete decision.
+    with engine.begin() as conn:
+        legacy_rows = list(conn.execute(text(
+            "SELECT DISTINCT owner, collection FROM projects "
+            "WHERE collection IS NOT NULL AND length(trim(collection)) > 0"
+        )).mappings())
+        legacy_collections: dict[tuple[str, str], tuple[str, bool]] = {}
+        for row in legacy_rows:
+            owner = str(row["owner"] or "")
+            if not owner:
+                continue
+            display, name_key = normalize_collection_name(
+                str(row["collection"])
+            )
+            if not display:
+                continue
+            existing_row = conn.execute(text(
+                "SELECT id, archived_at, deleted_at "
+                "FROM workspace_collections "
+                "WHERE owner = :owner AND "
+                "(legacy_name_key = :name_key OR name_key = :name_key) "
+                "ORDER BY CASE WHEN legacy_name_key = :name_key "
+                "THEN 0 ELSE 1 END LIMIT 1"
+            ), {"owner": owner, "name_key": name_key}).mappings().first()
+            if existing_row is None:
+                collection_id = legacy_collection_id(owner, name_key)
+                now = utcnow()
+                conn.execute(text(
+                    "INSERT INTO workspace_collections "
+                    "(id, owner, name, name_key, template, template_metadata, "
+                    "legacy_name_key, created_at, updated_at) VALUES "
+                    "(:id, :owner, :name, :name_key, 'generic', '{}', "
+                    ":name_key, :now, :now) ON CONFLICT DO NOTHING"
+                ), {
+                    "id": collection_id,
+                    "owner": owner,
+                    "name": display[:120],
+                    "name_key": name_key,
+                    "now": now,
+                })
+                existing_row = conn.execute(text(
+                    "SELECT id, archived_at, deleted_at "
+                    "FROM workspace_collections "
+                    "WHERE owner = :owner AND "
+                    "(legacy_name_key = :name_key OR name_key = :name_key) "
+                    "LIMIT 1"
+                ), {"owner": owner, "name_key": name_key}).mappings().first()
+            elif existing_row is not None:
+                conn.execute(text(
+                    "UPDATE workspace_collections SET legacy_name_key = :name_key "
+                    "WHERE id = :id AND legacy_name_key IS NULL"
+                ), {"id": existing_row["id"], "name_key": name_key})
+            if existing_row is not None:
+                legacy_collections[(owner, name_key)] = (
+                    str(existing_row["id"]),
+                    existing_row["archived_at"] is None
+                    and existing_row["deleted_at"] is None,
+                )
+
+        legacy_memberships = conn.execute(text(
+            "SELECT DISTINCT p.owner, p.collection, p.family_id "
+            "FROM projects p JOIN design_families f ON f.id = p.family_id "
+            "WHERE p.collection IS NOT NULL "
+            "AND length(trim(p.collection)) > 0 "
+            "AND p.family_id IS NOT NULL AND f.owner = p.owner"
+        )).mappings()
+        for row in legacy_memberships:
+            owner = str(row["owner"])
+            _display, name_key = normalize_collection_name(
+                str(row["collection"])
+            )
+            collection = legacy_collections.get((owner, name_key))
+            if collection is None or not collection[1]:
+                continue
+            now = utcnow()
+            conn.execute(text(
+                "INSERT INTO collection_family_memberships "
+                "(collection_id, family_id, owner, created_at, updated_at) "
+                "VALUES (:collection_id, :family_id, :owner, :now, :now) "
+                "ON CONFLICT DO NOTHING"
+            ), {
+                "collection_id": collection[0],
+                "family_id": row["family_id"],
+                "owner": owner,
+                "now": now,
+            })
 
     # Image-agent evidence is append-only, so historical rows are never
     # backfilled with guessed identities. New executions always populate these
@@ -1611,6 +1977,13 @@ def _apply_additive_migrations(engine) -> None:
                     "ADD COLUMN studio_job_id VARCHAR(32) "
                     "REFERENCES studio_jobs(id)"
                 ))
+        if "continuation_prompt_id" not in preview_columns:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE preview_candidates "
+                    "ADD COLUMN continuation_prompt_id VARCHAR(32) "
+                    "REFERENCES studio_continuation_prompts(id)"
+                ))
         preview_indexes = {
             item["name"]
             for item in inspect(engine).get_indexes("preview_candidates")
@@ -1621,6 +1994,17 @@ def _apply_additive_migrations(engine) -> None:
                     "CREATE UNIQUE INDEX uq_preview_candidates_studio_job_id "
                     "ON preview_candidates (studio_job_id) "
                     "WHERE studio_job_id IS NOT NULL"
+                ))
+        if (
+            "uq_preview_candidates_continuation_prompt_id"
+            not in preview_indexes
+        ):
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "CREATE UNIQUE INDEX "
+                    "uq_preview_candidates_continuation_prompt_id "
+                    "ON preview_candidates (continuation_prompt_id) "
+                    "WHERE continuation_prompt_id IS NOT NULL"
                 ))
 
     # A canonical Views job requests exactly one output and therefore owns at

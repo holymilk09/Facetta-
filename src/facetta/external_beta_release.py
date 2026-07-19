@@ -44,7 +44,7 @@ CorpusVerifier = Callable[..., Json]
 AuthorityVerifier = Callable[[dict[str, Any], Path, datetime], Json]
 
 CORPUS_DECISION_SCHEMA = "facetta-frozen-corpus-release-decision.v2"
-STAGING_RESULT_SCHEMA = "facetta-staging-isolation.v6"
+STAGING_RESULT_SCHEMA = "facetta-staging-isolation.v7"
 STAGING_RUN_KIND = "read_only_two_principal_staging_probe"
 STAGING_APPROVAL_SCHEMA = "facetta-staging-isolation-approval.v2"
 EXTERNAL_BETA_DECISION_SCHEMA = "facetta-external-beta-release-decision.v2"
@@ -239,6 +239,8 @@ def required_staging_checks() -> dict[str, object]:
             f"user_{label}_cannot_read_other_component_targeting": 403,
             f"user_{label}_cannot_list_other_catalog_previews": 404,
             f"user_{label}_reads_own_job": 200,
+            f"user_{label}_lists_own_jobs": 200,
+            f"user_{label}_job_results_are_tenant_scoped": True,
             f"user_{label}_cannot_read_other_job": 404,
             f"user_{label}_cannot_spoof_job_owner": 403,
         })
@@ -246,6 +248,8 @@ def required_staging_checks() -> dict[str, object]:
             "catalog", "visual", "markup", "view", "presentation",
         ):
             candidate_checks: dict[str, object] = {
+                f"user_{label}_lists_own_{kind}_candidates": 200,
+                f"user_{label}_{kind}_candidate_results_are_tenant_scoped": True,
                 f"user_{label}_reads_own_{kind}_candidate_image": 200,
                 f"user_{label}_own_{kind}_candidate_is_image": True,
                 f"user_{label}_cannot_read_other_{kind}_candidate_image": (

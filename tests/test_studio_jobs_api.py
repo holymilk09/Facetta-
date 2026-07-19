@@ -1061,6 +1061,13 @@ def test_factory_pack_preparation_is_backend_authoritative_and_charges_once(clie
     assert prepared.status_code == 200, prepared.text
     assert prepared.json()["project_id"] == project_id
     assert prepared.json()["asset_id"] == source_id
+    canonical_manifest = dict(prepared.json())
+    manifest_sha256 = canonical_manifest.pop("manifest_sha256")
+    assert manifest_sha256 == hashlib.sha256((
+        json.dumps(
+            canonical_manifest, indent=2, sort_keys=True, ensure_ascii=False,
+        ) + "\n"
+    ).encode("utf-8")).hexdigest()
 
     settled = client.get(
         f"/studio/jobs/{queued['job_id']}",
@@ -1070,12 +1077,7 @@ def test_factory_pack_preparation_is_backend_authoritative_and_charges_once(clie
     assert settled["billing"]["completed_outputs"] == 1
     assert settled["billing"]["charged_outputs"] == 1
     assert settled["billing"]["charged_credits"] == factory.credits_per_output
-    expected_evidence = hashlib.sha256((
-        json.dumps(
-            prepared.json(), indent=2, sort_keys=True, ensure_ascii=False,
-        ) + "\n"
-    ).encode("utf-8")).hexdigest()
-    assert settled["accepted_output_sha256"] == expected_evidence
+    assert settled["accepted_output_sha256"] == manifest_sha256
 
     repeated = client.post(
         f"/projects/{project_id}/factory-pack",

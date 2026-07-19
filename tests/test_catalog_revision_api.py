@@ -1280,6 +1280,176 @@ class _ResultAgent:
         )
 
 
+def test_normalized_catalog_preview_projects_and_applies_exact_revision(
+    catalog_client,
+    example_spec,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(
+        client,
+        example_spec,
+        SessionFactory,
+        image=_textured_rgba_png(),
+    )
+    preview = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(execution_mode="instant"),
+    )
+    assert preview.status_code == 201, preview.text
+    preview_payload = preview.json()
+    candidate_id = preview_payload["candidate"]["candidate_id"]
+    before_apply = _counts(SessionFactory)
+
+    listed = client.get(
+        f"/studio/projects/{project['root_id']}/preview-candidates"
+    )
+    assert listed.status_code == 200, listed.text
+    normalized = listed.json()["candidates"]
+    assert len(normalized) == 1
+    assert normalized[0]["candidate_id"] == candidate_id
+    assert normalized[0]["kind"] == "catalog_revision"
+    assert normalized[0]["component_path"] == "metal.color"
+    assert normalized[0]["option_id"] == "rose"
+    assert normalized[0]["expected_design_version"] == 1
+    image = client.get(normalized[0]["preview_url"])
+    assert image.status_code == 200, image.text
+
+    applied = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_catalog",
+            "decision": "apply",
+            "expected_active_asset_id": project["active_asset_id"],
+            "expected_design_version": 1,
+        },
+    )
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["kind"] == "catalog_revision"
+    assert applied.json()["status"] == "applied"
+    assert applied.json()["terminal_asset_id"] is not None
+    assert _counts(SessionFactory) == {
+        **before_apply,
+        "versions": before_apply["versions"] + 1,
+        "assets": before_apply["assets"] + 1,
+    }
+
+
+def test_normalized_catalog_preview_saves_exact_variation(
+    catalog_client,
+    example_spec,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(
+        client,
+        example_spec,
+        SessionFactory,
+        image=_textured_rgba_png(),
+    )
+    preview = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(execution_mode="instant"),
+    )
+    assert preview.status_code == 201, preview.text
+    preview_payload = preview.json()
+    candidate_id = preview_payload["candidate"]["candidate_id"]
+
+    saved = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_catalog",
+            "decision": "save_as_variation",
+            "expected_active_asset_id": project["active_asset_id"],
+            "expected_design_version": 1,
+            "variation_label": "Rose catalog direction",
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    result = saved.json()
+    assert result["kind"] == "catalog_revision"
+    assert result["status"] == "saved_as_variation"
+    assert result["source_project_id"] == project["root_id"]
+    assert result["result_project_id"] != project["root_id"]
+    assert result["terminal_asset_id"] is not None
+    legacy_replay = client.post(
+        preview_payload["candidate"]["save_as_variation_url"],
+        json={
+            "created_by": "usr_catalog",
+            "label": "Rose catalog direction",
+        },
+    )
+    assert legacy_replay.status_code == 201, legacy_replay.text
+    assert legacy_replay.json()["project"]["root_id"] == (
+        result["result_project_id"]
+    )
+    legacy_conflict = client.post(
+        preview_payload["candidate"]["save_as_variation_url"],
+        json={"created_by": "usr_catalog", "label": "Another direction"},
+    )
+    assert legacy_conflict.status_code == 409, legacy_conflict.text
+    assert legacy_conflict.json()["code"] == (
+        "preview_candidate_variation_conflict"
+    )
+    with SessionFactory() as db:
+        durable = db.get(PreviewCandidateRecord, candidate_id)
+        sibling = db.get(Project, result["result_project_id"])
+        terminal = db.get(ImageAsset, result["terminal_asset_id"])
+        assert durable is not None and durable.status == "saved_as_variation"
+        assert durable.payload["resolved_variation_label"] == (
+            "Rose catalog direction"
+        )
+        assert sibling is not None and sibling.root_id != project["root_id"]
+        assert terminal is not None and terminal.root_id == sibling.root_id
+
+
+def test_normalized_catalog_stale_discard_preserves_canonical_revision(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(
+        client,
+        example_spec,
+        SessionFactory,
+        image=_textured_rgba_png(),
+    )
+    preview = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(execution_mode="instant"),
+    )
+    assert preview.status_code == 201, preview.text
+    candidate_id = preview.json()["candidate"]["candidate_id"]
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent",
+        lambda: _ResultAgent(QualityVerdict.PASS),
+    )
+    newer = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/apply",
+        json=_request(option_id="white"),
+    )
+    assert newer.status_code == 201, newer.text
+    before_discard = _counts(SessionFactory)
+
+    discarded = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_catalog",
+            "decision": "discard",
+            "expected_active_asset_id": project["active_asset_id"],
+            "expected_design_version": 1,
+        },
+    )
+    assert discarded.status_code == 200, discarded.text
+    assert discarded.json()["status"] == "discarded"
+    assert _counts(SessionFactory) == before_discard
+    with SessionFactory() as db:
+        durable = db.get(PreviewCandidateRecord, candidate_id)
+        active = db.get(ImageAsset, newer.json()["asset_id"])
+        assert durable is not None and durable.status == "discarded"
+        assert bytes(durable.image) == b""
+        assert active is not None
+
+
 @pytest.mark.parametrize("route", ("catalog/preview", "catalog/apply"))
 def test_ring_catalog_rejects_unmapped_source_before_provider_or_persistence(
     catalog_client,
@@ -1709,10 +1879,39 @@ def test_catalog_preview_saves_exact_spec_directly_as_variation(
         assert durable is not None
         assert durable.status == "saved_as_variation"
         assert durable.terminal_asset_id == sibling_id
+        assert durable.payload["resolved_variation_label"] == "Rose direction"
         assert review is not None and review.accepted_asset_id == sibling_id
         child_map = load_revision_component_map(db, sibling_id)
         assert child_map is not None
         assert child_map.mapper_contract == "facetta.material-only-map-copy.v1"
+    normalized_replay = client.post(
+        f"/studio/preview-candidates/"
+        f"{preview['candidate']['candidate_id']}/decision",
+        json={
+            "created_by": "usr_catalog",
+            "decision": "save_as_variation",
+            "expected_active_asset_id": project["active_asset_id"],
+            "expected_design_version": 1,
+            "variation_label": "Rose direction",
+        },
+    )
+    assert normalized_replay.status_code == 200, normalized_replay.text
+    assert normalized_replay.json()["result_project_id"] == sibling_id
+    normalized_conflict = client.post(
+        f"/studio/preview-candidates/"
+        f"{preview['candidate']['candidate_id']}/decision",
+        json={
+            "created_by": "usr_catalog",
+            "decision": "save_as_variation",
+            "expected_active_asset_id": project["active_asset_id"],
+            "expected_design_version": 1,
+            "variation_label": "Another direction",
+        },
+    )
+    assert normalized_conflict.status_code == 409, normalized_conflict.text
+    assert normalized_conflict.json()["code"] == (
+        "preview_candidate_variation_conflict"
+    )
 
 
 def test_catalog_apply_resolution_failure_rolls_back_asset_spec_and_review(
@@ -2339,12 +2538,22 @@ def test_catalog_preview_acceptance_atomically_settles_one_refine_output(
                 "created_by": "usr_catalog",
             },
         )
+        assert repeated.status_code == 410
     else:
         repeated = client.post(
             preview["candidate"]["save_as_variation_url"],
+            json={
+                "created_by": "usr_catalog",
+                "label": "Rose job direction",
+            },
+        )
+        assert repeated.status_code == 201, repeated.text
+        conflict = client.post(
+            preview["candidate"]["save_as_variation_url"],
             json={"created_by": "usr_catalog", "label": "Duplicate"},
         )
-    assert repeated.status_code == 410
+        assert conflict.status_code == 409, conflict.text
+        assert conflict.json()["code"] == "preview_candidate_variation_conflict"
     with SessionFactory() as db:
         current_job = db.get(StudioJobRecord, job["job_id"])
         assert current_job is not None

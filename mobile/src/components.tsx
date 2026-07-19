@@ -101,6 +101,9 @@ export function Button({
 }) {
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityState={{ disabled: disabled === true }}
       onPress={onPress}
       disabled={disabled}
       style={[

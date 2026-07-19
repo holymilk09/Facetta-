@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
@@ -23,6 +23,7 @@ from facetta.db import (
     utcnow,
 )
 from facetta.factory_pack import (
+    FactoryPack,
     FactoryPackUnavailable,
     build_factory_pack,
     factory_pack_manifest_sha256,
@@ -217,6 +218,7 @@ class FactoryChecklistManifest(BaseModel):
 
 class FactoryPackManifest(BaseModel):
     schema_version: str
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     project_id: str
     design_id: str
     design_version: int
@@ -606,6 +608,15 @@ def _pack_or_error(db: Session, project_id: str):
         })
 
 
+def _factory_pack_manifest_response(pack: FactoryPack) -> dict[str, object]:
+    """Expose the canonical pack identity without changing its artifact."""
+
+    return {
+        **pack.manifest,
+        "manifest_sha256": factory_pack_manifest_sha256(pack),
+    }
+
+
 @router.get(
     "/projects/{project_id}/factory-pack",
     response_model=FactoryPackManifest,
@@ -617,7 +628,7 @@ def get_factory_pack_manifest(
     pack = _pack_or_error(db, project_id)
     if isinstance(pack, JSONResponse):
         return pack
-    return pack.manifest
+    return _factory_pack_manifest_response(pack)
 
 
 class PrepareFactoryPackRequest(BaseModel):
@@ -697,17 +708,65 @@ def prepare_factory_pack(
         db.rollback()
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     db.commit()
-    return pack.manifest
+    return _factory_pack_manifest_response(pack)
 
 
 @router.get("/projects/{project_id}/factory-pack.zip")
 def download_factory_pack(
-    project_id: str, db: DbSession, principal: PrincipalDep,
+    project_id: str,
+    db: DbSession,
+    principal: PrincipalDep,
+    expected_asset_id: Annotated[
+        str | None, Query(min_length=1, max_length=32)
+    ] = None,
+    expected_design_version: Annotated[int | None, Query(ge=1)] = None,
+    expected_manifest_sha256: Annotated[
+        str | None, Query(pattern=r"^[0-9a-f]{64}$")
+    ] = None,
 ):
+    """Download a review pack, optionally pinned to its prepared identity.
+
+    The Studio client supplies all three expected values from the billed POST
+    response.  This closes the interval between preparation and download: if
+    another immutable revision becomes active, the old link fails closed
+    instead of silently rebuilding a different pack.  Parameters remain
+    optional only for the legacy read-only route while callers migrate.
+    """
     require_factory_entitlement(principal)
     pack = _pack_or_error(db, project_id)
     if isinstance(pack, JSONResponse):
         return pack
+    expected_values = (
+        expected_asset_id,
+        expected_design_version,
+        expected_manifest_sha256,
+    )
+    if any(value is not None for value in expected_values):
+        if any(value is None for value in expected_values):
+            return JSONResponse(status_code=422, content={
+                "code": "factory_pack_identity_incomplete",
+                "category": "validation",
+                "detail": (
+                    "an exact Factory download requires the asset, design "
+                    "version, and manifest SHA-256"
+                ),
+            })
+        actual_asset_id = str(pack.manifest["asset_id"])
+        actual_design_version = int(pack.manifest["design_version"])
+        actual_manifest_sha256 = factory_pack_manifest_sha256(pack)
+        if (
+            actual_asset_id != expected_asset_id
+            or actual_design_version != expected_design_version
+            or actual_manifest_sha256 != expected_manifest_sha256
+        ):
+            return JSONResponse(status_code=409, content={
+                "code": "stale_factory_pack_identity",
+                "category": "conflict",
+                "detail": (
+                    "the exact prepared Factory review pack is no longer "
+                    "available from this project state"
+                ),
+            })
     return Response(
         content=factory_pack_zip(pack),
         media_type="application/zip",

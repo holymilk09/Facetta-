@@ -5,10 +5,15 @@ import {
   decodeBeautyRenderResult,
   decodeDesignFamilyDetail,
   decodeDesignFamilyList,
+  decodeWorkspaceCollection,
+  decodeWorkspaceCollectionList,
+  decodeWorkspaceCollectionMembershipIndex,
   decodeFactoryPackManifest,
   decodeDrawingConfirmationResult,
+  decodeImageQualityReport,
   decodeImageRunSummary,
   decodeMarkupApplyResponse,
+  decodeMarkupReadResponse,
   decodeMarketingPackResult,
   decodePhotoDraftResult,
   decodePlateDraftResult,
@@ -29,6 +34,20 @@ function assert(condition: boolean, message: string): void {
 }
 
 export function runTrustedClientDecoderTests(): void {
+  const mixedWarningQuality = decodeImageQualityReport({
+    verdict: 'warn', accepted: false, review_required: true,
+    checks: [{
+      code: 'identity', passed: true, severity: 'hard', message: 'Preserved.',
+    }, {
+      code: 'unintended_drift', passed: false, severity: 'warning',
+      message: 'Expected presentation change.',
+    }],
+  });
+  assert(mixedWarningQuality?.checks[0]?.severity === 'hard',
+    'hard preservation severity must survive wire decoding');
+  assert(mixedWarningQuality?.checks[1]?.severity === 'warning',
+    'warning review severity must survive wire decoding');
+
   const project = decodeProjectDetail({
     id: 'ast_root',
     root_id: 'ast_root',
@@ -269,7 +288,18 @@ export function runTrustedClientDecoderTests(): void {
       pending_confirmation_count: 0, has_estimates: true,
       estimate_disclaimer: 'ESTIMATED values are not measurements.',
     },
-    authority: { factory_truth: [], visual_reference_only: [], note: '' },
+    authority: {
+      factory_truth: ['validated-spec.json'],
+      authoritative_fact_records: ['validated-spec.json'],
+      dimensional_diagram_only: ['facetta-sheet.svg'],
+      exchange_reference_only: [],
+      visual_reference_only: [],
+      discussion_only: [],
+      production_authority: [],
+      release_status: 'factory_review_only',
+      note: 'Factory review only.',
+    },
+    manifest_sha256: 'f'.repeat(64),
     files: [
       { name: 'validated-spec.json', sha256: 'abc', bytes: 10, authoritative: true },
       { name: 'facetta-sheet.svg', sha256: 'def', bytes: 20, authoritative: true },
@@ -284,6 +314,14 @@ export function runTrustedClientDecoderTests(): void {
     'factory fact-plan status counts should decode');
   assert(pack?.factory_sheet_fact_plan.recorded_facts[0]?.value === 'half round',
     'non-dimensional factory facts should decode');
+  assert(pack?.authority.authoritative_fact_records[0] === 'validated-spec.json',
+    'factory truth authority should survive API decoding');
+  assert(pack?.authority.dimensional_diagram_only[0] === 'facetta-sheet.svg',
+    'non-authoritative diagram role should survive API decoding');
+  assert(pack?.authority.release_status === 'factory_review_only',
+    'factory release must remain review-only');
+  assert(pack?.manifest_sha256 === 'f'.repeat(64),
+    'factory manifest digest should survive API decoding');
 
   const productPhoto = decodeProductPhotoResult({
     status: 'review_required',
@@ -690,6 +728,7 @@ describe('trusted API decoders', () => {
       prompt: 'A platinum floral lariat necklace with emerald leaves.',
       variation_count: 3,
       starting_variant: 8,
+      comparison_views: ['three_quarter'],
       studio_job_id: 'studio job prompt',
       owner: 'usr_designer',
       title: 'Lariat',
@@ -712,6 +751,7 @@ describe('trusted API decoders', () => {
       prompt: 'A platinum floral lariat necklace with emerald leaves.',
       variation_count: 3,
       starting_variant: 8,
+      comparison_views: ['three_quarter'],
       studio_job_id: 'studio job prompt',
       owner: 'usr_designer',
       title: 'Lariat',
@@ -949,8 +989,11 @@ describe('trusted API decoders', () => {
       family_id: 'fam ring',
       owner: 'usr_designer',
       title: 'Sapphire ring directions',
+      tags: ['sapphire', 'bridal'],
       created_at: '2026-07-12T01:00:00Z',
       updated_at: '2026-07-12T02:00:00Z',
+      is_favorite: true,
+      favorited_at: '2026-07-12T02:30:00Z',
       variations: [{
         root_id: 'ast variation',
         title: 'Rose gold direction',
@@ -976,6 +1019,11 @@ describe('trusted API decoders', () => {
       branched_from_asset_id: 'ast source revision',
       counts: { SPEC_RENDER: 2, PRODUCT_PHOTO: 1 },
     });
+    expect(decodeDesignFamilyDetail(payload)).toMatchObject({
+      is_favorite: true,
+      favorited_at: '2026-07-12T02:30:00Z',
+    });
+    expect(decodeDesignFamilyDetail({ ...payload, is_favorite: undefined })).toBeNull();
     const fetcher = jest.fn(async (
       _input: RequestInfo | URL,
       _init?: RequestInit,
@@ -998,8 +1046,11 @@ describe('trusted API decoders', () => {
         family_id: 'fam ring',
         owner: 'usr_designer',
         title: 'Sapphire ring directions',
+        tags: ['sapphire'],
         created_at: '2026-07-12T01:00:00Z',
         updated_at: '2026-07-12T02:00:00Z',
+        is_favorite: false,
+        favorited_at: null,
         variations: [{
           root_id: 'ast variation',
           title: 'Rose gold direction',
@@ -1034,6 +1085,104 @@ describe('trusted API decoders', () => {
       'https://facetta.test/studio/families?owner=usr_designer',
     );
     expect(result.data?.families[0]?.variations[0]?.variation_label).toBe('Original');
+  });
+
+  test('uses typed flat Collection and family-membership routes without revision payloads', async () => {
+    const collection = {
+      id: 'col client', name: 'Client Lin', template: 'client', metadata: { client: 'Lin' },
+      archived_at: null, created_at: '2026-07-12T01:00:00Z',
+      updated_at: '2026-07-12T02:00:00Z', family_count: 1,
+    };
+    expect(decodeWorkspaceCollection(collection)).toEqual(collection);
+    expect(decodeWorkspaceCollectionList({ collections: [collection] })?.collections).toHaveLength(1);
+    expect(decodeWorkspaceCollection({ ...collection, family_count: -1 })).toBeNull();
+    const membershipIndex = {
+      family_collection_ids: { 'fam ring': ['col client'], 'fam empty': [] },
+    };
+    expect(decodeWorkspaceCollectionMembershipIndex(membershipIndex)).toEqual(membershipIndex);
+    expect(decodeWorkspaceCollectionMembershipIndex({
+      family_collection_ids: { 'fam ring': ['col client', 'col client'] },
+    })).toBeNull();
+    expect(decodeWorkspaceCollectionMembershipIndex({
+      family_collection_ids: { 'fam ring': 'col client' },
+    })).toBeNull();
+    const fetcher = jest.fn<Promise<Response>, [RequestInfo | URL, RequestInit?]>(async (
+      input,
+      init,
+    ) => {
+      const familyTags = String(input).includes('/tags?');
+      return {
+      ok: true,
+      status: familyTags ? 200 : init?.method === 'POST' ? 201 : init?.method === 'PUT' || init?.method === 'DELETE' ? 204 : 200,
+      text: async () => familyTags
+        ? JSON.stringify({ family_id: 'fam ring', tags: ['bridal', 'sapphire'] })
+        : init?.method === 'PUT' || init?.method === 'DELETE' ? ''
+        : String(input).includes('/studio/collection-memberships')
+          ? JSON.stringify(membershipIndex)
+        : JSON.stringify(init?.method === 'POST' || init?.method === 'PATCH'
+          ? collection
+          : { collections: [collection] }),
+    } as unknown as Response;
+    });
+    const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+    expect((await api.listWorkspaceCollections({
+      owner: 'usr_designer', query: 'client lin',
+    })).data?.collections[0]?.id).toBe('col client');
+    expect(fetcher.mock.calls.at(-1)?.[0]).toBe(
+      'https://facetta.test/studio/collections?owner=usr_designer&q=client+lin&include_archived=false',
+    );
+    expect((await api.listWorkspaceCollectionMemberships('usr designer')).data).toEqual(membershipIndex);
+    expect(fetcher.mock.calls.at(-1)?.[0]).toBe(
+      'https://facetta.test/studio/collection-memberships?owner=usr%20designer',
+    );
+    expect((await api.favoriteDesignFamily('fam ring', 'usr designer')).data).toEqual({ status: 'updated' });
+    expect(fetcher.mock.calls.at(-1)).toEqual([
+      'https://facetta.test/studio/design-families/fam%20ring/favorite?owner=usr%20designer',
+      expect.objectContaining({ method: 'PUT' }),
+    ]);
+    expect((await api.unfavoriteDesignFamily('fam ring', 'usr designer')).data).toEqual({ status: 'updated' });
+    expect(fetcher.mock.calls.at(-1)).toEqual([
+      'https://facetta.test/studio/design-families/fam%20ring/favorite?owner=usr%20designer',
+      expect.objectContaining({ method: 'DELETE' }),
+    ]);
+    expect((await api.updateDesignFamilyTags(
+      'fam ring', 'usr designer', ['Sapphire', ' bridal '],
+    )).data).toEqual({ family_id: 'fam ring', tags: ['bridal', 'sapphire'] });
+    expect(fetcher.mock.calls.at(-1)).toEqual([
+      'https://facetta.test/studio/design-families/fam%20ring/tags?owner=usr%20designer',
+      expect.objectContaining({
+        method: 'PUT', body: JSON.stringify({ tags: ['Sapphire', ' bridal '] }),
+      }),
+    ]);
+    await api.createWorkspaceCollection({
+      owner: 'usr designer', name: 'Client Lin', template: 'client',
+    });
+    expect(fetcher.mock.calls.at(-1)?.[0]).toBe(
+      'https://facetta.test/studio/collections?owner=usr%20designer',
+    );
+    expect(fetcher.mock.calls.at(-1)?.[1]).toMatchObject({
+      method: 'POST', body: JSON.stringify({ name: 'Client Lin', template: 'client' }),
+    });
+    await api.updateWorkspaceCollection('col client', { archived: true });
+    expect(fetcher.mock.calls.at(-1)?.[0]).toBe('https://facetta.test/studio/collections/col%20client');
+    expect(fetcher.mock.calls.at(-1)?.[1]).toMatchObject({
+      method: 'PATCH', body: JSON.stringify({ archived: true }),
+    });
+    const listedMemberships = await api.listDesignFamilyCollections('fam ring');
+    expect(listedMemberships.data?.collections[0]?.name).toBe('Client Lin');
+    expect(fetcher.mock.calls.at(-1)?.[0]).toBe(
+      'https://facetta.test/studio/design-families/fam%20ring/collections',
+    );
+    expect((await api.addDesignFamilyToCollection('fam ring', 'col client')).data).toEqual({ status: 'updated' });
+    expect(fetcher.mock.calls.at(-1)?.[1]?.method).toBe('PUT');
+    expect((await api.removeDesignFamilyFromCollection('fam ring', 'col client')).data).toEqual({ status: 'updated' });
+    expect(fetcher.mock.calls.at(-1)?.[1]?.method).toBe('DELETE');
+    expect((await api.deleteWorkspaceCollection('col client')).data).toEqual({ status: 'updated' });
+    expect(fetcher.mock.calls.at(-1)?.[0]).toBe('https://facetta.test/studio/collections/col%20client');
+    expect(fetcher.mock.calls.flatMap((call) => [call[1]?.body]).filter(Boolean).join(' ')).not.toMatch(
+      /revision|asset_id|design_version/,
+    );
   });
 
   test('loads immutable Studio history with raw intent, interpretation, and restore evidence', async () => {
@@ -2211,10 +2360,16 @@ test('markup preserves an exact revision component identity from read through ap
       source_uri: 'https://facetta.test/assets/asset%201/image',
       annotations: [],
     },
+    instruction: 'Soften only this shoulder',
     created_by: 'designer',
   });
   expect(reading.error).toBeNull();
   expect(reading.data?.interpretation.target_component_id).toBe('shoulders.left');
+  expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toMatchObject({
+    instruction: 'Soften only this shoulder',
+    created_by: 'designer',
+    markup_snapshot: expect.objectContaining({ schema_version: 1 }),
+  });
 
   await api.applyMarkup('asset 1', {
     annotation: {
@@ -2236,6 +2391,97 @@ test('markup preserves an exact revision component identity from read through ap
 
   const body = JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body));
   expect(body.annotations[0].target_component_id).toBe('shoulders.left');
+});
+
+test('serializes every marked visual change for one temporary preview', async () => {
+  const fetcher = jest.fn(async (
+    _input: RequestInfo | URL,
+    _init?: RequestInit,
+  ) => ({
+    ok: false,
+    status: 422,
+    text: async () => JSON.stringify({ detail: 'captured request' }),
+  } as unknown as Response));
+  const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+  await api.createVisualPreview('project visual', {
+    created_by: 'designer',
+    expected_active_asset_id: 'asset source',
+    instruction: 'Keep the camera unchanged.',
+    scope: 'marked_region',
+    markup_asset_id: 'markup multi',
+    annotations: [
+      { region_description: 'left shoulder', change_instruction: 'use a satin finish' },
+      { region_description: 'center stone', change_instruction: 'shift the color toward teal' },
+    ],
+  });
+
+  expect(fetcher.mock.calls[0]?.[0]).toBe(
+    'https://facetta.test/studio/projects/project%20visual/visual-previews',
+  );
+  const body = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
+  expect(body).toMatchObject({
+    expected_active_asset_id: 'asset source',
+    instruction: 'Keep the camera unchanged.',
+    scope: 'marked_region',
+    markup_asset_id: 'markup multi',
+    annotations: [
+      { region_description: 'left shoulder', change_instruction: 'use a satin finish' },
+      { region_description: 'center stone', change_instruction: 'shift the color toward teal' },
+    ],
+  });
+});
+
+test('decodes and serializes every confirmed markup interpretation in one atomic preview', async () => {
+  const reading = decodeMarkupReadResponse({
+    markup_asset_id: 'markup multi', expected_design_version: 4,
+    annotations: [{
+      region_description: 'left shoulder', change_instruction: 'narrow the shoulder',
+      target_section: 'band', confidence: 0.95,
+    }, {
+      region_description: 'center stone', change_instruction: 'shift the color toward teal',
+      target_section: null, confidence: 0.96,
+    }],
+    understood_as: 'Two marked changes; everything else stays fixed.',
+  });
+  expect(reading?.interpretations).toHaveLength(2);
+  expect(reading?.interpretation.target_region).toBe('left shoulder');
+
+  const fetcher = jest.fn<Promise<Response>, [RequestInfo | URL, RequestInit?]>(async () => ({
+    ok: false,
+    status: 422,
+    text: async () => JSON.stringify({ detail: 'captured request' }),
+  } as unknown as Response));
+  const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+  const annotations = [{
+    region_description: 'left shoulder', change_instruction: 'narrow the shoulder',
+    impact: 'specification' as const, target_section: 'band', target_ref: null,
+    index: null, target_component_id: null, target_element_id: null,
+    form_view: 'three_quarter' as const, mask_base64: null,
+  }, {
+    region_description: 'center stone', change_instruction: 'shift the color toward teal',
+    impact: 'visual_only' as const, target_section: null, target_ref: null,
+    index: null, target_component_id: null, target_element_id: null,
+    form_view: 'three_quarter' as const, mask_base64: null,
+  }];
+
+  await api.applyMarkup('asset source', {
+    annotation: annotations[0], annotations,
+    markup_asset_id: 'markup multi', expected_design_version: 4,
+    created_by: 'designer', preview_only: true,
+  });
+
+  const body = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
+  expect(body.annotations).toEqual([
+    expect.objectContaining({
+      region_description: 'left shoulder', change_instruction: 'narrow the shoulder',
+    }),
+    expect.objectContaining({
+      region_description: 'center stone', change_instruction: 'shift the color toward teal',
+    }),
+  ]);
+  expect(body.update_spec).toBe(true);
+  expect(body.preview_only).toBe(true);
 });
 
 test('decodes only the designer-safe exact component targeting contract', () => {
@@ -2300,4 +2546,50 @@ test('prepares an exact revision component map through the trusted seam', async 
   );
   expect(fetcher.mock.calls[0]?.[1]?.method).toBe('POST');
   expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({});
+});
+
+test('pins Factory archive delivery to the exact manifest identity', async () => {
+  const manifestSha = 'b'.repeat(64);
+  const payload = {
+    schema_version: '1',
+    manifest_sha256: manifestSha,
+    project_id: 'project 1',
+    design_id: 'design_1',
+    design_version: 4,
+    asset_id: 'asset 7',
+    approver: 'designer',
+    approved_at: '2026-07-13T00:00:00Z',
+    checklist: { id: 'check_1' },
+    dimensions: { has_estimates: false, estimated_fields: [] },
+    factory_sheet_fact_plan: {
+      schema_version: 'facetta.factory-sheet-plan.v1',
+      jewelry_type: 'ring', template: 'solitaire_prong',
+      materials: [], stones: [], settings: [], recorded_facts: [], dimensions: [],
+      confirmed_fact_count: 1, estimated_fact_count: 0,
+      pending_confirmation_count: 0, has_estimates: false,
+      estimate_disclaimer: null,
+    },
+    authority: {
+      production_authority: [], release_status: 'factory_review_only',
+    },
+    artifacts: [{
+      name: 'review-sheet.svg', media_type: 'image/svg+xml',
+      sha256: 'a'.repeat(64), authoritative: false,
+    }],
+  };
+  const fetcher = jest.fn<Promise<Response>, [RequestInfo | URL, RequestInit?]>(
+    async () => ({
+      ok: true, status: 200, text: async () => JSON.stringify(payload),
+    } as unknown as Response),
+  );
+  const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+  const result = await api.getFactoryPack('project 1');
+
+  const expectedUrl = 'https://facetta.test/projects/project%201/factory-pack.zip'
+    + '?expected_asset_id=asset%207&expected_design_version=4'
+    + `&expected_manifest_sha256=${manifestSha}`;
+  expect(result.error).toBeNull();
+  expect(result.data?.bundle_url).toBe(expectedUrl);
+  expect(result.data?.artifacts[0]?.url).toBe(expectedUrl);
 });

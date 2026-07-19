@@ -78,11 +78,13 @@ const baseClient = () => ({
 
 test('markup refinement stays temporary until explicit apply', async () => {
   let acceptCalls = 0;
+  let appliedAnnotations = 0;
   const client = {
     ...baseClient(),
     applyMarkup: async (_assetId: string, request: any) => {
       assert.equal(request.preview_only, true);
       assert.equal(request.studio_job_id, 'job_refine_1');
+      appliedAnnotations = request.annotations.length;
       return ok({
         revision: null, spec_version: 1, spec_change: [], ignored_fields: [],
         qa: quality, routing: { attempt_count: 1, used_retry: false, used_fallback: false, cache_hit: false, run_id: 'run_1' },
@@ -113,9 +115,22 @@ test('markup refinement stays temporary until explicit apply', async () => {
       target_component_id: null,
       target_element_id: null, form_view: 'three_quarter', mask_base64: null,
     },
+    annotations: [{
+      region_description: 'halo', change_instruction: 'make the halo lighter',
+      impact: 'visual_only', target_section: null, target_ref: null, index: null,
+      target_component_id: null, target_element_id: null,
+      form_view: 'three_quarter', mask_base64: null,
+    }, {
+      region_description: 'left shoulder', change_instruction: 'narrow this shoulder',
+      impact: 'specification', target_section: 'band', target_ref: null, index: null,
+      target_component_id: null, target_element_id: null,
+      form_view: 'three_quarter', mask_base64: null,
+    }],
   });
   assert.equal(preview.error, null);
   assert.equal(preview.data?.candidate.temporary, true);
+  assert.equal(preview.data?.annotations.length, 2);
+  assert.equal(appliedAnnotations, 2);
   assert.equal(acceptCalls, 0);
 
   const applied = await gateway.applyMarkupRefine({ candidateId: 'candidate_1', createdBy: 'designer_1' });

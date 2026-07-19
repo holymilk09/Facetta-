@@ -1,8 +1,7 @@
-"""The Grok edit planner: same structural guarantees as the Claude path —
-scope_guard grafts one subtree, the validator gates — with the language
-engine swapped to xAI. The chat seam (_chat_json) is always mocked here.
-"""
+"""The provider-backed edit planner and its deterministic scope guard."""
 
+import copy
+import json
 import sys
 
 import pytest
@@ -44,6 +43,76 @@ class TestScopedEdit:
         assert any("band.width_mm" in c for c in result.changed_fields)
         assert any("metal" in i for i in result.ignored_fields)
 
+    def test_openai_fallback_scopes_fancy_yellow_side_stone_color_and_discards_outside_changes(
+        self,
+        halo,
+        monkeypatch,
+    ):
+        edited = copy.deepcopy(halo.model_dump(mode="json"))
+        original_group = copy.deepcopy(edited["side_stones"][0])
+        edited["side_stones"][0]["color"] = {
+            "trade": "Fancy Yellow",
+            "gia": "yellow diamond appearance, fancy yellow direction",
+        }
+        edited["metal"]["color"] = "yellow"
+        edited["band"]["width_mm"] = 3.5
+        monkeypatch.setattr(
+            grokedit,
+            "_chat_json",
+            lambda _system, _user: _proposal(edited),
+        )
+
+        result = grok_plan_scoped_edit(
+            Annotation(
+                section="side_stones",
+                index=0,
+                instruction="make the marked side diamonds fancy yellow",
+            ),
+            halo,
+        )
+
+        assert result.spec.side_stones[0].color.trade == "Fancy Yellow"
+        assert result.spec.metal.color == "white"
+        assert result.spec.band.width_mm == 2.0
+        guarded_group = result.spec.model_dump(mode="json")["side_stones"][0]
+        assert {
+            key: value for key, value in guarded_group.items() if key != "color"
+        } == {
+            key: value for key, value in original_group.items() if key != "color"
+        }
+        assert any("metal" in item for item in result.ignored_fields)
+        assert any("band" in item for item in result.ignored_fields)
+
+    def test_color_only_side_stone_edit_rejects_same_group_fact_drift(
+        self,
+        halo,
+        monkeypatch,
+    ):
+        edited = copy.deepcopy(halo.model_dump(mode="json"))
+        edited["side_stones"][0]["color"] = {
+            "trade": "Fancy Yellow",
+            "gia": "yellow diamond appearance, fancy yellow direction",
+        }
+        edited["side_stones"][0]["carat"] = 0.30
+        monkeypatch.setattr(
+            grokedit,
+            "_chat_json",
+            lambda _system, _user: _proposal(edited),
+        )
+
+        with pytest.raises(GrokEditUnavailable) as caught:
+            grok_plan_scoped_edit(
+                Annotation(
+                    section="side_stones",
+                    index=0,
+                    instruction="make the marked side diamonds fancy yellow",
+                ),
+                halo,
+            )
+
+        assert caught.value.code == "edit_scope_violation"
+        assert caught.value.retryable is False
+
     def test_new_sections_resolve(self, monkeypatch):
         import json
         from pathlib import Path
@@ -82,12 +151,109 @@ class TestScopedEdit:
             grok_plan_edit("x", halo)
 
     def test_no_key_raises_unavailable(self, halo, monkeypatch):
-        # _provider_key also reads the repo .env, so patch the lookup itself
-        import facetta.concept as concept
-
-        monkeypatch.setattr(concept, "_provider_key", lambda env: None)
-        with pytest.raises(GrokEditUnavailable):
+        # Patch the shared lookup so repo-local env files cannot affect this
+        # deterministic missing-configuration contract.
+        monkeypatch.setattr(grokedit, "env_value", lambda env: None)
+        with pytest.raises(GrokEditUnavailable) as caught:
             grokedit._chat_json("s", "u")
+        assert caught.value.code == "edit_provider_not_configured"
+        assert caught.value.status_code == 503
+        assert caught.value.retryable is False
+
+    def test_openai_fallback_is_used_when_xai_is_absent(
+        self,
+        monkeypatch,
+    ):
+        values = {"XAI_KEY": None, "OPENAI_API_KEY": "openai-test-key"}
+        calls: list[tuple[str, str, str]] = []
+        monkeypatch.setattr(
+            grokedit,
+            "env_value",
+            lambda name: values.get(name),
+        )
+        monkeypatch.setattr(
+            grokedit,
+            "_xai_chat_json",
+            lambda *_args: pytest.fail("xAI must not run without XAI_KEY"),
+        )
+        monkeypatch.setattr(
+            grokedit,
+            "_openai_chat_json",
+            lambda key, system, user: (
+                calls.append((key, system, user)) or {"ok": True}
+            ),
+        )
+
+        assert grokedit._chat_json("system", "user") == {"ok": True}
+        assert calls == [("openai-test-key", "system", "user")]
+
+    def test_xai_remains_preferred_when_both_keys_exist(
+        self,
+        monkeypatch,
+    ):
+        values = {"XAI_KEY": "xai-test-key", "OPENAI_API_KEY": "openai-key"}
+        monkeypatch.setattr(
+            grokedit,
+            "env_value",
+            lambda name: values.get(name),
+        )
+        monkeypatch.setattr(
+            grokedit,
+            "_openai_chat_json",
+            lambda *_args: pytest.fail("OpenAI is fallback, not first choice"),
+        )
+        monkeypatch.setattr(
+            grokedit,
+            "_xai_chat_json",
+            lambda key, system, user: {
+                "key": key, "system": system, "user": user,
+            },
+        )
+
+        assert grokedit._chat_json("s", "u") == {
+            "key": "xai-test-key", "system": "s", "user": "u",
+        }
+
+    def test_openai_responses_transport_parses_json_object(
+        self,
+        monkeypatch,
+    ):
+        import httpx
+
+        captured: dict[str, object] = {}
+
+        class Response:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "output": [{
+                        "content": [{
+                            "type": "output_text",
+                            "text": json.dumps({"proposal": "ok"}),
+                        }],
+                    }],
+                }
+
+        def post(url, **kwargs):
+            captured.update(url=url, **kwargs)
+            return Response()
+
+        monkeypatch.setattr(httpx, "post", post)
+        monkeypatch.setenv("FACETTA_OPENAI_CHAT", "test-edit-model")
+
+        result = grokedit._openai_chat_json(
+            "openai-test-key", "system contract", "current spec",
+        )
+
+        assert result == {"proposal": "ok"}
+        assert captured["url"] == "https://api.openai.com/v1/responses"
+        payload = captured["json"]
+        assert payload["model"] == "test-edit-model"
+        assert payload["store"] is False
+        assert payload["text"] == {"format": {"type": "json_object"}}
+        assert payload["input"][0]["role"] == "developer"
 
     def test_anthropic_is_never_imported(self):
         # the whole point of this module: XAI_KEY alone runs everything

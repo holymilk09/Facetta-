@@ -19,7 +19,23 @@ const manifest = {
     confirmed_fact_count: 12, estimated_fact_count: 0, pending_confirmation_count: 1,
     has_estimates: false, estimate_disclaimer: null,
   },
-  artifacts: [{ name: 'review-sheet.svg', media_type: 'image/svg+xml', sha256: 'a'.repeat(64), url: 'https://test/pack', authoritative: false }],
+  authority: {
+    factory_truth: ['validated-spec.json', 'facetta-schedule-1.svg'],
+    authoritative_fact_records: ['validated-spec.json', 'facetta-schedule-1.svg'],
+    dimensional_diagram_only: ['review-sheet.svg'],
+    exchange_reference_only: ['facetta-sheet.dxf'],
+    visual_reference_only: ['approved-reference.png'],
+    discussion_only: ['discussion-line-art.png'],
+    production_authority: [], release_status: 'factory_review_only' as const,
+    note: 'Factory review and clarification only.',
+  },
+  artifacts: [
+    { name: 'validated-spec.json', media_type: 'application/json', sha256: 'c'.repeat(64), url: 'https://test/spec', authoritative: true },
+    { name: 'review-sheet.svg', media_type: 'image/svg+xml', sha256: 'a'.repeat(64), url: 'https://test/review-sheet', authoritative: false },
+    { name: 'facetta-sheet.dxf', media_type: 'application/dxf', sha256: 'd'.repeat(64), url: 'https://test/dxf', authoritative: false },
+    { name: 'approved-reference.png', media_type: 'image/png', sha256: 'e'.repeat(64), url: 'https://test/reference', authoritative: false },
+    { name: 'discussion-line-art.png', media_type: 'image/png', sha256: 'f'.repeat(64), url: 'https://test/discussion', authoritative: false },
+  ],
   bundle_url: 'https://test/pack', manifest_sha256: 'b'.repeat(64),
 };
 
@@ -79,10 +95,20 @@ describe('StudioFactoryWorkspace', () => {
     expect(prepareFactoryPack).toHaveBeenCalledWith('project_1', {
       studio_job_id: 'job_1', owner: 'designer',
     });
+    expect(screen.getByText('Design revision 4 · source asset_7')).toBeTruthy();
+    expect(screen.getByText('Approved by designer · checklist check_1')).toBeTruthy();
+    expect(screen.getByText('Pack SHA-256 bbbbbbbbbbbb…')).toBeTruthy();
+    expect(screen.getByText('Authoritative fact record')).toBeTruthy();
+    expect(screen.getByText('Dimensional diagram only')).toBeTruthy();
+    expect(screen.getByText('Drawing-exchange reference only')).toBeTruthy();
+    expect(screen.getByText('Visual reference only')).toBeTruthy();
+    expect(screen.getByText('Discussion only')).toBeTruthy();
+    expect(screen.getByText('image/svg+xml · SHA-256 aaaaaaaaaaaa…')).toBeTruthy();
+    expect(screen.getByText(/Factory review only.*none is a production-ready claim/i)).toBeTruthy();
     expect(screen.getByText('review-sheet.svg')).toBeTruthy();
     await act(async () => { fireEvent.press(screen.getByText('Open review-sheet.svg')); });
     expect(deliverProtectedFile).toHaveBeenCalledWith({
-      url: 'https://test/pack', name: 'review-sheet.svg', mediaType: 'image/svg+xml',
+      url: 'https://test/review-sheet', name: 'review-sheet.svg', mediaType: 'image/svg+xml',
     });
     await act(async () => { fireEvent.press(screen.getByText('Download complete review pack')); });
     expect(deliverProtectedFile).toHaveBeenCalledWith({
@@ -122,6 +148,32 @@ describe('StudioFactoryWorkspace', () => {
     expect(deliverProtectedFile).toHaveBeenCalledTimes(2);
     expect(createStudioJob).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/credit record are unchanged/i)).toBeNull();
+  });
+
+  test('does not present an archive-only URL as an individual artifact file', async () => {
+    const archiveOnly = {
+      ...manifest,
+      artifacts: manifest.artifacts.map((artifact) => ({
+        ...artifact,
+        url: manifest.bundle_url,
+      })),
+    };
+    const deliverProtectedFile = jest.fn(async () => {});
+    await render(<StudioFactoryWorkspace api={withReadiness({
+      createStudioJob: jest.fn(async () => ({ data: job('queued'), error: null, status: 201 })),
+      prepareFactoryPack: jest.fn(async () => ({ data: archiveOnly, error: null, status: 200 })),
+    }) as any} lineage={lineage} createdBy="designer"
+    deliverProtectedFile={deliverProtectedFile} />);
+
+    await act(async () => { fireEvent.press(screen.getByText('Prepare factory review material')); });
+    expect(await screen.findByText('Review material prepared')).toBeTruthy();
+    expect(screen.queryByText('Open review-sheet.svg')).toBeNull();
+    await act(async () => { fireEvent.press(screen.getByText('Download complete review pack')); });
+    expect(deliverProtectedFile).toHaveBeenCalledWith({
+      url: manifest.bundle_url,
+      name: 'facetta-factory-review.zip',
+      mediaType: 'application/zip',
+    });
   });
 
   test('moves an unready exact ring through checklist, pinning, and pack preparation', async () => {
@@ -191,6 +243,42 @@ describe('StudioFactoryWorkspace', () => {
     expect(prepareFactoryPack).toHaveBeenCalledWith('project_1', {
       studio_job_id: 'job_1', owner: 'designer',
     });
+  });
+
+  test('fails closed when a stale route opens an exact revision with Factory blockers', async () => {
+    const createChecklist = jest.fn();
+    const respondChecklist = jest.fn();
+    const blockedProject = {
+      ...readyProject,
+      approval: null,
+      pinned_revision: null,
+      factory_ready: false,
+      factory_blockers: [{
+        code: 'factory_template_not_released',
+        subject_kind: 'template' as const,
+        subject_id: 'three_stone_prong',
+        element_id: null,
+        component_id: null,
+        role: 'factory_template_scope',
+        label: 'Three Stone Prong Factory review',
+        detail: 'Factory review does not yet support this three stone prong ring topology.',
+        required_resolution: 'Keep the exact revision in Studio.',
+      }],
+    };
+
+    await render(<StudioFactoryWorkspace api={withReadiness({
+      getProject: jest.fn(async () => ({ data: blockedProject, error: null, status: 200 })),
+      createChecklist,
+      respondChecklist,
+    }) as any} lineage={lineage} createdBy="designer" deliverProtectedFile={jest.fn()} />);
+
+    expect(await screen.findByText(/Factory review is not available for this exact revision/i)).toBeTruthy();
+    expect(screen.getByText(/does not yet support this three stone prong ring topology/i)).toBeTruthy();
+    expect(screen.queryByText('Start exact-fact checklist')).toBeNull();
+    expect(screen.queryByText('Confirm fact')).toBeNull();
+    expect(screen.queryByText('Prepare factory review material')).toBeNull();
+    expect(createChecklist).not.toHaveBeenCalled();
+    expect(respondChecklist).not.toHaveBeenCalled();
   });
 
   test('authenticated delivery fetches same-origin bytes before web or native delivery', async () => {

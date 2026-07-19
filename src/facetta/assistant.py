@@ -22,6 +22,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from facetta.config import env_value
 from facetta.render import RenderUnavailable
 from facetta.styles import get_styles
 from facetta.vocabulary import get_vocabulary
@@ -101,9 +102,7 @@ def _system_prompt(name: str) -> str:
 def _assistant_chat(system: str, messages: list[dict], model: str) -> str:
     """One grounded chat turn returning the raw JSON string. xAI by default;
     isolated here so tests can monkeypatch the network."""
-    from facetta.concept import _provider_key
-
-    key = _provider_key("XAI_KEY")
+    key = env_value("XAI_KEY")
     if not key:
         raise RenderUnavailable(
             "no XAI_KEY configured — the design assistant needs a chat key")

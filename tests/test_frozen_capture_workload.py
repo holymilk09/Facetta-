@@ -9,6 +9,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from facetta.creative_symmetry import JEWELRY_SYMMETRY_CONTRACT
 from facetta.frozen_capture_workload import (
     FROZEN_ROUTING_LABEL,
     _routing_attempt_assignments,
@@ -570,11 +571,11 @@ def test_production_matrix_is_scope_only_until_reviewed_bindings_are_pinned():
         frozen / "workload.json",
         repository_root=root,
     )
-    assert plan["planned_evaluation_sequence_count"] == 1_044
+    assert plan["planned_evaluation_sequence_count"] == 1_102
     assert plan["execution_ready_sequence_count"] == 0
     assert plan["maximum_provider_attempt_count"] == 0
-    assert plan["logical_scope_maximum_attempt_count"] == 3_132
-    assert plan["unresolved_sequence_count"] == 1_044
+    assert plan["logical_scope_maximum_attempt_count"] == 3_306
+    assert plan["unresolved_sequence_count"] == 1_102
     assert plan["capture_status"] == "blocked_unresolved_assignments"
     assert plan["executor_trust"]["status"] == "not_enrolled"
     assert plan["assignment_bundle"]["status"] == "not_enrolled"
@@ -582,7 +583,61 @@ def test_production_matrix_is_scope_only_until_reviewed_bindings_are_pinned():
     assert all(item["resolved_inputs"]["execution"] is None for item in plan["items"])
 
 
-def test_provider_free_fake_executor_covers_all_1044_synthetic_assignments(
+def test_production_matrix_binds_symmetry_and_explicit_asymmetry_cases():
+    root = Path(__file__).resolve().parents[1]
+    frozen = root / "docs" / "evals" / "frozen-founder-corpus-v1"
+    manifest = json.loads((frozen / "manifest.json").read_text())
+    workload = json.loads((frozen / "workload.json").read_text())
+    structural = set(manifest["evaluation_slice"]["operation_classes"]["structural"])
+    operation_ids = set(manifest["evaluation_slice"]["operation_ids"])
+    assert {"leaf-motif-shape", "intentional-shoulder-asymmetry"} <= structural
+    assert structural <= operation_ids
+
+    evaluations = workload["evaluation_sets"][
+        workload["ring_quality_evaluation_set_id"]
+    ]
+    evaluation_by_id = {row["evaluation_id"]: row for row in evaluations}
+    for evaluation_id in ("leaf-motif-shape", "intentional-shoulder-asymmetry"):
+        assert evaluation_by_id[evaluation_id] == {
+            "evaluation_id": evaluation_id,
+            "kind": "edit",
+            "operation_class": "structural",
+        }
+
+    edits = {edit.id: edit for edit in CANONICAL_RING_EDITS}
+    assert JEWELRY_SYMMETRY_CONTRACT in edits["leaf-motif-shape"].instruction
+    explicit = edits["intentional-shoulder-asymmetry"]
+    assert JEWELRY_SYMMETRY_CONTRACT in explicit.instruction
+    assert "designer-requested asymmetry" in explicit.instruction
+    assert "right shoulder unchanged" in explicit.instruction
+
+    plan = build_provider_call_plan(
+        frozen / "manifest.json",
+        frozen / "config.json",
+        frozen / "workload.json",
+        repository_root=root,
+    )
+    by_evaluation = {
+        evaluation_id: [
+            item for item in plan["items"]
+            if item["evaluation_id"] == evaluation_id
+        ]
+        for evaluation_id in ("leaf-motif-shape", "intentional-shoulder-asymmetry")
+    }
+    assert {key: len(value) for key, value in by_evaluation.items()} == {
+        "leaf-motif-shape": 58,
+        "intentional-shoulder-asymmetry": 58,
+    }
+    assert all(
+        item["operation_class"] == "structural"
+        and item["resolved_inputs"]["assignment_resolved"] is False
+        for rows in by_evaluation.values()
+        for item in rows
+    )
+    assert plan["provider_calls_executed"] == 0
+
+
+def test_provider_free_fake_executor_covers_all_1102_synthetic_assignments(
     tmp_path: Path,
 ):
     repository = Path(__file__).resolve().parents[1]
@@ -615,7 +670,7 @@ def test_provider_free_fake_executor_covers_all_1044_synthetic_assignments(
     _write(assignment_bundle, {
         "schema_version": "facetta-frozen-assignment-bundle.v1",
         "workload_sha256": _sha(workload),
-        "corpus_run_id": "synthetic-complete-1044-v1",
+        "corpus_run_id": "synthetic-complete-1102-v1",
         "assignments": assignments,
     })
     routing_contract = _install_routing_contract(root)
@@ -664,9 +719,9 @@ def test_provider_free_fake_executor_covers_all_1044_synthetic_assignments(
 
     executor = ProviderFreeFakeExecutor()
     outcomes = [executor.execute(item) for item in plan["items"]]
-    assert len(outcomes) == 1_044
-    assert len({row["assignment_sha256"] for row in outcomes}) == 1_044
-    assert plan["execution_ready_sequence_count"] == 1_044
+    assert len(outcomes) == 1_102
+    assert len({row["assignment_sha256"] for row in outcomes}) == 1_102
+    assert plan["execution_ready_sequence_count"] == 1_102
     assert plan["unresolved_sequence_count"] == 0
     assert executor.provider_calls_executed == 0
     assert plan["corpus_gate_ready"] is False

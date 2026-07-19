@@ -18,10 +18,14 @@ from facetta.db import (
     ImageAsset,
     ImageRun,
     ImageRunReview,
+    PreviewCandidateRecord,
     Project,
     ProjectRevisionRecord,
+    StudioContinuationPromptRecord,
+    StudioMarkupCandidateRecord,
     StudioVariationDecisionRecord,
     new_id,
+    normalize_family_tags,
     utcnow,
 )
 from facetta.project_backbone import (
@@ -96,6 +100,17 @@ class VariationBranchResult:
     variation_index: int
 
 
+@dataclass(frozen=True)
+class VariationCompanionViewInput:
+    """One already-validated, uncharged Create comparison view to retain."""
+
+    source_asset_id: str
+    image_run_id: str
+    view: str
+    source_sha256: str
+    output_sha256: str
+
+
 def _variation_request_fingerprint(
     *,
     project_root_id: str,
@@ -156,6 +171,135 @@ def _replay_variation_decision(
     )
 
 
+def _preview_candidate_record_for_variation(
+    db: Session,
+    *,
+    kind: str,
+    run_id: str,
+    candidate_id: str,
+    created_by: str,
+) -> PreviewCandidateRecord | StudioMarkupCandidateRecord | None:
+    """Lock the exact owner-scoped candidate row used by either API seam."""
+
+    if kind == "studio_markup":
+        return db.scalar(
+            select(StudioMarkupCandidateRecord)
+            .where(
+                StudioMarkupCandidateRecord.id == candidate_id,
+                StudioMarkupCandidateRecord.image_run_id == run_id,
+                StudioMarkupCandidateRecord.owner == created_by,
+            )
+            .with_for_update()
+        )
+    if kind in {"studio_visual", "catalog_revision"}:
+        return db.scalar(
+            select(PreviewCandidateRecord)
+            .where(
+                PreviewCandidateRecord.id == candidate_id,
+                PreviewCandidateRecord.image_run_id == run_id,
+                PreviewCandidateRecord.owner == created_by,
+                PreviewCandidateRecord.kind == kind,
+            )
+            .with_for_update()
+        )
+    raise StudioHistoryError(
+        "preview_candidate_kind_invalid",
+        "the preview candidate kind is invalid",
+        status_code=422,
+    )
+
+
+def _replay_preview_candidate_variation(
+    db: Session,
+    record: PreviewCandidateRecord | StudioMarkupCandidateRecord,
+    *,
+    kind: str,
+    variation_label: str,
+    created_by: str,
+) -> VariationBranchResult:
+    """Return the one committed branch only for its original exact label.
+
+    Rows written before the normalized Studio seam did not copy the label into
+    candidate payload.  Their immutable revision intent remains authoritative;
+    an exact replay backfills the marker so all later calls use one persisted
+    idempotency contract.
+    """
+
+    terminal_asset_id = record.terminal_asset_id
+    if terminal_asset_id is None:
+        raise StudioHistoryError(
+            "preview_candidate_variation_corrupt",
+            "the saved variation has no terminal asset",
+            status_code=500,
+        )
+    asset = db.get(ImageAsset, terminal_asset_id)
+    project = db.get(Project, asset.root_id) if asset is not None else None
+    revision = db.scalar(
+        select(ProjectRevisionRecord).where(
+            ProjectRevisionRecord.asset_id == terminal_asset_id
+        )
+    )
+    payload = record.payload if isinstance(record.payload, dict) else {}
+    resolved_label = payload.get("resolved_variation_label")
+    if not isinstance(resolved_label, str):
+        raw_intent = revision.raw_intent if revision is not None else {}
+        historical_label = (
+            raw_intent.get("label") if isinstance(raw_intent, dict) else None
+        )
+        if not isinstance(historical_label, str) or not historical_label.strip():
+            raise StudioHistoryError(
+                "preview_candidate_variation_corrupt",
+                "the saved variation has no immutable label evidence",
+                status_code=500,
+            )
+        resolved_label = historical_label.strip()
+        record.payload = {
+            **payload,
+            "resolved_variation_label": resolved_label,
+        }
+    raw_intent = revision.raw_intent if revision is not None else {}
+    if (
+        asset is None
+        or project is None
+        or revision is None
+        or not isinstance(raw_intent, dict)
+        or project.owner != created_by
+        or asset.created_by != created_by
+        or project.root_id != asset.root_id
+        or project.family_id is None
+        or project.branched_from_project_root_id != record.project_root_id
+        or project.branched_from_asset_id != record.source_asset_id
+        or raw_intent.get("kind") != "save_preview_as_variation"
+        or raw_intent.get("preview_kind") != kind
+        or raw_intent.get("source_project_id") != record.project_root_id
+        or raw_intent.get("source_asset_id") != record.source_asset_id
+        or raw_intent.get("image_run_id") != record.image_run_id
+        or raw_intent.get("label") != resolved_label
+    ):
+        raise StudioHistoryError(
+            "preview_candidate_variation_corrupt",
+            "the saved variation lineage is incomplete",
+            status_code=500,
+        )
+    if resolved_label != variation_label:
+        raise StudioHistoryError(
+            "preview_candidate_variation_conflict",
+            "the preview candidate was saved with another variation label",
+        )
+    if payload.get("resolved_variation_label") != resolved_label:
+        db.commit()
+    return VariationBranchResult(
+        family_id=project.family_id,
+        project_root_id=project.root_id,
+        asset_id=asset.id,
+        source_project_id=record.project_root_id,
+        source_asset_id=record.source_asset_id,
+        design_id=asset.design_id,
+        design_version=asset.design_version,
+        variation_index=project.variation_index,
+    )
+
+
 def fork_preview_candidate_variation(
     db: Session,
     *,
@@ -191,6 +335,24 @@ def fork_preview_candidate_variation(
             "variation_label_required",
             "name the variation before saving it",
             status_code=422,
+        )
+    candidate_record = _preview_candidate_record_for_variation(
+        db,
+        kind=kind,
+        run_id=run_id,
+        candidate_id=candidate_id,
+        created_by=created_by,
+    )
+    if (
+        candidate_record is not None
+        and candidate_record.status == "saved_as_variation"
+    ):
+        return _replay_preview_candidate_variation(
+            db,
+            candidate_record,
+            kind=kind,
+            variation_label=label,
+            created_by=created_by,
         )
     try:
         if kind == "studio_visual":
@@ -462,6 +624,21 @@ def fork_preview_candidate_variation(
         created_by=created_by,
         created_at=now,
     )
+    candidate_payload = (
+        candidate_record.payload
+        if isinstance(candidate_record.payload, dict)
+        else {}
+    )
+    prior_label = candidate_payload.get("resolved_variation_label")
+    if prior_label is not None and prior_label != label:
+        raise StudioHistoryError(
+            "preview_candidate_variation_conflict",
+            "the preview candidate is bound to another variation label",
+        )
+    candidate_record.payload = {
+        **candidate_payload,
+        "resolved_variation_label": label,
+    }
     candidate_record.status = "saved_as_variation"
     candidate_record.terminal_asset_id = new_root_id
     candidate_record.review_id = review.id
@@ -654,6 +831,26 @@ def apply_pre_spec_visual_candidate(
         expected_active_asset_id=expected_active_asset_id,
         created_by=created_by,
     )
+    continuation_prompt = (
+        db.get(StudioContinuationPromptRecord, candidate.continuation_prompt_id)
+        if candidate.continuation_prompt_id is not None else None
+    )
+    if candidate.continuation_prompt_id is not None and (
+        continuation_prompt is None
+        or continuation_prompt.owner != created_by
+        or continuation_prompt.project_root_id != project.root_id
+        or continuation_prompt.source_asset_id != source.id
+        or continuation_prompt.source_sha256 != candidate.source_hash
+    ):
+        raise StudioHistoryError(
+            "visual_preview_prompt_lineage_mismatch",
+            "the preview prompt is not bound to this exact source revision",
+            status_code=422,
+        )
+    designer_instruction = (
+        continuation_prompt.prompt
+        if continuation_prompt is not None else candidate.requested_change
+    )
     now = utcnow()
     child = ImageAsset(
         id=new_id("ast"),
@@ -666,7 +863,7 @@ def apply_pre_spec_visual_candidate(
             if candidate.scope == "appearance" else "LOCALIZED_EDIT"
         ),
         source_kind=source.source_kind,
-        instruction=candidate.requested_change,
+        instruction=designer_instruction,
         region=(
             "designer-marked region" if candidate.scope == "marked_region" else None
         ),
@@ -691,9 +888,14 @@ def apply_pre_spec_visual_candidate(
         raw_intent={
             "kind": "pre_spec_visual_refinement",
             "scope": candidate.scope,
-            "instruction": candidate.requested_change,
+            "instruction": designer_instruction,
+            "user_intent": (
+                continuation_prompt.intent
+                if continuation_prompt is not None else None
+            ),
             "source_asset_id": source.id,
             "image_run_id": run.id,
+            "continuation_prompt_id": candidate.continuation_prompt_id,
         },
         interpretation={
             "operation": "append_reviewed_visual",
@@ -900,6 +1102,7 @@ def ensure_project_family(db: Session, project: Project) -> DesignFamily:
         id=new_id("fam"),
         owner=project.owner,
         title=project.title,
+        tags=normalize_family_tags(list(project.tags or [])),
     )
     db.add(family)
     project.family_id = family.id
@@ -919,6 +1122,7 @@ def fork_project_variation(
     created_by: str,
     operation_id: str | None = None,
     allow_unselected_creative_candidate: bool = False,
+    companion_views: tuple[VariationCompanionViewInput, ...] = (),
     commit: bool = True,
 ) -> VariationBranchResult:
     """Copy one exact revision into an independent sibling project.
@@ -1016,6 +1220,33 @@ def fork_project_variation(
         source,
         mismatch_code="variation_source_hash_mismatch",
     )
+    if len({view.view for view in companion_views}) != len(companion_views):
+        raise StudioHistoryError(
+            "variation_companion_view_duplicate",
+            "a retained variation cannot contain duplicate comparison views",
+            status_code=422,
+        )
+    source_companion_views: list[tuple[VariationCompanionViewInput, ImageAsset]] = []
+    for companion in companion_views:
+        companion_asset = db.get(ImageAsset, companion.source_asset_id)
+        if (
+            companion.view != "three_quarter"
+            or companion_asset is None
+            or companion_asset.root_id != project.root_id
+            or companion_asset.parent_asset_id != source.id
+            or companion_asset.capability != "CREATIVE_COMPARISON_THREE_QUARTER"
+            or companion_asset.design_id is not None
+            or companion_asset.design_version is not None
+            or hashlib.sha256(bytes(companion_asset.image)).hexdigest()
+            != companion.output_sha256
+            or companion.source_sha256 != source_sha256
+        ):
+            raise StudioHistoryError(
+                "variation_companion_view_unavailable",
+                "a retained comparison view no longer matches its exact source",
+                status_code=422,
+            )
+        source_companion_views.append((companion, companion_asset))
 
     family = ensure_project_family(db, project)
     if family.owner != project.owner:
@@ -1095,6 +1326,36 @@ def fork_project_variation(
         created_by=created_by,
         created_at=now,
     )
+    new_companion_assets = [
+        ImageAsset(
+            id=new_id("ast"),
+            root_id=new_root_id,
+            parent_asset_id=new_root_id,
+            design_id=new_design_id,
+            design_version=new_design_version,
+            capability=source_companion.capability,
+            source_kind=source_companion.source_kind,
+            instruction=source_companion.instruction,
+            image=bytes(source_companion.image),
+            media_type=source_companion.media_type,
+            created_by=created_by,
+            created_at=now,
+        )
+        for _companion, source_companion in source_companion_views
+    ]
+    companion_lineage = [
+        {
+            "view": companion.view,
+            "source_asset_id": companion.source_asset_id,
+            "source_image_run_id": companion.image_run_id,
+            "source_sha256": companion.source_sha256,
+            "output_sha256": companion.output_sha256,
+            "retained_asset_id": retained_asset.id,
+        }
+        for (companion, _source_companion), retained_asset in zip(
+            source_companion_views, new_companion_assets
+        )
+    ]
     new_project = Project(
         root_id=new_root_id,
         owner=project.owner,
@@ -1122,6 +1383,10 @@ def fork_project_variation(
             "source_project_id": project.root_id,
             "source_asset_id": source.id,
             "label": label,
+            **(
+                {"companion_views": companion_lineage}
+                if companion_lineage else {}
+            ),
         },
         interpretation={
             "operation": "fork_variation",
@@ -1129,6 +1394,13 @@ def fork_project_variation(
             "independent_revision_history": True,
             "source_sha256": source_sha256,
             "output_sha256": source_sha256,
+            **(
+                {
+                    "companion_views_preserved_exactly": True,
+                    "companion_views": companion_lineage,
+                }
+                if companion_lineage else {}
+            ),
         },
         change_summary=f"Saved '{label}' as an independent variation.",
         created_by=created_by,
@@ -1136,7 +1408,7 @@ def fork_project_variation(
     )
     family.updated_at = now
     project.updated_at = now
-    db.add_all([new_asset, new_project, record])
+    db.add_all([new_asset, *new_companion_assets, new_project, record])
     if normalized_operation_id is not None:
         db.add(StudioVariationDecisionRecord(
             owner=project.owner,

@@ -7,6 +7,7 @@ every density, fit, and clearance rule, with the corrections recorded.
 
 import base64
 
+import facetta.concept as concept_module
 from facetta.concept import DesignRead, complete_design
 from facetta.spec import Spec
 from facetta.validation import validate_spec
@@ -56,6 +57,62 @@ class TestCompleteDesign:
         assert spec.band is None and spec.ring_size is None
         assert any("main necklace group" in item for item in corrections)
 
+    def test_read_design_supplies_complete_strict_provider_schema(
+        self,
+        monkeypatch,
+    ):
+        captured: dict[str, object] = {}
+
+        def inspect(system, image, prompt, schema):
+            captured.update(
+                system=system,
+                image=image,
+                prompt=prompt,
+                schema=schema,
+            )
+            return {
+                "jewelry_type": "ring",
+                "halo": False,
+                "species": "diamond",
+                "cut": "round_brilliant",
+                "center_length_mm": 6.5,
+                "center_width_mm": 6.5,
+                "metal_material": "gold",
+                "metal_color": "yellow",
+                "setting_style": "prong_4",
+                "main_stone_count": 1,
+                "main_stone_position": "center",
+                "accent_species": "diamond",
+                "accent_cut": "round_brilliant",
+                "accent_count": 2,
+                "chain_style": None,
+            }
+
+        monkeypatch.setattr(
+            concept_module,
+            "configured_vision_json",
+            inspect,
+        )
+
+        read = concept_module.read_design(
+            b"\x89PNG\r\n\x1a\nreference",
+            "three-stone ring",
+        )
+
+        schema = captured["schema"]
+        assert set(schema["required"]) == set(schema["properties"])
+        assert schema["additionalProperties"] is False
+        assert all(
+            "default" not in property_schema
+            for property_schema in schema["properties"].values()
+        )
+        assert schema["properties"]["accent_species"]["anyOf"] == [
+            {"type": "string"},
+            {"type": "null"},
+        ]
+        assert read.main_stone_count == 1
+        assert read.accent_count == 2
+
     def test_halo_read_becomes_a_valid_spec(self):
         read = DesignRead(halo=True, species="emerald", cut="emerald",
                           center_length_mm=13, center_width_mm=10,
@@ -76,6 +133,77 @@ class TestCompleteDesign:
         assert expect.ok
         assert spec.template == "solitaire_prong"
         assert spec.metal.karat == 18 and spec.metal.color == "yellow"
+        assert spec.stone.count == 1
+        assert spec.side_stones == []
+
+    def test_three_equal_round_diamonds_preserve_visible_inventory(self):
+        read = DesignRead(
+            jewelry_type="ring",
+            species="diamond",
+            cut="round",
+            center_length_mm=5.5,
+            center_width_mm=5.5,
+            metal_material="gold",
+            metal_color="yellow",
+            setting_style="prong_4",
+            main_stone_count=3,
+            main_stone_position="center",
+        )
+
+        spec, corrections = complete_design(read, "three equal round diamonds")
+
+        assert _valid(spec)
+        assert spec.template == "three_stone_prong"
+        assert spec.stone.count == 1
+        assert spec.stone.position == "center"
+        assert len(spec.side_stones) == 1
+        matching_sides = spec.side_stones[0]
+        assert matching_sides.count == 2
+        assert matching_sides.position == "side"
+        assert matching_sides.species == spec.stone.species == "diamond"
+        assert matching_sides.cut == spec.stone.cut == "round_brilliant"
+        assert matching_sides.dimensions_mm == spec.stone.dimensions_mm
+        assert matching_sides.carat == spec.stone.carat
+        assert sum(
+            stone.count for stone in (spec.stone, *spec.side_stones)
+        ) == 3
+        assert any("1 center plus 2 matching side stones" in item
+                   for item in corrections)
+
+    def test_center_and_two_accents_preserve_distinct_visible_groups(self):
+        read = DesignRead(
+            jewelry_type="ring",
+            species="sapphire",
+            cut="oval",
+            center_length_mm=8.0,
+            center_width_mm=6.0,
+            metal_material="platinum",
+            setting_style="prong_4",
+            main_stone_count=1,
+            main_stone_position="center",
+            accent_species="diamond",
+            accent_cut="round_brilliant",
+            accent_count=2,
+        )
+
+        spec, corrections = complete_design(read, "sapphire with diamond sides")
+
+        assert _valid(spec)
+        assert spec.template == "three_stone_prong"
+        assert spec.stone.count == 1
+        assert spec.stone.species == "sapphire"
+        assert len(spec.side_stones) == 1
+        accents = spec.side_stones[0]
+        assert accents.count == 2
+        assert accents.position == "side"
+        assert accents.species == "diamond"
+        assert accents.cut == "round_brilliant"
+        assert accents.dimensions_mm.width < spec.stone.dimensions_mm.width
+        assert sum(
+            stone.count for stone in (spec.stone, *spec.side_stones)
+        ) == 3
+        assert any("proportional dimensions are draft estimates" in item
+                   for item in corrections)
 
     def test_halo_count_fits_the_centre(self):
         read = DesignRead(halo=True, species="diamond", cut="round",

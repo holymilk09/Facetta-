@@ -22,6 +22,8 @@ DISCLAIMER_TEXT = ("Design preview — for reference; the finished handcrafted "
                    "piece may vary slightly.")
 
 _FONT_CANDIDATES = (
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/Library/Fonts/Arial.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/dejavu/DejaVuSans.ttf",
 )

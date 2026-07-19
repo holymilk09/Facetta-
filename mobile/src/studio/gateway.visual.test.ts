@@ -92,6 +92,118 @@ const baseClient = () => ({
   getFactoryPack: async () => { throw new Error('unexpected'); },
 });
 
+test('forwards family organization metadata without creating a Studio job', async () => {
+  const methods: string[] = [];
+  let jobStarts = 0;
+  const client = {
+    ...baseClient(),
+    createStudioJob: async () => {
+      jobStarts += 1;
+      throw new Error('Favorites must not create Studio jobs');
+    },
+    favoriteDesignFamily: async (familyId: string, owner: string) => {
+      assert.equal(familyId, 'family_ring');
+      assert.equal(owner, 'designer_1');
+      methods.push('favorite');
+      return ok({ status: 'updated' as const }, 204);
+    },
+    unfavoriteDesignFamily: async (familyId: string, owner: string) => {
+      assert.equal(familyId, 'family_ring');
+      assert.equal(owner, 'designer_1');
+      methods.push('unfavorite');
+      return ok({ status: 'updated' as const }, 204);
+    },
+    updateDesignFamilyTags: async (familyId: string, owner: string, tags: string[]) => {
+      assert.equal(familyId, 'family_ring');
+      assert.equal(owner, 'designer_1');
+      assert.deepEqual(tags, ['bridal', 'sapphire']);
+      methods.push('tags');
+      return ok({ family_id: familyId, tags }, 200);
+    },
+  };
+  const gateway = createStudioGateway(client as any);
+
+  assert.equal((await gateway.favoriteDesignFamily('family_ring', 'designer_1')).error, null);
+  assert.equal((await gateway.unfavoriteDesignFamily('family_ring', 'designer_1')).error, null);
+  assert.equal((await gateway.updateDesignFamilyTags(
+    'family_ring', 'designer_1', ['bridal', 'sapphire'],
+  )).error, null);
+  assert.deepEqual(methods, ['favorite', 'unfavorite', 'tags']);
+  assert.equal(jobStarts, 0);
+});
+
+test('forwards the explicit Collection owner without starting a Studio job', async () => {
+  let forwardedRequest: unknown = null;
+  let jobStarts = 0;
+  const client = {
+    ...baseClient(),
+    createStudioJob: async () => {
+      jobStarts += 1;
+      throw new Error('Collection organization must not create Studio jobs');
+    },
+    createWorkspaceCollection: async (request: unknown) => {
+      forwardedRequest = request;
+      return ok({
+        id: 'collection_campaign',
+        name: 'Holiday campaign',
+        template: 'campaign' as const,
+        metadata: {},
+        archived_at: null,
+        created_at: '2026-07-12T00:00:00Z',
+        updated_at: '2026-07-12T00:00:00Z',
+        family_count: 0,
+      }, 201);
+    },
+  };
+  const gateway = createStudioGateway(client as any);
+
+  const result = await gateway.createWorkspaceCollection({
+    owner: 'designer_1',
+    name: 'Holiday campaign',
+    template: 'campaign',
+  });
+
+  assert.equal(result.error, null);
+  assert.deepEqual(forwardedRequest, {
+    owner: 'designer_1',
+    name: 'Holiday campaign',
+    template: 'campaign',
+  });
+  assert.equal(jobStarts, 0);
+});
+
+test('forwards one owner-scoped aggregate Collection membership read without Studio jobs', async () => {
+  const owners: string[] = [];
+  let jobStarts = 0;
+  const client = {
+    ...baseClient(),
+    createStudioJob: async () => {
+      jobStarts += 1;
+      throw new Error('Collection reads must not create Studio jobs');
+    },
+    listWorkspaceCollectionMemberships: async (owner: string) => {
+      owners.push(owner);
+      return ok({
+        family_collection_ids: {
+          family_ring: ['collection_client'],
+          family_unfiled: [],
+        },
+      });
+    },
+  };
+  const gateway = createStudioGateway(client as any);
+
+  const result = await gateway.listWorkspaceCollectionMemberships('designer_1');
+
+  assert.equal(result.error, null);
+  assert.deepEqual(result.data?.family_collection_ids, {
+    family_ring: ['collection_client'],
+    family_unfiled: [],
+  });
+  assert.deepEqual(owners, ['designer_1']);
+  assert.equal(jobStarts, 0);
+});
+
 test('pre-spec visual refinement stays temporary until Apply appends an image-only revision', async () => {
   let accepted = 0;
   const client = {
@@ -380,5 +492,58 @@ test('marked-region refinement can reference server-validated markup instead of 
     instruction: 'cool the marked stone only', scope: 'marked_region',
     markup_asset_id: 'markup_asset_1',
     studio_job_id: 'job_visual',
+  });
+});
+
+test('keeps two local text edits ordered under one global preview instruction', async () => {
+  let received: any = null;
+  const client = {
+    ...baseClient(),
+    createVisualPreview: async (_projectId: string, request: unknown) => {
+      received = request;
+      return ok({
+        project_id: 'project_visual', source_asset_id: 'asset_source',
+        image_run_id: 'run_multi_markup',
+        candidate: {
+          candidate_id: 'candidate_multi_markup',
+          preview_url: 'https://facetta.test/multi-markup.png',
+          save_as_variation_url: 'https://facetta.test/save-multi-markup',
+          verdict: 'pass' as const, qa: quality(),
+        },
+      }, 201);
+    },
+  };
+  const gateway = createStudioGateway(client as any);
+  const result = await gateway.previewVisualRefine({
+    projectId: 'project_visual', sourceAssetId: 'asset_source',
+    createdBy: 'designer_1',
+    instruction: 'Keep the ring identity and camera unchanged.',
+    scope: 'marked_region', markupAssetId: 'markup_asset_multi',
+    annotations: [
+      {
+        region_description: ' left side diamond ',
+        change_instruction: ' Make this diamond yellow ',
+      },
+      {
+        region_description: ' right side diamond ',
+        change_instruction: ' Make this diamond blue ',
+      },
+    ],
+  });
+
+  assert.equal(result.error, null);
+  assert.equal(result.data?.candidate.temporary, true);
+  assert.deepEqual(result.data?.annotations, [
+    { region_description: 'left side diamond', change_instruction: 'Make this diamond yellow' },
+    { region_description: 'right side diamond', change_instruction: 'Make this diamond blue' },
+  ]);
+  assert.deepEqual(received, {
+    created_by: 'designer_1', expected_active_asset_id: 'asset_source',
+    instruction: 'Keep the ring identity and camera unchanged.', scope: 'marked_region',
+    markup_asset_id: 'markup_asset_multi', studio_job_id: 'job_visual',
+    annotations: [
+      { region_description: 'left side diamond', change_instruction: 'Make this diamond yellow' },
+      { region_description: 'right side diamond', change_instruction: 'Make this diamond blue' },
+    ],
   });
 });

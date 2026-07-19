@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import time
 from collections.abc import Sequence
 
@@ -43,7 +44,8 @@ from facetta.image_agent.providers import (
     ROUTE_METADATA,
     ImageProvider,
     RoutedImageProvider,
-    available_fallback_route,
+    available_configured_route,
+    configured_fallback_provider,
 )
 from facetta.image_agent.quality import RingQualityEvaluator
 
@@ -154,6 +156,7 @@ class JewelryImageAgent:
         *,
         source_image: bytes | None = None,
         quality_source_image: bytes | None = None,
+        camera_reference_image: bytes | None = None,
         mask_bytes: bytes | None = None,
     ) -> ImageAgentResult:
         if mask_bytes is None and plan.mask_hash is None:
@@ -167,7 +170,12 @@ class JewelryImageAgent:
                     evidence=localization.evidence,
                 )
         self._verify_inputs(
-            plan, source_image, quality_source_image, mask_bytes)
+            plan,
+            source_image,
+            quality_source_image,
+            camera_reference_image,
+            mask_bytes,
+        )
         fidelity_source = (
             quality_source_image
             if quality_source_image is not None
@@ -208,30 +216,34 @@ class JewelryImageAgent:
         attempts: list[ImageAttemptSummary] = []
         prior_report: ImageQualityReport | None = None
         prior_provider_error: ProviderCallError | None = None
+        forced_fallback_route: ImageRoute | None = None
 
         for number in range(1, 4):
-            route = (
-                route_for_attempt(plan, number)
-                if self.attempt_routes is None
-                else (
-                    self.attempt_routes[number - 1]
-                    if number <= len(self.attempt_routes)
-                    else None
+            fast_fallback_attempt = forced_fallback_route is not None
+            if forced_fallback_route is not None:
+                route = forced_fallback_route
+                forced_fallback_route = None
+            else:
+                route = (
+                    route_for_attempt(plan, number)
+                    if self.attempt_routes is None
+                    else (
+                        self.attempt_routes[number - 1]
+                        if number <= len(self.attempt_routes)
+                        else None
+                    )
                 )
-            )
             if route is None:
                 break
-            if number == 3 and self.use_available_fallback:
-                route = available_fallback_route(route)
+            if self.use_available_fallback:
+                route = available_configured_route(route)
             fallback_reason = None
             is_provider_fallback = (
                 number > 1
                 and attempts
                 and ROUTE_METADATA[route][0] != attempts[-1].provider
             )
-            if number == 3 and (
-                self.attempt_routes is None or is_provider_fallback
-            ):
+            if (number == 3 or fast_fallback_attempt) and is_provider_fallback:
                 if prior_provider_error is not None and prior_report is not None:
                     fallback_reason = "grok_provider_failed_after_qa_failure"
                 elif prior_provider_error is not None:
@@ -273,12 +285,37 @@ class JewelryImageAgent:
             cache_key = attempt_cache_key(plan, route, prompt, model)
             started = time.perf_counter()
             try:
+                provider_kwargs = {
+                    "source_image": source_image,
+                    "mask_bytes": mask_bytes,
+                }
+                if camera_reference_image is not None:
+                    try:
+                        parameters = inspect.signature(
+                            self.provider.execute
+                        ).parameters.values()
+                    except (TypeError, ValueError):
+                        parameters = ()
+                    supports_camera_reference = any(
+                        parameter.name == "camera_reference_image"
+                        or parameter.kind is inspect.Parameter.VAR_KEYWORD
+                        for parameter in parameters
+                    )
+                    if not supports_camera_reference:
+                        raise ProviderCallError(
+                            "configured image provider cannot accept the ordered "
+                            "camera reference",
+                            code="camera_reference_provider_unsupported",
+                            retryable=False,
+                        )
+                    provider_kwargs["camera_reference_image"] = (
+                        camera_reference_image
+                    )
                 output = self.provider.execute(
                     plan,
                     route,
                     prompt,
-                    source_image=source_image,
-                    mask_bytes=mask_bytes,
+                    **provider_kwargs,
                 )
                 if not output.image_bytes:
                     raise ProviderCallError("provider returned an empty image")
@@ -304,6 +341,25 @@ class JewelryImageAgent:
                 ))
                 prior_provider_error = exc
                 if not exc.retryable:
+                    nominal_fallback = route_for_attempt(plan, 3)
+                    resolved_fallback = (
+                        available_configured_route(nominal_fallback)
+                        if nominal_fallback is not None
+                        else None
+                    )
+                    if (
+                        exc.fallback_eligible
+                        and self.use_available_fallback
+                        and plan.fallback_allowed
+                        and configured_fallback_provider() is not None
+                        and not fast_fallback_attempt
+                        and resolved_fallback is not None
+                        and ROUTE_METADATA[resolved_fallback][0] != provider_name
+                    ):
+                        forced_fallback_route = resolved_fallback
+                        continue
+                    break
+                if fast_fallback_attempt:
                     break
                 continue
             except Exception as exc:
@@ -413,7 +469,11 @@ class JewelryImageAgent:
                     and check.code in RETRYABLE_VISUAL_WARNING_CODES
                     for check in report.checks
                 )
-                if retryable_visual_warning and number < 3:
+                if (
+                    retryable_visual_warning
+                    and number < 3
+                    and not fast_fallback_attempt
+                ):
                     continue
                 return self._result(
                     plan,
@@ -422,6 +482,8 @@ class JewelryImageAgent:
                     attempts,
                     accepted=False,
                 )
+            if fast_fallback_attempt:
+                break
 
         # Once a candidate has failed QA, a later unavailable fallback does not
         # rewrite the outcome as a provider-only failure. Keep the terminal
@@ -447,6 +509,7 @@ class JewelryImageAgent:
         plan: ImageAgentPlan,
         source_image: bytes | None,
         quality_source_image: bytes | None,
+        camera_reference_image: bytes | None,
         mask_bytes: bytes | None,
     ) -> None:
         if plan.source_hash != (_sha256(source_image) if source_image else None):
@@ -458,6 +521,14 @@ class JewelryImageAgent:
         ):
             raise ImagePlanValidationError(
                 "quality source image does not match the content hash in the plan",
+                plan=plan,
+            )
+        if plan.camera_reference_hash != (
+            _sha256(camera_reference_image)
+            if camera_reference_image else None
+        ):
+            raise ImagePlanValidationError(
+                "camera reference image does not match the content hash in the plan",
                 plan=plan,
             )
         if plan.mask_hash != (_sha256(mask_bytes) if mask_bytes else None):

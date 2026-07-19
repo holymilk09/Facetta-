@@ -5,6 +5,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { AuthenticatedImage as Image } from '../AuthenticatedImage';
@@ -18,6 +19,8 @@ import type {
   ProjectDetail,
   StudioHistoryRevision,
   StudioProjectHistory,
+  WorkspaceCollection,
+  WorkspaceCollectionTemplate,
 } from '../trusted/types';
 import { designerErrorMessage } from './designerErrorMessage';
 import type { StudioGateway } from './gateway';
@@ -28,9 +31,20 @@ import type { StudioDestinationContext, StudioDestinationId } from './destinatio
 export type StudioCollectionsApi = Pick<StudioGateway,
   | 'getDesignFamily'
   | 'listDesignFamilies'
+  | 'favoriteDesignFamily'
+  | 'unfavoriteDesignFamily'
+  | 'updateDesignFamilyTags'
   | 'getStudioProjectHistory'
   | 'restoreStudioRevision'
   | 'assetImageUrl'
+  | 'listWorkspaceCollections'
+  | 'listWorkspaceCollectionMemberships'
+  | 'createWorkspaceCollection'
+  | 'updateWorkspaceCollection'
+  | 'deleteWorkspaceCollection'
+  | 'listDesignFamilyCollections'
+  | 'addDesignFamilyToCollection'
+  | 'removeDesignFamilyFromCollection'
 >;
 
 export interface StudioCollectionsWorkspaceProps {
@@ -63,6 +77,27 @@ interface WorkspaceData {
   family: DesignFamilyDetail | null;
 }
 
+type FamilyIndexFilter = 'all' | 'recent' | 'favorites' | 'unfiled' | string;
+
+const COLLECTION_TEMPLATES: readonly {
+  id: WorkspaceCollectionTemplate;
+  label: string;
+}[] = [
+  { id: 'generic', label: 'General' },
+  { id: 'client', label: 'Client' },
+  { id: 'order', label: 'Order' },
+  { id: 'project', label: 'Project' },
+  { id: 'campaign', label: 'Campaign' },
+  { id: 'season', label: 'Season' },
+  { id: 'jewelry_line', label: 'Jewelry line' },
+  { id: 'personal_study', label: 'Personal study' },
+  { id: 'custom', label: 'Custom' },
+];
+
+function familyTags(family: DesignFamilyDetail): string[] {
+  return family.tags;
+}
+
 function variationName(variation: DesignFamilyVariation): string {
   return variation.variation_label?.trim()
     || `Variation ${variation.variation_index}`;
@@ -70,6 +105,17 @@ function variationName(variation: DesignFamilyVariation): string {
 
 function variationDisplayName(variation: DesignFamilyVariation): string {
   return `Variation ${variation.variation_index} · ${variationName(variation)}`;
+}
+
+function collectionContext(collection: WorkspaceCollection): string | null {
+  const clientName = collection.metadata.client_name;
+  if (collection.template === 'client'
+    && typeof clientName === 'string'
+    && clientName.trim().length > 0) {
+    return `Client · ${clientName.trim()}`;
+  }
+  return COLLECTION_TEMPLATES.find((template) => template.id === collection.template)?.label
+    ?? null;
 }
 
 /**
@@ -145,6 +191,8 @@ const SAVED_OUTPUT_CAPABILITIES = new Set([
   'FACTORY_DRAWING',
 ]);
 
+const COLLECTIONS_DESTINATION_EXCLUSIONS = ['library'] as const;
+
 const savedOutputLabel = (capability: string): string => ({
   CLIENT_BEAUTY_RENDER: 'Client beauty render',
   CLIENT_PRODUCT_PHOTO: 'Client product photo',
@@ -214,6 +262,23 @@ export function StudioCollectionsWorkspace({
   const [compareAssetIds, setCompareAssetIds] = useState<string[]>([]);
   const [restoringAssetId, setRestoringAssetId] = useState<string | null>(null);
   const [families, setFamilies] = useState<DesignFamilyDetail[] | null>(null);
+  const [collections, setCollections] = useState<WorkspaceCollection[]>([]);
+  const [familyCollectionIds, setFamilyCollectionIds] = useState<Record<string, string[]> | null>(null);
+  const [organizationError, setOrganizationError] = useState<string | null>(null);
+  const [selectedFilter, setSelectedFilter] = useState<FamilyIndexFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [showCreateCollection, setShowCreateCollection] = useState(false);
+  const [collectionName, setCollectionName] = useState('');
+  const [collectionTemplate, setCollectionTemplate] = useState<WorkspaceCollectionTemplate>('project');
+  const [collectionClientName, setCollectionClientName] = useState('');
+  const [collectionMutation, setCollectionMutation] = useState<string | null>(null);
+  const [favoriteMutationFamilyId, setFavoriteMutationFamilyId] = useState<string | null>(null);
+  const [tagEditingFamilyId, setTagEditingFamilyId] = useState<string | null>(null);
+  const [tagDraft, setTagDraft] = useState('');
+  const [tagMutationFamilyId, setTagMutationFamilyId] = useState<string | null>(null);
+  const [collectionNotice, setCollectionNotice] = useState<string | null>(null);
+  const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null);
   const [viewingAllFamilies, setViewingAllFamilies] = useState(false);
   const [exportingAssetId, setExportingAssetId] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -222,14 +287,40 @@ export function StudioCollectionsWorkspace({
   const loadRequestId = useRef(0);
 
   const loadFamilyIndex = useCallback(async (requestId: number): Promise<void> => {
-    const result = await api.listDesignFamilies(createdBy);
+    const [result, collectionResult, membershipIndexResult] = await Promise.all([
+      api.listDesignFamilies(createdBy),
+      api.listWorkspaceCollections({ owner: createdBy }),
+      api.listWorkspaceCollectionMemberships(createdBy),
+    ]);
     if (loadRequestId.current !== requestId) return;
-    setLoading(false);
     if (result.error !== null) {
       setError(designerErrorMessage(result.error, 'collections'));
+      setLoading(false);
       return;
     }
     setFamilies(result.data.families);
+    if (collectionResult.error !== null || membershipIndexResult.error !== null) {
+      setOrganizationError('Collection organization is temporarily unavailable. All Designs is still safe to browse.');
+      setLoading(false);
+      return;
+    }
+    setCollections(collectionResult.data.collections);
+    const familyIds = new Set(result.data.families.map((familyItem) => familyItem.family_id));
+    const activeCollectionIds = new Set(collectionResult.data.collections.map((collection) => collection.id));
+    const membershipIndex = membershipIndexResult.data.family_collection_ids;
+    const indexedFamilyIds = Object.keys(membershipIndex);
+    const indexMatchesFamilies = indexedFamilyIds.length === familyIds.size
+      && indexedFamilyIds.every((familyId) => familyIds.has(familyId));
+    const membershipsReferenceActiveCollections = Object.values(membershipIndex).every((collectionIds) => (
+      collectionIds.every((collectionId) => activeCollectionIds.has(collectionId))
+    ));
+    if (!indexMatchesFamilies || !membershipsReferenceActiveCollections) {
+      setOrganizationError('Collection memberships could not be verified. No design history was changed.');
+      setLoading(false);
+      return;
+    }
+    setFamilyCollectionIds(membershipIndex);
+    setLoading(false);
   }, [api, createdBy]);
 
   const loadSelectedProjectHistory = useCallback(async (
@@ -270,8 +361,26 @@ export function StudioCollectionsWorkspace({
       family = familyResult.data;
     }
     setData({ history: historyResult.data, family });
+    const collectionResult = await api.listWorkspaceCollections({ owner: createdBy });
+    if (loadRequestId.current !== requestId) return;
+    if (collectionResult.error !== null) {
+      setOrganizationError('Collection organization is temporarily unavailable. This design history is unchanged.');
+    } else {
+      setCollections(collectionResult.data.collections);
+      if (historyResult.data.family_id !== null) {
+        const membershipResult = await api.listDesignFamilyCollections(historyResult.data.family_id);
+        if (loadRequestId.current !== requestId) return;
+        if (membershipResult.error !== null) {
+          setOrganizationError('This family’s Collection memberships could not be verified.');
+        } else {
+          setFamilyCollectionIds({
+            [historyResult.data.family_id]: membershipResult.data.collections.map((collection) => collection.id),
+          });
+        }
+      }
+    }
     setLoading(false);
-  }, [api]);
+  }, [api, createdBy]);
 
   const loadWorkspace = useCallback((): void => {
     const requestId = loadRequestId.current + 1;
@@ -284,6 +393,11 @@ export function StudioCollectionsWorkspace({
     setShowPresentationImages(false);
     setShowRevisionHistory(false);
     setFamilies(null);
+    setCollections([]);
+    setFamilyCollectionIds(null);
+    setOrganizationError(null);
+    setCollectionNotice(null);
+    setDeleteConfirmationId(null);
     setLoading(true);
     if (project === null || viewingAllFamilies) {
       void loadFamilyIndex(requestId);
@@ -383,6 +497,213 @@ export function StudioCollectionsWorkspace({
     onProjectChanged(result.data.project);
   };
 
+  const createCollection = async (): Promise<void> => {
+    const name = collectionName.trim();
+    if (name.length === 0 || collectionMutation !== null) return;
+    setCollectionMutation('create');
+    setOrganizationError(null);
+    const result = await api.createWorkspaceCollection({
+      owner: createdBy,
+      name,
+      template: collectionTemplate,
+      ...(collectionTemplate === 'client' && collectionClientName.trim().length > 0
+        ? { metadata: { client_name: collectionClientName.trim() } }
+        : {}),
+    });
+    setCollectionMutation(null);
+    if (result.error !== null) {
+      setOrganizationError(designerErrorMessage(result.error, 'collections'));
+      return;
+    }
+    setCollections((current) => [...current, result.data].sort((left, right) => (
+      left.name.localeCompare(right.name)
+    )));
+    setCollectionName('');
+    setCollectionClientName('');
+    setShowCreateCollection(false);
+    setSelectedFilter('all');
+    setCollectionNotice(`${result.data.name} is ready. Add families when you choose.`);
+  };
+
+  const archiveCollection = async (collection: WorkspaceCollection): Promise<void> => {
+    if (collectionMutation !== null) return;
+    setCollectionMutation(collection.id);
+    setOrganizationError(null);
+    const result = await api.updateWorkspaceCollection(collection.id, { archived: true });
+    setCollectionMutation(null);
+    if (result.error !== null) {
+      setOrganizationError(designerErrorMessage(result.error, 'collections'));
+      return;
+    }
+    setCollections((current) => current.filter((item) => item.id !== collection.id));
+    setFamilyCollectionIds((current) => current === null ? null : Object.fromEntries(
+      Object.entries(current).map(([familyId, ids]) => (
+        [familyId, ids.filter((id) => id !== collection.id)]
+      )),
+    ));
+    setSelectedFilter('all');
+    setCollectionNotice(`${collection.name} was archived. Its design families and history are unchanged.`);
+  };
+
+  const deleteCollection = async (collection: WorkspaceCollection): Promise<void> => {
+    if (deleteConfirmationId !== collection.id) {
+      setDeleteConfirmationId(collection.id);
+      return;
+    }
+    if (collectionMutation !== null) return;
+    setCollectionMutation(collection.id);
+    setOrganizationError(null);
+    const result = await api.deleteWorkspaceCollection(collection.id);
+    setCollectionMutation(null);
+    if (result.error !== null) {
+      setOrganizationError(designerErrorMessage(result.error, 'collections'));
+      return;
+    }
+    setCollections((current) => current.filter((item) => item.id !== collection.id));
+    setFamilyCollectionIds((current) => current === null ? null : Object.fromEntries(
+      Object.entries(current).map(([familyId, ids]) => (
+        [familyId, ids.filter((id) => id !== collection.id)]
+      )),
+    ));
+    setDeleteConfirmationId(null);
+    setSelectedFilter('all');
+    setCollectionNotice(`${collection.name} was deleted. Only its memberships were removed.`);
+  };
+
+  const toggleFamilyCollection = async (
+    familyId: string,
+    collection: WorkspaceCollection,
+  ): Promise<void> => {
+    if (collectionMutation !== null || familyCollectionIds === null) return;
+    const currentIds = familyCollectionIds[familyId] ?? [];
+    const removing = currentIds.includes(collection.id);
+    setCollectionMutation(collection.id);
+    setOrganizationError(null);
+    const result = removing
+      ? await api.removeDesignFamilyFromCollection(familyId, collection.id)
+      : await api.addDesignFamilyToCollection(familyId, collection.id);
+    setCollectionMutation(null);
+    if (result.error !== null) {
+      setOrganizationError(designerErrorMessage(result.error, 'collections'));
+      return;
+    }
+    const nextIds = removing
+      ? currentIds.filter((id) => id !== collection.id)
+      : [...currentIds, collection.id];
+    setFamilyCollectionIds((current) => ({ ...(current ?? {}), [familyId]: nextIds }));
+    setCollections((current) => current.map((item) => item.id === collection.id ? {
+      ...item,
+      family_count: Math.max(0, item.family_count + (removing ? -1 : 1)),
+    } : item));
+    setCollectionNotice(removing
+      ? `Removed this family from ${collection.name}. Its revisions are unchanged.`
+      : `Added this family to ${collection.name}.`);
+  };
+
+  const toggleFamilyFavorite = async (familyItem: DesignFamilyDetail): Promise<void> => {
+    if (favoriteMutationFamilyId !== null) return;
+    const nextFavorite = !familyItem.is_favorite;
+    setFavoriteMutationFamilyId(familyItem.family_id);
+    setOrganizationError(null);
+    const result = nextFavorite
+      ? await api.favoriteDesignFamily(familyItem.family_id, createdBy)
+      : await api.unfavoriteDesignFamily(familyItem.family_id, createdBy);
+    setFavoriteMutationFamilyId(null);
+    if (result.error !== null) {
+      setOrganizationError(designerErrorMessage(result.error, 'collections'));
+      return;
+    }
+    setFamilies((current) => current?.map((candidate) => (
+      candidate.family_id === familyItem.family_id
+        ? {
+            ...candidate,
+            is_favorite: nextFavorite,
+            favorited_at: nextFavorite ? new Date().toISOString() : null,
+          }
+        : candidate
+    )) ?? null);
+    setCollectionNotice(nextFavorite
+      ? `${familyItem.title} was added to Favorites.`
+      : `${familyItem.title} was removed from Favorites.`);
+  };
+
+  const saveFamilyTags = async (familyItem: DesignFamilyDetail): Promise<void> => {
+    if (tagMutationFamilyId !== null) return;
+    const requestedTags = tagDraft.split(',').map((tag) => tag.trim()).filter(Boolean);
+    setTagMutationFamilyId(familyItem.family_id);
+    setOrganizationError(null);
+    const result = await api.updateDesignFamilyTags(
+      familyItem.family_id,
+      createdBy,
+      requestedTags,
+    );
+    setTagMutationFamilyId(null);
+    if (result.error !== null) {
+      setOrganizationError(designerErrorMessage(result.error, 'collections'));
+      return;
+    }
+    if (result.data.family_id !== familyItem.family_id) {
+      setOrganizationError('Facetta could not verify which family was tagged. No local result was applied.');
+      return;
+    }
+    setFamilies((current) => current?.map((candidate) => (
+      candidate.family_id === familyItem.family_id
+        ? { ...candidate, tags: result.data.tags }
+        : candidate
+    )) ?? null);
+    setTagEditingFamilyId(null);
+    setTagDraft('');
+    setCollectionNotice(result.data.tags.length === 0
+      ? `Cleared tags from ${familyItem.title}. Its design history is unchanged.`
+      : `Saved tags for ${familyItem.title}.`);
+  };
+
+  const allTags = useMemo(() => [...new Set((families ?? []).flatMap(familyTags))]
+    .sort((left, right) => left.localeCompare(right)), [families]);
+
+  const collectionsById = useMemo(() => new Map(
+    collections.map((collection) => [collection.id, collection] as const),
+  ), [collections]);
+
+  const visibleFamilies = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    const recentFamilies = [...(families ?? [])].sort((left, right) => {
+      const activityOrder = right.updated_at.localeCompare(left.updated_at);
+      return activityOrder !== 0 ? activityOrder : left.family_id.localeCompare(right.family_id);
+    }).slice(0, 12);
+    const candidates = selectedFilter === 'recent' ? recentFamilies : (families ?? []);
+    return candidates.filter((familyItem) => {
+      const tags = familyTags(familyItem);
+      const memberships = familyCollectionIds?.[familyItem.family_id];
+      const organizationTerms = (memberships ?? []).flatMap((collectionId) => {
+        const collection = collectionsById.get(collectionId);
+        if (collection === undefined) return [];
+        return [
+          collection.name,
+          collectionContext(collection) ?? '',
+          ...Object.values(collection.metadata).filter((value): value is string => (
+            typeof value === 'string'
+          )),
+        ];
+      });
+      const matchesQuery = normalizedQuery.length === 0 || [
+        familyItem.title,
+        ...familyItem.variations.map((variation) => variation.title),
+        ...tags,
+        ...organizationTerms,
+      ].some((value) => value.toLowerCase().includes(normalizedQuery));
+      const matchesTag = selectedTag === null || tags.includes(selectedTag);
+      const matchesFilter = selectedFilter === 'all' || selectedFilter === 'recent'
+        ? true
+        : selectedFilter === 'favorites'
+          ? familyItem.is_favorite
+          : selectedFilter === 'unfiled'
+            ? memberships?.length === 0
+            : memberships?.includes(selectedFilter) === true;
+      return matchesQuery && matchesTag && matchesFilter;
+    });
+  }, [collectionsById, families, familyCollectionIds, searchQuery, selectedFilter, selectedTag]);
+
   if (project === null || viewingAllFamilies) {
     if (loading) {
       return (
@@ -405,8 +726,12 @@ export function StudioCollectionsWorkspace({
         )}
         <Text style={styles.eyebrow}>COLLECTIONS</Text>
         <Text style={styles.familyTitle}>Your design families</Text>
-        <Text style={styles.sectionCopy}>Choose a direction to open its variations and saved revision history.</Text>
+        <Text style={styles.sectionCopy}>
+          Design families stay intact. Collections only organize them and never change their revisions.
+        </Text>
         {error !== null && <Notice kind="error" text={error} />}
+        {organizationError !== null && <Notice kind="error" text={organizationError} />}
+        {collectionNotice !== null && <Notice kind="ok" text={collectionNotice} />}
         {error !== null ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>Collections are temporarily unavailable</Text>
@@ -424,31 +749,247 @@ export function StudioCollectionsWorkspace({
             </View>
           </View>
         ) : (
-          <View style={styles.variationGrid}>
-            {families?.map((familyItem) => {
+          <>
+            <View style={styles.organizationPanel}>
+              <TextInput
+                accessibilityLabel="Search designs"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Search designs and tags"
+                placeholderTextColor={theme.faint}
+                style={styles.searchInput}
+              />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+                {([
+                  ['all', 'All Designs'],
+                  ['recent', 'Recent'],
+                  ['favorites', 'Favorites'],
+                  ['unfiled', 'Unfiled'],
+                ] as const).map(([id, label]) => (
+                  <Pressable
+                    key={id}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: selectedFilter === id }}
+                    disabled={id === 'unfiled' && familyCollectionIds === null}
+                    onPress={() => setSelectedFilter(id)}
+                    style={[styles.filterChip, selectedFilter === id && styles.filterChipSelected]}>
+                    <Text style={selectedFilter === id ? styles.filterChipTextSelected : styles.filterChipText}>
+                      {label}
+                    </Text>
+                  </Pressable>
+                ))}
+                {collections.map((collection) => (
+                  <Pressable
+                    key={collection.id}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: selectedFilter === collection.id }}
+                    disabled={familyCollectionIds === null}
+                    onPress={() => {
+                      setSelectedFilter(collection.id);
+                      setDeleteConfirmationId(null);
+                    }}
+                    style={[styles.filterChip, selectedFilter === collection.id && styles.filterChipSelected]}>
+                    <Text style={selectedFilter === collection.id ? styles.filterChipTextSelected : styles.filterChipText}>
+                      {collection.name} · {collection.family_count}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+              {allTags.length > 0 && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagRow}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: selectedTag === null }}
+                    onPress={() => setSelectedTag(null)}
+                    style={[styles.tagChip, selectedTag === null && styles.tagChipSelected]}>
+                    <Text style={styles.tagText}>All tags</Text>
+                  </Pressable>
+                  {allTags.map((tag) => (
+                    <Pressable
+                      key={tag}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: selectedTag === tag }}
+                      onPress={() => setSelectedTag(tag)}
+                      style={[styles.tagChip, selectedTag === tag && styles.tagChipSelected]}>
+                      <Text style={styles.tagText}>#{tag}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              )}
+              <View style={styles.collectionActionsRow}>
+                <Button
+                  title={showCreateCollection ? 'Cancel new Collection' : 'New Collection'}
+                  kind="ghost"
+                  onPress={() => setShowCreateCollection((showing) => !showing)}
+                />
+              </View>
+              {showCreateCollection && (
+                <View style={styles.collectionEditor}>
+                  <Text style={styles.branchTitle}>Create a flat Collection</Text>
+                  <Text style={styles.meta}>Choose a starting label. You can use it for any purpose.</Text>
+                  <View style={styles.templateRow}>
+                    {COLLECTION_TEMPLATES.map((template) => (
+                      <Pressable
+                        key={template.id}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: collectionTemplate === template.id }}
+                        onPress={() => {
+                          setCollectionTemplate(template.id);
+                          if (template.id !== 'client') setCollectionClientName('');
+                        }}
+                        style={[styles.tagChip, collectionTemplate === template.id && styles.tagChipSelected]}>
+                        <Text style={styles.tagText}>{template.label}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <TextInput
+                    accessibilityLabel="Collection name"
+                    value={collectionName}
+                    onChangeText={setCollectionName}
+                    placeholder="e.g. Lin engagement ring"
+                    placeholderTextColor={theme.faint}
+                    style={styles.searchInput}
+                  />
+                  {collectionTemplate === 'client' && (
+                    <TextInput
+                      accessibilityLabel="Client name (optional)"
+                      value={collectionClientName}
+                      onChangeText={setCollectionClientName}
+                      placeholder="Client name (optional)"
+                      placeholderTextColor={theme.faint}
+                      style={styles.searchInput}
+                    />
+                  )}
+                  <View style={styles.collectionActionsRow}>
+                    <Button
+                      title={collectionMutation === 'create' ? 'Creating…' : 'Create Collection'}
+                      disabled={collectionName.trim().length === 0 || collectionMutation !== null}
+                      onPress={() => { void createCollection(); }}
+                    />
+                  </View>
+                </View>
+              )}
+              {collections.map((collection) => collection.id === selectedFilter ? (
+                <View key={collection.id} style={styles.collectionSafetyCard}>
+                  <Text style={styles.branchTitle}>{collection.name}</Text>
+                  {collectionContext(collection) !== null && (
+                    <Text style={styles.meta}>{collectionContext(collection)}</Text>
+                  )}
+                  <Text style={styles.meta}>
+                    Archiving or deleting this Collection removes memberships only. Designs and revision history remain.
+                  </Text>
+                  <View style={styles.collectionActionsRow}>
+                    <Button
+                      title={collectionMutation === collection.id ? 'Archiving…' : 'Archive Collection'}
+                      kind="ghost"
+                      disabled={collectionMutation !== null}
+                      onPress={() => { void archiveCollection(collection); }}
+                    />
+                    <Button
+                      title={deleteConfirmationId === collection.id
+                        ? 'Confirm delete Collection'
+                        : 'Delete Collection'}
+                      kind="ghost"
+                      disabled={collectionMutation !== null}
+                      onPress={() => { void deleteCollection(collection); }}
+                    />
+                  </View>
+                </View>
+              ) : null)}
+            </View>
+            {visibleFamilies.length === 0 ? (
+              <View style={styles.inlineEmpty}>
+                <Text style={styles.emptyTitle}>No matching design families</Text>
+                <Text style={styles.emptyCopy}>Try All Designs, clear the search, or choose another tag.</Text>
+              </View>
+            ) : (
+              <View style={styles.variationGrid}>
+            {visibleFamilies.map((familyItem) => {
               const representative = mostRecentlyActiveVariation(familyItem.variations);
               const cover = representative?.cover_asset_id ?? null;
               return (
-                <Pressable
-                  key={familyItem.family_id}
-                  accessibilityLabel={representative === undefined
-                    ? `Open ${familyItem.title}`
-                    : `Open recently active variation: ${variationName(representative)}`}
-                  disabled={representative === undefined}
-                  onPress={() => representative !== undefined && openFromFamilyIndex(representative.root_id)}
-                  style={styles.variationCard}>
-                  {cover === null ? <View style={[styles.variationCover, styles.coverPlaceholder]} /> : (
-                    <Image source={{ uri: api.assetImageUrl(cover) }} style={styles.variationCover} />
+                <View key={familyItem.family_id} style={styles.variationCard}>
+                  <Pressable
+                    accessibilityLabel={representative === undefined
+                      ? `Open ${familyItem.title}`
+                      : `Open recently active variation: ${variationName(representative)}`}
+                    disabled={representative === undefined}
+                    onPress={() => representative !== undefined && openFromFamilyIndex(representative.root_id)}>
+                    {cover === null ? <View style={[styles.variationCover, styles.coverPlaceholder]} /> : (
+                      <Image source={{ uri: api.assetImageUrl(cover) }} style={styles.variationCover} />
+                    )}
+                    <Text style={styles.variationTitle}>{familyItem.title}</Text>
+                    <Text style={styles.meta}>{familyItem.variations.length} variation{familyItem.variations.length === 1 ? '' : 's'}</Text>
+                    {representative !== undefined && (
+                      <Text style={styles.meta}>Recently active · {variationName(representative)}</Text>
+                    )}
+                  </Pressable>
+                  {familyItem.tags.length > 0 && (
+                    <Text style={styles.familyTags}>
+                      {familyItem.tags.map((tag) => `#${tag}`).join('  ')}
+                    </Text>
                   )}
-                  <Text style={styles.variationTitle}>{familyItem.title}</Text>
-                  <Text style={styles.meta}>{familyItem.variations.length} variation{familyItem.variations.length === 1 ? '' : 's'}</Text>
-                  {representative !== undefined && (
-                    <Text style={styles.meta}>Recently active · {variationName(representative)}</Text>
+                  {tagEditingFamilyId === familyItem.family_id ? (
+                    <View style={styles.familyTagEditor}>
+                      <TextInput
+                        accessibilityLabel={`Tags for ${familyItem.title}`}
+                        value={tagDraft}
+                        onChangeText={setTagDraft}
+                        placeholder="e.g. bridal, sapphire, client review"
+                        placeholderTextColor={theme.faint}
+                        style={styles.searchInput}
+                      />
+                      <Text style={styles.meta}>Separate tags with commas. Saving never changes the design.</Text>
+                      <View style={styles.collectionActionsRow}>
+                        <Button
+                          title={tagMutationFamilyId === familyItem.family_id ? 'Saving…' : 'Save tags'}
+                          disabled={tagMutationFamilyId !== null}
+                          onPress={() => { void saveFamilyTags(familyItem); }}
+                        />
+                        <Button
+                          title="Cancel"
+                          kind="ghost"
+                          disabled={tagMutationFamilyId !== null}
+                          onPress={() => {
+                            setTagEditingFamilyId(null);
+                            setTagDraft('');
+                          }}
+                        />
+                      </View>
+                    </View>
+                  ) : (
+                    <Button
+                      title="Edit tags"
+                      kind="ghost"
+                      disabled={tagMutationFamilyId !== null}
+                      onPress={() => {
+                        setTagEditingFamilyId(familyItem.family_id);
+                        setTagDraft(familyItem.tags.join(', '));
+                      }}
+                    />
                   )}
-                </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`${familyItem.is_favorite ? 'Remove' : 'Add'} ${familyItem.title} ${familyItem.is_favorite ? 'from' : 'to'} Favorites`}
+                    accessibilityState={{
+                      selected: familyItem.is_favorite,
+                      busy: favoriteMutationFamilyId === familyItem.family_id,
+                    }}
+                    disabled={favoriteMutationFamilyId !== null}
+                    onPress={() => { void toggleFamilyFavorite(familyItem); }}
+                    style={[styles.favoriteButton, familyItem.is_favorite && styles.favoriteButtonSelected]}>
+                    <Text style={styles.favoriteButtonText}>
+                      {favoriteMutationFamilyId === familyItem.family_id
+                        ? 'Saving…'
+                        : familyItem.is_favorite ? '★ Favorited' : '☆ Favorite'}
+                    </Text>
+                  </Pressable>
+                </View>
               );
             })}
-          </View>
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
     );
@@ -546,15 +1087,45 @@ export function StudioCollectionsWorkspace({
         </View>
       </View>
 
-      {destinationContext !== undefined && onSelectDestination !== undefined && (
-        <View style={styles.destinationCard}>
-          <StudioDestinationChooser
-            context={destinationContext}
-            description="Choose what to do with this exact saved revision. Its design history will not change."
-            onSelect={onSelectDestination}
-          />
-        </View>
-      )}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Organize this family</Text>
+        <Text style={styles.sectionCopy}>
+          Add this entire Design Family to any number of Collections. Variations and revisions are never moved or copied.
+        </Text>
+        {organizationError !== null && <Notice kind="error" text={organizationError} />}
+        {collectionNotice !== null && <Notice kind="ok" text={collectionNotice} />}
+        {data.history.family_id === null ? (
+          <Text style={styles.meta}>This older design will become organizable after its family migration is available.</Text>
+        ) : familyCollectionIds === null ? (
+          <Text style={styles.meta}>Collection memberships are unavailable right now.</Text>
+        ) : collections.length === 0 ? (
+          <Text style={styles.meta}>Unfiled · Create a Collection from All Designs when you are ready.</Text>
+        ) : (
+          <View style={styles.membershipGrid}>
+            {collections.map((collection) => {
+              const member = familyCollectionIds[data.history.family_id!]?.includes(collection.id) === true;
+              return (
+                <Pressable
+                  key={collection.id}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: member }}
+                  accessibilityLabel={`${member ? 'Remove from' : 'Add to'} ${collection.name}`}
+                  disabled={collectionMutation !== null}
+                  onPress={() => {
+                    void toggleFamilyCollection(data.history.family_id!, collection);
+                  }}
+                  style={[styles.membershipCard, member && styles.membershipCardSelected]}>
+                  <Text style={styles.variationTitle}>{collection.name}</Text>
+                  {collectionContext(collection) !== null && (
+                    <Text style={styles.meta}>{collectionContext(collection)}</Text>
+                  )}
+                  <Text style={styles.meta}>{member ? 'Included · tap to remove' : 'Tap to add'}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+      </View>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Variations</Text>
@@ -616,6 +1187,20 @@ export function StudioCollectionsWorkspace({
           />
         </View>
       </View>
+
+      {destinationContext !== undefined && onSelectDestination !== undefined && (
+        <View style={styles.destinationCard}>
+          <StudioDestinationChooser
+            context={destinationContext}
+            title="Use this revision"
+            description={destinationContext.hasExactSpecification
+              ? 'Prepare this exact saved revision for a client, marketing, or optional eligible Factory review. Its design history will not change.'
+              : 'Prepare this saved visual direction for a client or marketing. Its design history will not change.'}
+            excludeDestinations={COLLECTIONS_DESTINATION_EXCLUSIONS}
+            onSelect={onSelectDestination}
+          />
+        </View>
+      )}
 
       <View style={styles.section}>
         <Pressable
@@ -820,6 +1405,46 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { color: theme.ink, fontFamily: theme.serif, fontSize: 17, marginBottom: 4 },
   sectionCopy: { color: theme.faint, fontSize: 12, lineHeight: 17 },
+  organizationPanel: {
+    borderWidth: 1, borderColor: theme.line, borderRadius: 16, padding: 12,
+    backgroundColor: theme.card, marginTop: 14, marginBottom: 4, gap: 10,
+  },
+  searchInput: {
+    borderWidth: 1, borderColor: theme.line, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 9, color: theme.ink,
+    backgroundColor: theme.paper, fontSize: 14,
+  },
+  filterRow: { gap: 8, paddingRight: 8 },
+  filterChip: {
+    borderWidth: 1, borderColor: theme.line, borderRadius: 999,
+    paddingHorizontal: 12, paddingVertical: 8, backgroundColor: theme.paper,
+  },
+  filterChipSelected: { borderColor: theme.ink, backgroundColor: theme.ink },
+  filterChipText: { color: theme.ink, fontSize: 12 },
+  filterChipTextSelected: { color: theme.paper, fontSize: 12 },
+  tagRow: { gap: 6, paddingRight: 8 },
+  tagChip: {
+    borderWidth: 1, borderColor: theme.line, borderRadius: 999,
+    paddingHorizontal: 10, paddingVertical: 6, backgroundColor: theme.paper,
+  },
+  tagChipSelected: { borderColor: theme.accent, backgroundColor: theme.blush },
+  tagText: { color: theme.ink, fontSize: 11 },
+  familyTags: { color: theme.accent, fontSize: 11, lineHeight: 16, marginTop: 7 },
+  familyTagEditor: { borderTopWidth: 1, borderTopColor: theme.line, marginTop: 8, paddingTop: 8, gap: 6 },
+  templateRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginVertical: 8 },
+  collectionEditor: {
+    borderTopWidth: 1, borderTopColor: theme.line, paddingTop: 12, gap: 8,
+  },
+  collectionSafetyCard: {
+    borderTopWidth: 1, borderTopColor: theme.line, paddingTop: 12,
+  },
+  collectionActionsRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
+  membershipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  membershipCard: {
+    minWidth: 150, flexGrow: 1, borderWidth: 1, borderColor: theme.line,
+    borderRadius: 10, padding: 10, backgroundColor: theme.paper,
+  },
+  membershipCardSelected: { borderColor: theme.accent, backgroundColor: theme.blush },
   disclosureRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12,
   },
@@ -831,6 +1456,12 @@ const styles = StyleSheet.create({
     width: 190, borderWidth: 1, borderColor: theme.line, borderRadius: 12,
     padding: 8, backgroundColor: theme.paper,
   },
+  favoriteButton: {
+    alignSelf: 'flex-start', borderWidth: 1, borderColor: theme.line, borderRadius: 999,
+    paddingHorizontal: 9, paddingVertical: 6, marginTop: 8, backgroundColor: theme.card,
+  },
+  favoriteButtonSelected: { borderColor: theme.accent, backgroundColor: theme.blush },
+  favoriteButtonText: { color: theme.ink, fontSize: 11, fontWeight: '700' },
   variationCurrent: { borderColor: theme.accent, backgroundColor: theme.blush },
   variationCover: { width: '100%', height: 112, borderRadius: 8, marginBottom: 8 },
   coverPlaceholder: { alignItems: 'center', justifyContent: 'center' },

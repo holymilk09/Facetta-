@@ -41,6 +41,9 @@ export function designerErrorMessage(
   if (code === 'studio_create_status_unconfirmed') {
     return 'This request may still be finishing. Check Activity before starting it again.';
   }
+  if (code.includes('provider_not_configured')) {
+    return 'Image creation is not configured for this Facetta workspace. Ask a workspace administrator to finish image setup, then try again. Nothing was saved or charged.';
+  }
   if (category === 'authentication' || error.status === 401) {
     return 'Your Facetta session is missing or expired. Sign in again before continuing.';
   }
@@ -49,6 +52,9 @@ export function designerErrorMessage(
   }
   if (code.includes('stale') || error.status === 409) {
     return 'This design changed while you were working. Reopen it before trying again.';
+  }
+  if (category === 'provider') {
+    return "Facetta's image service could not complete this request. Try again shortly. Nothing was saved or charged.";
   }
   if (category === 'network' || category === 'unavailable' || error.status === 0) {
     return 'Facetta could not connect. Check your connection and try again.';

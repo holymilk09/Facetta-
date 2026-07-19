@@ -101,8 +101,11 @@ def build_image_plan(
     source_spec: Spec | JsonObject | None = None,
     source_image: bytes | None = None,
     quality_source_image: bytes | None = None,
+    camera_reference_image: bytes | None = None,
     mask_bytes: bytes | None = None,
     mask_provenance: str | None = None,
+    authorized_masked_change_domains: Sequence[str] = (),
+    marked_region_count: int | None = None,
     region_description: str | None = None,
     mounting_view: str | None = None,
     frozen: Sequence[str] = (),
@@ -146,9 +149,53 @@ def build_image_plan(
     if quality_source_image is not None and not source_image:
         raise ImagePlanValidationError(
             "a quality source requires a provider source image")
+    if camera_reference_image is not None and not camera_reference_image:
+        raise ImagePlanValidationError("a camera reference must not be empty")
+    if camera_reference_image is not None and not source_image:
+        raise ImagePlanValidationError(
+            "a camera reference requires an identity source image")
+    if (
+        camera_reference_image is not None
+        and operation is not ImageOperation.REFERENCE_RENDER
+    ):
+        raise ImagePlanValidationError(
+            "camera-reference guidance is limited to REFERENCE_RENDER"
+        )
     if mask_provenance is not None and not mask_bytes:
         raise ImagePlanValidationError(
             "mask provenance requires actual mask bytes")
+    allowed_masked_change_domains = {"appearance", "local_geometry"}
+    normalized_masked_change_domains = tuple(dict.fromkeys(
+        domain.strip() for domain in authorized_masked_change_domains
+        if domain.strip()
+    ))
+    if any(
+        domain not in allowed_masked_change_domains
+        for domain in normalized_masked_change_domains
+    ):
+        raise ImagePlanValidationError(
+            "authorized masked changes must be appearance or local_geometry"
+        )
+    if normalized_masked_change_domains and (
+        operation is not ImageOperation.REFERENCE_RENDER
+        or mask_provenance != "designer_marked_pre_spec_region"
+    ):
+        raise ImagePlanValidationError(
+            "authorized masked changes require a designer-marked "
+            "pre-spec reference render"
+        )
+    if marked_region_count is not None and not 1 <= marked_region_count <= 8:
+        raise ImagePlanValidationError(
+            "marked region count must be between one and eight"
+        )
+    if marked_region_count is not None and (
+        operation is not ImageOperation.REFERENCE_RENDER
+        or mask_provenance != "designer_marked_pre_spec_region"
+    ):
+        raise ImagePlanValidationError(
+            "marked region count requires a designer-marked pre-spec "
+            "reference render"
+        )
     if operation is ImageOperation.LOCAL_EDIT and not (region_description or "").strip():
         raise ImagePlanValidationError("LOCAL_EDIT requires a specific highlighted region")
     allowed_mounting_views = {"plan", "front", "side", "section"}
@@ -291,6 +338,9 @@ def build_image_plan(
     quality_source_hash = (
         _hash_bytes(quality_source_image) if quality_source_image else None
     )
+    camera_reference_hash = (
+        _hash_bytes(camera_reference_image) if camera_reference_image else None
+    )
     mask_hash = _hash_bytes(mask_bytes) if mask_bytes else None
     region = (region_description or "").strip() or None
 
@@ -383,6 +433,16 @@ def build_image_plan(
             "authority": "source_preflight_and_candidate_fidelity",
             "provider_source_sha256": source_hash,
         }
+    if camera_reference_hash is not None:
+        normalized_intent["camera_reference"] = {
+            "sha256": camera_reference_hash,
+            "authority": "camera_crop_scale_and_background_only",
+            "identity_source_sha256": source_hash,
+            "forbidden_authority": (
+                "jewelry_identity_geometry_components_stones_materials"
+            ),
+            "ordered_provider_role": 2,
+        }
     if normalized_mounting_view is not None:
         normalized_intent["requested_projections"] = [normalized_mounting_view]
         normalized_intent["mounting_hardware"] = {
@@ -404,12 +464,21 @@ def build_image_plan(
             "mode": (mask_provenance or "caller_supplied_mask"),
             "mask_hash": mask_hash,
         }
+        if normalized_masked_change_domains:
+            normalized_intent["localization"]["authorized_change_domains"] = (
+                list(normalized_masked_change_domains)
+            )
+        if marked_region_count is not None:
+            normalized_intent["localization"]["marked_region_count"] = (
+                marked_region_count
+            )
     hash_input = {
         "operation": operation.value,
         "prompt_version": PROMPT_VERSIONS[operation],
         "normalized_intent": normalized_intent,
         "source_hash": source_hash,
         "quality_source_hash": quality_source_hash,
+        "camera_reference_hash": camera_reference_hash,
         "mask_hash": mask_hash,
         "spec_visual_hash": visual_hash,
         "source_spec_visual_hash": source_visual_hash,
@@ -427,6 +496,7 @@ def build_image_plan(
         source_spec_visual_hash=source_visual_hash,
         source_hash=source_hash,
         quality_source_hash=quality_source_hash,
+        camera_reference_hash=camera_reference_hash,
         mask_hash=mask_hash,
         spec_visual_hash=visual_hash,
         region_description=region,
@@ -489,6 +559,7 @@ def bind_localization_mask(
         "normalized_intent": normalized,
         "source_hash": plan.source_hash,
         "quality_source_hash": plan.quality_source_hash,
+        "camera_reference_hash": plan.camera_reference_hash,
         "mask_hash": mask_hash,
         "spec_visual_hash": plan.spec_visual_hash,
         "source_spec_visual_hash": plan.source_spec_visual_hash,

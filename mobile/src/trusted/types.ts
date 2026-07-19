@@ -36,7 +36,8 @@ export interface ImageQualityCheck {
   key: string;
   label: string;
   verdict: ImageQualityVerdict;
-  severity: 'hard' | 'advisory';
+  /** Canonical backend preservation authority. Warning checks require review; hard failures block acceptance. */
+  severity: 'hard' | 'warning';
   message: string;
 }
 
@@ -117,6 +118,14 @@ export interface ImageRunSummary {
   completed_at: string | null;
 }
 
+export interface CreativeDirectionView {
+  asset_id: string;
+  view: 'primary' | 'three_quarter';
+  media_type: string;
+  sha256: string;
+  image_url: string;
+}
+
 export interface AssetSummary {
   asset_id: string;
   root_id: string;
@@ -138,6 +147,8 @@ export interface AssetSummary {
   created_by: string | null;
   created_at: string | null;
   legacy_provenance: boolean;
+  /** Consistent review angles for one direction; never canonical revisions. */
+  views?: CreativeDirectionView[];
 }
 
 export type CreativeSourceKind = 'drawing' | 'photograph' | 'finished_render';
@@ -170,7 +181,7 @@ export interface ProjectRevision {
 
 export interface FactoryReadinessBlocker {
   code: string;
-  subject_kind: 'category' | 'design_form' | 'source_component' | 'chain';
+  subject_kind: 'category' | 'template' | 'design_form' | 'source_component' | 'chain';
   subject_id: string;
   element_id: string | null;
   component_id: string | null;
@@ -361,13 +372,76 @@ export interface DesignFamilyDetail {
   family_id: string;
   owner: string;
   title: string;
+  /** Canonical family-level organization; variation tags are legacy metadata. */
+  tags: string[];
   created_at: string;
   updated_at: string;
+  is_favorite: boolean;
+  favorited_at: string | null;
   variations: DesignFamilyVariation[];
 }
 
 export interface DesignFamilyList {
   families: DesignFamilyDetail[];
+}
+
+/** Flat, optional organization applied to a design family, never a revision. */
+export type WorkspaceCollectionTemplate =
+  | 'generic'
+  | 'client'
+  | 'order'
+  | 'project'
+  | 'campaign'
+  | 'season'
+  | 'jewelry_line'
+  | 'personal_study'
+  | 'custom';
+
+export interface WorkspaceCollection {
+  id: string;
+  name: string;
+  template: WorkspaceCollectionTemplate;
+  metadata: JsonObject;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+  family_count: number;
+}
+
+export interface WorkspaceCollectionList {
+  collections: WorkspaceCollection[];
+}
+
+export interface WorkspaceCollectionMembershipIndex {
+  family_collection_ids: Record<string, string[]>;
+}
+
+export interface ListWorkspaceCollectionsRequest {
+  owner: string;
+  query?: string;
+}
+
+export interface CreateWorkspaceCollectionRequest {
+  owner: string;
+  name: string;
+  template?: WorkspaceCollectionTemplate;
+  metadata?: JsonObject;
+}
+
+export interface UpdateWorkspaceCollectionRequest {
+  name?: string;
+  template?: WorkspaceCollectionTemplate;
+  metadata?: JsonObject;
+  archived?: boolean;
+}
+
+export interface CollectionMembershipMutationResult {
+  status: 'updated';
+}
+
+export interface DesignFamilyTagsResult {
+  family_id: string;
+  tags: string[];
 }
 
 export type StudioJobStatus =
@@ -493,6 +567,8 @@ export interface CreateProjectFromDrawingRequest {
   media_type?: 'image/png' | 'image/jpeg' | 'image/webp';
   instruction?: string;
   variation_count?: 1 | 2 | 3 | 4;
+  /** Included, uncharged companion evidence for each requested variation. */
+  comparison_views?: ('three_quarter')[];
   starting_variant?: number;
   owner: string;
   title: string;
@@ -514,6 +590,8 @@ export interface CreativeRoleReferenceRequest {
 export interface CreateProjectFromPromptRequest {
   prompt: string;
   variation_count?: 1 | 2 | 3 | 4;
+  /** Included, uncharged companion evidence for each requested variation. */
+  comparison_views?: ('three_quarter')[];
   starting_variant?: number;
   owner: string;
   title: string;
@@ -532,8 +610,48 @@ interface CreateVisualPreviewRequestBase {
   created_by: string;
   expected_active_asset_id: string;
   instruction: string;
+  /** Designer-authored words before hidden preservation/symmetry contracts are compiled. */
+  raw_user_instruction?: string;
+  input_mode?: 'describe' | 'markup' | 'point' | 'symmetry' | 'background' | 'angle';
+  /** Distinct changes inside one combined designer-marked raster. */
+  annotations?: readonly VisualPreviewAnnotation[];
   variant?: number;
   studio_job_id?: string;
+}
+
+export interface VisualPreviewAnnotation {
+  region_description: string;
+  change_instruction: string;
+}
+
+export type StudioContinuationPromptState =
+  | 'requested'
+  | 'preview_ready'
+  | 'applied'
+  | 'saved_as_variation'
+  | 'discarded'
+  | 'failed';
+
+export interface StudioContinuationPrompt {
+  prompt_id: string;
+  sequence: number;
+  prompt: string;
+  annotations: VisualPreviewAnnotation[];
+  input_mode: 'describe' | 'markup' | 'point' | 'background' | 'angle' | 'symmetry';
+  scope: 'appearance' | 'marked_region';
+  variant: number | null;
+  source_asset_id: string;
+  source_sha256: string;
+  studio_job_id: string | null;
+  state: StudioContinuationPromptState;
+  candidate_id: string | null;
+  image_run_id: string | null;
+  applied_asset_id: string | null;
+  created_at: string;
+}
+
+export interface StudioContinuationPromptList {
+  prompts: StudioContinuationPrompt[];
 }
 
 export type CreateVisualPreviewRequest = CreateVisualPreviewRequestBase & (
@@ -556,6 +674,7 @@ export interface VisualPreviewResult {
   source_asset_id: string;
   image_run_id: string;
   candidate: VisualPreviewCandidate;
+  continuation_prompt?: StudioContinuationPrompt;
 }
 
 export interface VisualPreviewListItem {
@@ -1472,6 +1591,8 @@ export interface MarkupInterpretation {
 interface MarkupReadRequestBase {
   created_by: string;
   assistant_name?: string;
+  /** Designer-authored intent. Marks locate the target; this text defines the change. */
+  instruction?: string;
 }
 
 export type MarkupReadRequest = MarkupReadRequestBase & (
@@ -1488,6 +1609,9 @@ export type MarkupReadRequest = MarkupReadRequestBase & (
 export interface MarkupReadResponse {
   markup_asset_id: string | null;
   assistant_name: string | null;
+  /** Every distinct designer mark interpreted against the immutable source image. */
+  interpretations?: MarkupInterpretation[];
+  /** Compatibility alias for legacy single-mark callers. */
   interpretation: MarkupInterpretation;
   design_id: string | null;
   expected_design_version: number | null;
@@ -1507,9 +1631,14 @@ export interface ConfirmedMarkupAnnotation {
   mask_base64: string | null;
 }
 
-/** One request intentionally contains exactly one confirmed annotation. */
+/**
+ * One request compiles one or more confirmed marks into one temporary preview.
+ * `annotation` remains the compatibility primary mark; `annotations` carries
+ * the complete ordered edit set for Studio's multi-mark workflow.
+ */
 export interface MarkupApplyRequest {
   annotation: ConfirmedMarkupAnnotation;
+  annotations?: ConfirmedMarkupAnnotation[];
   markup_asset_id: string | null;
   expected_design_version: number;
   created_by: string;
@@ -1820,9 +1949,22 @@ export interface FactoryPackManifest {
   qa: ImageQualityReport | null;
   dimensions: FactoryDimensionSummary;
   factory_sheet_fact_plan: FactorySheetFactPlan;
+  authority: FactoryPackAuthority;
   artifacts: FactoryPackArtifact[];
   bundle_url: string;
   manifest_sha256: string | null;
+}
+
+export interface FactoryPackAuthority {
+  factory_truth: string[];
+  authoritative_fact_records: string[];
+  dimensional_diagram_only: string[];
+  exchange_reference_only: string[];
+  visual_reference_only: string[];
+  discussion_only: string[];
+  production_authority: string[];
+  release_status: 'factory_review_only';
+  note: string;
 }
 
 export type ApiErrorCategory =

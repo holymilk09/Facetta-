@@ -2,6 +2,7 @@
 
 import pytest
 
+from facetta.creative_symmetry import JEWELRY_SYMMETRY_CONTRACT
 from facetta.image_agent import ImageOperation, build_image_plan
 from facetta.image_agent.prompts import compile_initial_prompt
 from facetta.ring_evals import (
@@ -54,6 +55,7 @@ def test_canonical_edits_produce_valid_specs_or_reject_before_provider():
         "center-cut-shape", "center-species-color", "band-width",
         "metal-color", "metal-material", "prong-setting", "halo-add",
         "halo-remove", "halo-count", "leaf-motif-shape",
+        "intentional-shoulder-asymmetry",
         "background-only", "impossible-band-width"}
     assert {edit.category for edit in CANONICAL_RING_EDITS} == {
         "center_shape", "center_identity", "band_geometry", "metal_color",
@@ -72,7 +74,7 @@ def test_canonical_edits_produce_valid_specs_or_reject_before_provider():
         updated, issues = apply_canonical_ring_edit(base, edit)
         assert (updated is not None) is edit.expected_valid
         assert bool(issues) is (not edit.expected_valid)
-        if edit.expected_valid and not edit.visual_only:
+        if edit.expected_valid and edit.requires_spec_delta:
             assert updated != base
             assert edit.allowed_delta_prefixes
             changes = diff_specs(
@@ -96,6 +98,20 @@ def test_canonical_edits_produce_valid_specs_or_reject_before_provider():
         cases[by_id["band-width"].golden_case_id])
     widened, _ = apply_canonical_ring_edit(band_base, by_id["band-width"])
     assert widened.band.width_mm == pytest.approx(band_base.band.width_mm + 0.6)
+
+    intentional = by_id["intentional-shoulder-asymmetry"]
+    intentional_base = build_ring_golden_spec(
+        cases[intentional.golden_case_id]
+    )
+    intentional_target, issues = apply_canonical_ring_edit(
+        intentional_base, intentional
+    )
+    assert issues == []
+    assert intentional_target == intentional_base
+    assert intentional.requires_spec_delta is False
+    assert JEWELRY_SYMMETRY_CONTRACT in intentional.instruction
+    assert "designer-requested asymmetry" in intentional.instruction
+    assert JEWELRY_SYMMETRY_CONTRACT in by_id["leaf-motif-shape"].instruction
 
 
 def test_canonical_edits_mutate_exact_designer_facts_and_freeze_the_rest():
@@ -199,7 +215,7 @@ def test_canonical_matrix_builds_delta_driven_image_plans_without_pixel_logic():
         assert plan.operation is operation
         assert set(edit.frozen_facts) <= set(plan.frozen)
         delta = plan.normalized_intent["spec_delta"]
-        if edit.visual_only:
+        if not edit.requires_spec_delta:
             assert delta == []
         else:
             assert delta
@@ -241,7 +257,7 @@ def test_canonical_matrix_compiles_domain_specific_pixel_instructions():
     edits = {edit.id: edit for edit in CANONICAL_RING_EDITS}
     assert set(expected) == {
         edit.id for edit in CANONICAL_RING_EDITS
-        if edit.expected_valid and not edit.visual_only
+        if edit.expected_valid and edit.requires_spec_delta
     }
     for edit_id, (domains, phrases) in expected.items():
         edit = edits[edit_id]

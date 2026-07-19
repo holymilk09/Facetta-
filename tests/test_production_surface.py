@@ -46,6 +46,9 @@ EXPECTED_PRODUCTION_OPERATIONS = (
         "/studio/projects/{project_root_id}/history",
         "/studio/families",
         "/studio/families/{family_id}",
+        "/studio/collections",
+        "/studio/collection-memberships",
+        "/studio/design-families/{family_id}/collections",
     )
     | _operations(
         "POST",
@@ -88,10 +91,25 @@ EXPECTED_PRODUCTION_OPERATIONS = (
         "/studio/projects/{project_root_id}/creative-candidates/{candidate_id}/variations",
         "/studio/projects/{project_root_id}/revisions/{asset_id}/restore",
         "/studio/projects/{project_root_id}/facts/revise",
+        "/studio/collections",
     )
-    | _operations("PATCH", "/studio/jobs/{job_id}")
     | _operations(
-        "DELETE", "/image-runs/{run_id}/catalog-candidates/{candidate_id}",
+        "PATCH",
+        "/studio/jobs/{job_id}",
+        "/studio/collections/{collection_id}",
+    )
+    | _operations(
+        "PUT",
+        "/studio/design-families/{family_id}/favorite",
+        "/studio/design-families/{family_id}/tags",
+        "/studio/design-families/{family_id}/collections/{collection_id}",
+    )
+    | _operations(
+        "DELETE",
+        "/image-runs/{run_id}/catalog-candidates/{candidate_id}",
+        "/studio/collections/{collection_id}",
+        "/studio/design-families/{family_id}/favorite",
+        "/studio/design-families/{family_id}/collections/{collection_id}",
     )
 )
 

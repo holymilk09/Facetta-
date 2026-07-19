@@ -26,6 +26,28 @@ def _write(tmp_path, body):
     return env
 
 
+def test_default_load_reads_env_local_before_env(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    (tmp_path / ".env").write_text("OPENAI_API_KEY=from-env\nFAL_KEY=fal-yyy\n")
+    (tmp_path / ".env.local").write_text("OPENAI_API_KEY=from-local\n")
+
+    loaded = load_env_file()
+
+    assert loaded == ["OPENAI_API_KEY", "FAL_KEY"]
+    assert os.environ["OPENAI_API_KEY"] == "from-local"
+    assert os.environ["FAL_KEY"] == "fal-yyy"
+
+
+def test_env_value_reads_env_local_before_env(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    (tmp_path / ".env").write_text("OPENAI_API_KEY=from-env\n")
+    (tmp_path / ".env.local").write_text("OPENAI_API_KEY=from-local\n")
+
+    assert env_value("OPENAI_API_KEY") == "from-local"
+
+
 def test_load_fills_missing_keys(tmp_path):
     os.environ.pop("ANTHROPIC_API_KEY", None)
     os.environ.pop("FAL_KEY", None)

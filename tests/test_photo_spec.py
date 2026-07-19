@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 import facetta.api.specs as specs_module
 import facetta.photo_spec as photo_spec
+from facetta.image_agent import vision as vision_module
 from facetta.concept import DesignRead
 from facetta.db import get_db
 from facetta.image_identity import spec_visual_hash
@@ -88,10 +89,149 @@ def test_photo_extraction_uses_grok_read_then_deterministic_completion(
     assert seen["completed_context"] == seen["context"]
 
 
-def test_photo_extraction_requires_xai_key(monkeypatch):
-    monkeypatch.delenv("XAI_KEY", raising=False)
-    with pytest.raises(photo_spec.PhotoSpecUnavailable, match="XAI_KEY"):
+def test_photo_extraction_requires_a_configured_vision_service(monkeypatch):
+    monkeypatch.setattr(
+        vision_module, "env_value", lambda _key, default=None: default,
+    )
+    with pytest.raises(
+        photo_spec.PhotoSpecUnavailable,
+        match="reference understanding is temporarily unavailable",
+    ):
         photo_spec.generate_spec_from_photo("aGk=", "image/jpeg")
+
+
+def test_from_photo_returns_provider_neutral_503_without_a_vision_key(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        vision_module, "env_value", lambda _key, default=None: default,
+    )
+
+    response = TestClient(app).post("/specs/from-photo", json={
+        "image_base64": base64.b64encode(
+            b"\x89PNG\r\n\x1a\nreference"
+        ).decode(),
+        "media_type": "image/png",
+        "created_by": "usr_designer",
+        "run_independent_audit": False,
+    })
+
+    assert response.status_code == 503, response.text
+    detail = response.json()["detail"]
+    assert detail == (
+        "reference understanding is temporarily unavailable; try again"
+    )
+    assert "XAI" not in detail
+    assert "OPENAI" not in detail
+
+
+def _provider_design_read_payload() -> dict[str, object]:
+    return {
+        "jewelry_type": "ring",
+        "halo": False,
+        "species": "diamond",
+        "cut": "round_brilliant",
+        "center_length_mm": 6.5,
+        "center_width_mm": 6.5,
+        "metal_material": "gold_18k",
+        "metal_color": "yellow",
+        "setting_style": "prong_6",
+        "main_stone_count": 1,
+        "main_stone_position": "center",
+        "accent_species": "diamond",
+        "accent_cut": "round_brilliant",
+        "accent_count": 2,
+        "chain_style": None,
+    }
+
+
+@pytest.mark.parametrize(
+    ("xai_key", "openai_key", "expected_provider"),
+    [
+        ("xai-key", "openai-key", "xai"),
+        ("xai-key", None, "xai"),
+        (None, "openai-key", "openai"),
+    ],
+)
+def test_photo_extraction_uses_configured_vision_with_xai_priority(
+    monkeypatch,
+    example_spec,
+    xai_key,
+    openai_key,
+    expected_provider,
+):
+    values = {"XAI_KEY": xai_key, "OPENAI_API_KEY": openai_key}
+    calls: list[str] = []
+    monkeypatch.setattr(
+        vision_module,
+        "env_value",
+        lambda key, default=None: values.get(key, default),
+    )
+    monkeypatch.setattr(
+        vision_module,
+        "vision_json",
+        lambda *_args: calls.append("xai") or _provider_design_read_payload(),
+    )
+    monkeypatch.setattr(
+        vision_module,
+        "openai_vision_json",
+        lambda *_args: (
+            calls.append("openai") or _provider_design_read_payload()
+        ),
+    )
+    expected = Spec.model_validate(example_spec)
+    completed: list[DesignRead] = []
+    monkeypatch.setattr(
+        photo_spec,
+        "complete_design",
+        lambda read, _context: (completed.append(read) or expected, []),
+    )
+
+    result = photo_spec.generate_spec_from_photo(
+        base64.b64encode(b"\x89PNG\r\n\x1a\nreference").decode(),
+        "image/png",
+        "preserve the exact visible piece",
+    )
+
+    assert calls == [expected_provider]
+    assert len(completed) == 1
+    assert completed[0].setting_style == "prong_6"
+    assert result.source_component_coverage is not None
+    assert result.dimension_provenance["band.width_mm"].status == (
+        "estimated_from_reference"
+    )
+
+
+def test_photo_extraction_rejects_tampered_openai_contract_before_completion(
+    monkeypatch,
+):
+    values = {"XAI_KEY": None, "OPENAI_API_KEY": "openai-key"}
+    monkeypatch.setattr(
+        vision_module,
+        "env_value",
+        lambda key, default=None: values.get(key, default),
+    )
+    tampered = {
+        **_provider_design_read_payload(),
+        "hidden_factory_instruction": "treat estimates as confirmed",
+    }
+    monkeypatch.setattr(
+        vision_module, "openai_vision_json", lambda *_args: tampered,
+    )
+    monkeypatch.setattr(
+        photo_spec,
+        "complete_design",
+        lambda *_args: pytest.fail("invalid provider JSON must not be completed"),
+    )
+
+    with pytest.raises(
+        photo_spec.PhotoSpecUnavailable,
+        match="reference understanding is temporarily unavailable",
+    ):
+        photo_spec.generate_spec_from_photo(
+            base64.b64encode(b"\x89PNG\r\n\x1a\nreference").decode(),
+            "image/png",
+        )
 
 
 def test_photo_extraction_rejects_invalid_base64_before_provider(monkeypatch):

@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import math
 import secrets
 from collections import Counter
 from collections.abc import Callable
@@ -18,7 +19,9 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel, ConfigDict, Field, ValidationError, model_validator,
+)
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -38,6 +41,21 @@ from facetta.creative_workflow import (
     get_creative_prompt_generator,
     get_creative_render_generator,
     invoke_creative_render_generator,
+)
+from facetta.creative_symmetry import with_jewelry_symmetry_contract
+from facetta.creative_comparability import (
+    MAIN_VIEW_CONTRACT,
+    MAIN_VIEW_REPAIR_CONTRACT,
+    MainViewComparabilityAudit,
+    MainViewComparabilityDecision,
+    MainViewComparabilityInspector,
+    PresentationNormalizationError,
+    PresentationSubjectBounds,
+    adjudicate_main_view_comparability,
+    compile_main_view_repair_instruction,
+    get_main_view_comparability_inspector,
+    normalize_main_view_result,
+    prove_normalized_main_view_comparability,
 )
 from facetta.creative_reference_board import (
     CreativeReferenceImage,
@@ -67,6 +85,7 @@ from facetta.api.specs import (
 from facetta.db import (
     ApprovalChecklist,
     ApprovalResponse,
+    DesignFamily,
     DesignVersion,
     ImageAsset,
     ImageAttempt,
@@ -97,13 +116,19 @@ from facetta.drawing_workflow import (
     compile_color_brief,
     compile_line_art_brief,
 )
-from facetta.factory_scope import factory_category_blockers
+from facetta.factory_scope import (
+    factory_category_blockers,
+    factory_template_blockers,
+)
 from facetta.image_agent import (
+    CheckSeverity,
     ImageAgentError,
     ImageAgentResult,
     ImageOperation,
     JewelryImageAgent,
     MountingViewQualityEvaluator,
+    QualityCheck,
+    QualityVerdict,
     build_image_plan,
 )
 from facetta.image_identity import spec_visual_hash
@@ -112,6 +137,7 @@ from facetta.project_backbone import (
     BriefProjectGeneration,
     BriefProjectGenerator,
     BriefProjectGeneratorUnavailable,
+    CreativeComparisonViewInput,
     CreativeCandidateInput,
     PersistedProjectInput,
     PROVENANCE_BY_CAPABILITY,
@@ -148,6 +174,7 @@ from facetta.render import RenderUnavailable
 from facetta.spec import Spec
 from facetta.studio_history import (
     StudioHistoryError,
+    VariationCompanionViewInput,
     ensure_project_family,
     fork_project_variation,
 )
@@ -187,6 +214,14 @@ from facetta.source_evidence_lineage import (
     source_confirmation_evidence_matches,
     source_evidence_anchor_asset,
 )
+from facetta.source_understanding import (
+    SourceUnderstandingInspector,
+    compile_rough_drawing_intent_brief,
+    compile_source_preservation_brief,
+    conservative_source_visible_facts,
+    requires_rough_drawing_interpretation,
+    get_source_understanding_inspector,
+)
 from facetta.validation import validate_spec
 from facetta.vocabulary import get_vocabulary
 from facetta.warning_candidates import (
@@ -220,6 +255,12 @@ CreativeGeneratorDep = Annotated[
     CreativeRenderGenerator, Depends(get_creative_render_generator)]
 CreativePromptGeneratorDep = Annotated[
     CreativePromptGenerator, Depends(get_creative_prompt_generator)]
+SourceUnderstandingInspectorDep = Annotated[
+    SourceUnderstandingInspector, Depends(get_source_understanding_inspector)]
+MainViewComparabilityInspectorDep = Annotated[
+    MainViewComparabilityInspector,
+    Depends(get_main_view_comparability_inspector),
+]
 MarketingGeneratorDep = Annotated[
     MarketingImageGenerator, Depends(get_marketing_image_generator)]
 
@@ -255,6 +296,14 @@ ProjectState = Literal[
     "refining", "approval_required", "approved", "factory_ready"]
 
 
+class CreativeDirectionViewSummary(BaseModel):
+    asset_id: str
+    view: Literal["primary", "three_quarter"]
+    media_type: str
+    sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    image_url: str
+
+
 class AssetSummary(BaseModel):
     asset_id: str
     root_id: str
@@ -275,6 +324,7 @@ class AssetSummary(BaseModel):
     created_at: datetime
     legacy_provenance: bool = False
     image_b64: str | None = None
+    views: list[CreativeDirectionViewSummary] = Field(default_factory=list)
 
 
 class ApprovalSummary(BaseModel):
@@ -296,7 +346,7 @@ class ApprovalSummary(BaseModel):
 class FactoryReadinessBlocker(BaseModel):
     code: str
     subject_kind: Literal[
-        "category", "design_form", "source_component", "chain",
+        "category", "template", "design_form", "source_component", "chain",
     ]
     subject_id: str
     element_id: str | None = None
@@ -408,6 +458,9 @@ class ProjectFromDrawingRequest(BaseModel):
         "design element in this source."
     )
     variation_count: Annotated[int, Field(ge=1, le=4)] = 1
+    comparison_views: Annotated[
+        list[Literal["three_quarter"]], Field(max_length=1)
+    ] = Field(default_factory=list)
     starting_variant: Annotated[int, Field(ge=0, le=100)] = 0
     owner: Annotated[str, Field(min_length=1, max_length=32)]
     title: Annotated[str, Field(min_length=1, max_length=200)]
@@ -441,6 +494,12 @@ class ProjectFromDrawingRequest(BaseModel):
             raise ValueError("secondary creative reference roles must be unique")
         return self
 
+    @model_validator(mode="after")
+    def comparison_views_are_unique(self) -> ProjectFromDrawingRequest:
+        if len(set(self.comparison_views)) != len(self.comparison_views):
+            raise ValueError("comparison views must be unique")
+        return self
+
 
 class ProjectFromPromptRequest(BaseModel):
     """Category-neutral prompt intake with no inferred factory authority."""
@@ -449,6 +508,9 @@ class ProjectFromPromptRequest(BaseModel):
 
     prompt: Annotated[str, Field(min_length=3, max_length=2000)]
     variation_count: Annotated[int, Field(ge=1, le=4)] = 1
+    comparison_views: Annotated[
+        list[Literal["three_quarter"]], Field(max_length=1)
+    ] = Field(default_factory=list)
     starting_variant: Annotated[int, Field(ge=0, le=100)] = 0
     owner: Annotated[str, Field(min_length=1, max_length=32)]
     title: Annotated[str, Field(min_length=1, max_length=200)]
@@ -464,6 +526,12 @@ class ProjectFromPromptRequest(BaseModel):
         roles = [reference.role for reference in self.references]
         if len(set(roles)) != len(roles):
             raise ValueError("advisory creative reference roles must be unique")
+        return self
+
+    @model_validator(mode="after")
+    def comparison_views_are_unique(self) -> ProjectFromPromptRequest:
+        if len(set(self.comparison_views)) != len(self.comparison_views):
+            raise ValueError("comparison views must be unique")
         return self
 
 
@@ -950,6 +1018,7 @@ def _asset_summary(
     *,
     revisions: dict[str, int],
     chain_design_id: str | None,
+    has_creative_provenance: bool,
     include_image: bool,
 ) -> dict:
     legacy = bool(
@@ -957,6 +1026,7 @@ def _asset_summary(
         and chain_design_id
         and asset.design_version is None
         and asset.capability != "CREATIVE_RENDER"
+        and not has_creative_provenance
     )
     provenance = (
         "legacy_unversioned" if legacy
@@ -1058,9 +1128,172 @@ def _approval_for_active(
     return summary, state
 
 
+_CREATIVE_COMPARISON_IDENTITY_CHECKS = frozenset({
+    "requested_presentation_applied",
+    "source_design_preserved",
+    "visible_components_preserved",
+    "local_geometry_preserved",
+    "stone_shape_and_cut_family_preserved",
+})
+
+
+def _legacy_variation_comparison_view(
+    db: Session,
+    *,
+    project: Project,
+    chain: list[ImageAsset],
+) -> ImageAsset | None:
+    """Read one pre-fix branch's exact source comparison view, or fail closed.
+
+    Early retained Create directions copied the primary raster into a sibling
+    Variation but did not copy its already-generated three-quarter companion.
+    This compatibility projection never repairs or aliases canonical rows. It
+    exposes the source companion at read time only when the copied primary is
+    byte-identical and every branch, owner, family, provider, and QA binding is
+    still unambiguous.
+    """
+
+    branch = next(
+        (asset for asset in chain if asset.id == project.root_id),
+        None,
+    )
+    if (
+        branch is None
+        or branch.root_id != branch.id
+        or branch.parent_asset_id is not None
+        or branch.capability != "VARIATION_BRANCH"
+        or branch.created_by != project.owner
+        or project.branched_from_project_root_id is None
+        or project.branched_from_asset_id is None
+        or project.family_id is None
+        or any(
+            asset.parent_asset_id == branch.id
+            and asset.capability == "CREATIVE_COMPARISON_THREE_QUARTER"
+            for asset in chain
+        )
+    ):
+        return None
+
+    source_project = db.get(Project, project.branched_from_project_root_id)
+    source = db.get(ImageAsset, project.branched_from_asset_id)
+    family = db.get(DesignFamily, project.family_id)
+    if (
+        source_project is None
+        or source is None
+        or family is None
+        or source_project.root_id != source.root_id
+        or source_project.owner != project.owner
+        or source_project.family_id != project.family_id
+        or family.owner != project.owner
+        or source.created_by != project.owner
+        or source.capability != "CREATIVE_RENDER"
+        or source.design_id is not None
+        or source.design_version is not None
+    ):
+        return None
+
+    source_sha256 = hashlib.sha256(bytes(source.image)).hexdigest()
+    if hashlib.sha256(bytes(branch.image)).hexdigest() != source_sha256:
+        return None
+
+    lineage_records = list(db.scalars(
+        select(ProjectRevisionRecord).where(
+            ProjectRevisionRecord.asset_id == branch.id,
+        )
+    ))
+    if len(lineage_records) != 1:
+        return None
+    lineage = lineage_records[0]
+    raw_intent = dict(lineage.raw_intent or {})
+    interpretation = dict(lineage.interpretation or {})
+    if (
+        lineage.action != "created"
+        or lineage.created_by != project.owner
+        or raw_intent.get("kind") != "save_as_variation"
+        or raw_intent.get("source_project_id") != source_project.root_id
+        or raw_intent.get("source_asset_id") != source.id
+        or interpretation.get("operation") != "fork_variation"
+        or interpretation.get("source_preserved_exactly") is not True
+        or interpretation.get("source_asset_id") != source.id
+        or interpretation.get("source_sha256") != source_sha256
+        or interpretation.get("output_sha256") != source_sha256
+    ):
+        return None
+
+    comparisons = list(db.scalars(
+        select(ImageAsset)
+        .where(
+            ImageAsset.root_id == source_project.root_id,
+            ImageAsset.parent_asset_id == source.id,
+            ImageAsset.capability == "CREATIVE_COMPARISON_THREE_QUARTER",
+        )
+        .order_by(ImageAsset.id)
+    ))
+    if len(comparisons) != 1:
+        return None
+    comparison = comparisons[0]
+    if (
+        comparison.created_by != project.owner
+        or comparison.design_id is not None
+        or comparison.design_version is not None
+    ):
+        return None
+
+    comparison_sha256 = hashlib.sha256(bytes(comparison.image)).hexdigest()
+    runs = list(db.scalars(
+        select(ImageRun)
+        .where(
+            ImageRun.project_root_id == source_project.root_id,
+            ImageRun.created_by == project.owner,
+            ImageRun.source_asset_id == source.id,
+            ImageRun.operation == ImageOperation.REFERENCE_RENDER.value,
+            ImageRun.status.in_(("accepted", "review_required")),
+            ImageRun.source_hash == source_sha256,
+        )
+        .order_by(ImageRun.id)
+    ))
+    exact: list[tuple[ImageRun, ImageAttempt]] = []
+    for run in runs:
+        attempts = list(db.scalars(
+            select(ImageAttempt)
+            .where(
+                ImageAttempt.run_id == run.id,
+                ImageAttempt.output_hash == comparison_sha256,
+            )
+            .order_by(ImageAttempt.attempt_number, ImageAttempt.id)
+        ))
+        exact.extend((run, attempt) for attempt in attempts)
+    if len(exact) != 1:
+        return None
+    run, attempt = exact[0]
+    checks = {
+        str(check.get("code")): check
+        for check in (attempt.qa_checks or [])
+        if isinstance(check, dict)
+    }
+    if (
+        run.accepted_asset_id not in {None, comparison.id}
+        or not isinstance(run.input_hash, str)
+        or len(run.input_hash) != 64
+        or attempt.qa_verdict not in {"pass", "warn"}
+        or attempt.error_category is not None
+        or any(
+            code not in checks or checks[code].get("passed") is not True
+            for code in _CREATIVE_COMPARISON_IDENTITY_CHECKS
+        )
+    ):
+        return None
+    return comparison
+
+
 def project_detail(db: Session, project: Project,
                    include_images: bool = False) -> dict:
     chain = project_chain(db, project.root_id)
+    creative_provenance_asset_ids = {
+        asset.id
+        for asset in chain
+        if accepted_creative_candidate(chain, asset.id) is not None
+    }
     revision_numbers = _revision_numbers(
         chain, project.selected_candidate_asset_id,
     )
@@ -1088,10 +1321,74 @@ def project_detail(db: Session, project: Project,
     summaries = [
         _asset_summary(
             a, revisions=revision_numbers, chain_design_id=design_id,
+            has_creative_provenance=a.id in creative_provenance_asset_ids,
             include_image=include_images)
         for a in chain
     ]
     by_id = {item["asset_id"]: item for item in summaries}
+    comparison_capabilities = {
+        "CREATIVE_COMPARISON_THREE_QUARTER": "three_quarter",
+    }
+    comparison_parent_ids = {
+        comparison.parent_asset_id
+        for comparison in chain
+        if comparison.capability in comparison_capabilities
+        and comparison.parent_asset_id is not None
+    }
+    for view_parent in chain:
+        if (
+            view_parent.id not in comparison_parent_ids
+            and view_parent not in creative_candidates
+        ):
+            continue
+        by_id[view_parent.id]["views"] = [{
+            "asset_id": view_parent.id,
+            "view": "primary",
+            "media_type": view_parent.media_type,
+            "sha256": hashlib.sha256(bytes(view_parent.image)).hexdigest(),
+            "image_url": f"/assets/{view_parent.id}/image",
+        }]
+    for comparison in chain:
+        view = comparison_capabilities.get(comparison.capability)
+        parent = (
+            by_id.get(comparison.parent_asset_id)
+            if comparison.parent_asset_id is not None else None
+        )
+        if view is None or parent is None:
+            continue
+        parent.setdefault("views", []).append({
+            "asset_id": comparison.id,
+            "view": view,
+            "media_type": comparison.media_type,
+            "sha256": hashlib.sha256(bytes(comparison.image)).hexdigest(),
+            "image_url": f"/assets/{comparison.id}/image",
+        })
+    legacy_comparison = _legacy_variation_comparison_view(
+        db,
+        project=project,
+        chain=chain,
+    )
+    if legacy_comparison is not None:
+        branch_root = by_id[project.root_id]
+        branch_asset = next(asset for asset in chain if asset.id == project.root_id)
+        branch_root["views"] = [
+            {
+                "asset_id": branch_asset.id,
+                "view": "primary",
+                "media_type": branch_asset.media_type,
+                "sha256": hashlib.sha256(bytes(branch_asset.image)).hexdigest(),
+                "image_url": f"/assets/{branch_asset.id}/image",
+            },
+            {
+                "asset_id": legacy_comparison.id,
+                "view": "three_quarter",
+                "media_type": legacy_comparison.media_type,
+                "sha256": hashlib.sha256(
+                    bytes(legacy_comparison.image)
+                ).hexdigest(),
+                "image_url": f"/assets/{legacy_comparison.id}/image",
+            },
+        ]
     factory_blockers: list[dict[str, object]] = []
     if (active is not None and design_id is not None
             and active.design_version is not None):
@@ -1111,6 +1408,17 @@ def project_detail(db: Session, project: Project,
                 "required_resolution": blocker.required_resolution,
             } for blocker in category_blockers]
             if not category_blockers:
+                factory_blockers.extend({
+                    "code": blocker.code,
+                    "subject_kind": "template",
+                    "subject_id": blocker.subject_id,
+                    "element_id": None,
+                    "component_id": None,
+                    "role": blocker.role,
+                    "label": blocker.label,
+                    "detail": blocker.message,
+                    "required_resolution": blocker.required_resolution,
+                } for blocker in factory_template_blockers(active_spec))
                 factory_blockers.extend({
                     "code": blocker.code,
                     "subject_kind": "design_form",
@@ -1377,15 +1685,52 @@ def _creative_candidate_generation_run(
                 ImageOperation.REFERENCE_RENDER.value,
             )),
             ImageRun.status.in_(("accepted", "review_required")),
-            select(ImageAttempt.id).where(
-                ImageAttempt.run_id == ImageRun.id,
-                ImageAttempt.output_hash == output_sha256,
-            ).exists(),
         )
         .order_by(ImageRun.id)
         .with_for_update()
     ))
-    if len(runs) != 1:
+
+    def primary_create_run(run: ImageRun) -> bool:
+        if run.operation == ImageOperation.CREATIVE_GENERATE.value:
+            return True
+        if run.operation != ImageOperation.REFERENCE_RENDER.value:
+            return False
+        # Uploaded-source directions are primary REFERENCE_RENDER runs. A
+        # comparison view also uses REFERENCE_RENDER, but its source is an
+        # already-generated CREATIVE_RENDER candidate and must never be used
+        # as the candidate's Create provenance.
+        if run.source_asset_id is None:
+            return False
+        source = db.get(ImageAsset, run.source_asset_id)
+        return bool(
+            source is not None
+            and source.root_id == project.root_id
+            and source.capability == "CREATIVE_SOURCE"
+            and run.source_hash
+            == hashlib.sha256(bytes(source.image)).hexdigest()
+        )
+
+    primary_runs = [run for run in runs if primary_create_run(run)]
+    attempts_by_run = {
+        run.id: list(db.scalars(
+            select(ImageAttempt)
+            .where(ImageAttempt.run_id == run.id)
+            .order_by(ImageAttempt.attempt_number, ImageAttempt.id)
+            .with_for_update()
+        ))
+        for run in primary_runs
+    }
+    exact_runs = [
+        run
+        for run in primary_runs
+        if any(
+            attempt.output_hash == output_sha256
+            for attempt in attempts_by_run[run.id]
+        )
+    ]
+    if len(exact_runs) == 1:
+        run = exact_runs[0]
+    elif len(exact_runs) > 1:
         raise HTTPException(
             status_code=409,
             detail=(
@@ -1393,7 +1738,28 @@ def _creative_candidate_generation_run(
                 "generation provenance"
             ),
         )
-    run = runs[0]
+    else:
+        derivative_runs = [
+            run
+            for run in primary_runs
+            if _run_proves_trusted_presentation_derivative(
+                db,
+                project=project,
+                run=run,
+                attempts=attempts_by_run[run.id],
+                derivative_sha256=output_sha256,
+                primary_create_run=primary_create_run,
+            )
+        ]
+        if len(derivative_runs) != 1:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "the selected Create direction has missing or ambiguous "
+                    "generation provenance"
+                ),
+            )
+        run = derivative_runs[0]
     if run.accepted_asset_id not in {None, candidate.id}:
         raise HTTPException(
             status_code=409,
@@ -1433,6 +1799,311 @@ def _creative_candidate_generation_run(
             ),
         )
     return run
+
+
+def _creative_candidate_companion_views(
+    db: Session,
+    *,
+    project: Project,
+    candidate: ImageAsset,
+) -> tuple[VariationCompanionViewInput, ...]:
+    """Resolve exact, QA-approved comparison evidence for one direction."""
+
+    candidate_sha256 = hashlib.sha256(bytes(candidate.image)).hexdigest()
+    comparisons = list(db.scalars(
+        select(ImageAsset)
+        .where(
+            ImageAsset.root_id == project.root_id,
+            ImageAsset.parent_asset_id == candidate.id,
+            ImageAsset.capability == "CREATIVE_COMPARISON_THREE_QUARTER",
+        )
+        .order_by(ImageAsset.id)
+        .with_for_update()
+    ))
+    if len(comparisons) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail="the Create direction has ambiguous comparison-view evidence",
+        )
+
+    resolved: list[VariationCompanionViewInput] = []
+    required_checks = {
+        "requested_presentation_applied",
+        "source_design_preserved",
+        "visible_components_preserved",
+        "local_geometry_preserved",
+        "stone_shape_and_cut_family_preserved",
+    }
+    for comparison in comparisons:
+        comparison_sha256 = hashlib.sha256(bytes(comparison.image)).hexdigest()
+        runs = list(db.scalars(
+            select(ImageRun)
+            .where(
+                ImageRun.project_root_id == project.root_id,
+                ImageRun.created_by == project.owner,
+                ImageRun.source_asset_id == candidate.id,
+                ImageRun.operation == ImageOperation.REFERENCE_RENDER.value,
+                ImageRun.status.in_(("accepted", "review_required")),
+                ImageRun.source_hash == candidate_sha256,
+            )
+            .order_by(ImageRun.id)
+            .with_for_update()
+        ))
+        exact: list[tuple[ImageRun, ImageAttempt]] = []
+        for run in runs:
+            attempts = list(db.scalars(
+                select(ImageAttempt)
+                .where(
+                    ImageAttempt.run_id == run.id,
+                    ImageAttempt.output_hash == comparison_sha256,
+                )
+                .order_by(ImageAttempt.attempt_number, ImageAttempt.id)
+                .with_for_update()
+            ))
+            exact.extend((run, attempt) for attempt in attempts)
+        if len(exact) != 1:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "the Create direction has missing or ambiguous "
+                    "comparison-view provenance"
+                ),
+            )
+        run, attempt = exact[0]
+        checks = {
+            str(check.get("code")): check
+            for check in (attempt.qa_checks or [])
+            if isinstance(check, dict)
+        }
+        if (
+            comparison.design_id is not None
+            or comparison.design_version is not None
+            or run.accepted_asset_id not in {None, comparison.id}
+            or not isinstance(run.input_hash, str)
+            or len(run.input_hash) != 64
+            or any(
+                code not in checks or checks[code].get("passed") is not True
+                for code in required_checks
+            )
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "the Create direction comparison view no longer has "
+                    "validated identity-preservation evidence"
+                ),
+            )
+        resolved.append(VariationCompanionViewInput(
+            source_asset_id=comparison.id,
+            image_run_id=run.id,
+            view="three_quarter",
+            source_sha256=candidate_sha256,
+            output_sha256=comparison_sha256,
+        ))
+    return tuple(resolved)
+
+
+def _run_proves_trusted_presentation_derivative(
+    db: Session,
+    *,
+    project: Project,
+    run: ImageRun,
+    attempts: list[ImageAttempt],
+    derivative_sha256: str,
+    primary_create_run: Callable[[ImageRun], bool],
+) -> bool:
+    """Verify one persisted, affine-only Create presentation derivative.
+
+    Provider attempt hashes are immutable raw-output identities. A normalized
+    candidate therefore cannot match them directly; it may resolve through the
+    separately hash-bound hard QA proof only. Every check below fails closed so
+    missing, tampered, ambiguous, or comparison-view evidence cannot become an
+    accepted Original.
+    """
+
+    def sha256(value: object) -> bool:
+        return (
+            isinstance(value, str)
+            and len(value) == 64
+            and all(character in "0123456789abcdef" for character in value)
+        )
+
+    def hard_pass(check: object, code: str) -> bool:
+        return bool(
+            isinstance(check, dict)
+            and check.get("code") == code
+            and check.get("passed") is True
+            and check.get("severity") == "hard"
+            and isinstance(check.get("evidence"), dict)
+        )
+
+    proof_attempts: list[tuple[ImageAttempt, dict, dict]] = []
+    for attempt in attempts:
+        normalization_checks = [
+            check for check in (attempt.qa_checks or [])
+            if isinstance(check, dict)
+            and check.get("code") == "deterministic_presentation_normalized"
+        ]
+        comparison_checks = [
+            check for check in (attempt.qa_checks or [])
+            if isinstance(check, dict)
+            and check.get("code") == "cross_direction_main_view_comparable"
+        ]
+        if len(normalization_checks) != 1 or len(comparison_checks) != 1:
+            continue
+        normalization = normalization_checks[0]
+        comparison = comparison_checks[0]
+        if not (
+            hard_pass(normalization, "deterministic_presentation_normalized")
+            and hard_pass(comparison, "cross_direction_main_view_comparable")
+        ):
+            continue
+        proof_attempts.append((attempt, normalization, comparison))
+    if len(proof_attempts) != 1:
+        return False
+
+    attempt, normalization, comparison = proof_attempts[0]
+    raw_sha256 = attempt.output_hash
+    evidence = normalization["evidence"]
+    comparison_evidence = comparison["evidence"]
+    reference_sha256 = evidence.get("reference_sha256")
+    if not (
+        sha256(raw_sha256)
+        and sha256(reference_sha256)
+        and evidence.get("method")
+        == "deterministic_affine_scale_and_center.v1"
+        and evidence.get("source_sha256") == raw_sha256
+        and evidence.get("output_sha256") == derivative_sha256
+        and type(evidence.get("provider_calls")) is int
+        and evidence.get("provider_calls") == 0
+        and evidence.get("generative_model_used") is False
+        and evidence.get("source_pixels_resampled") is True
+        and evidence.get("pixel_operation")
+        == "deterministic_affine_resample_and_background_fill"
+        and evidence.get("new_jewelry_content_created") is False
+        and comparison_evidence.get("contract") == MAIN_VIEW_CONTRACT
+        and comparison_evidence.get("result_sha256") == derivative_sha256
+        and comparison_evidence.get("audited_candidate_sha256") == raw_sha256
+        and comparison_evidence.get("audited_reference_sha256")
+        == reference_sha256
+        and comparison_evidence.get("reference_direction") == 1
+        and isinstance(comparison_evidence.get("candidate_direction"), int)
+        and comparison_evidence["candidate_direction"] >= 2
+    ):
+        return False
+
+    adjudication = comparison_evidence.get("adjudication")
+    try:
+        comparison_audit = MainViewComparabilityAudit.model_validate(
+            comparison_evidence.get("audit")
+        )
+    except ValidationError:
+        return False
+    if not (
+        comparison_audit.passed
+        and isinstance(adjudication, dict)
+        and adjudication.get("policy") == "bounded_main_view_adjudication.v1"
+        and adjudication.get("reference_sha256") == reference_sha256
+        and adjudication.get("candidate_sha256") == raw_sha256
+        and adjudication.get("disposition") in {
+            "direct_framing_only", "framing_only_consensus",
+        }
+        and isinstance(adjudication.get("observations"), list)
+        and adjudication.get("observation_count")
+        == len(adjudication["observations"])
+        and len(adjudication["observations"]) in {1, 3}
+    ):
+        return False
+
+    try:
+        reference_bounds = PresentationSubjectBounds.model_validate(
+            evidence.get("reference_bounds")
+        )
+        source_bounds = PresentationSubjectBounds.model_validate(
+            evidence.get("source_bounds")
+        )
+        normalized_bounds = PresentationSubjectBounds.model_validate(
+            evidence.get("normalized_bounds")
+        )
+    except ValidationError:
+        return False
+
+    bounds = (reference_bounds, source_bounds, normalized_bounds)
+    if any(
+        item.canvas_width <= 0
+        or item.canvas_height <= 0
+        or not (0 <= item.left < item.right <= item.canvas_width)
+        or not (0 <= item.top < item.bottom <= item.canvas_height)
+        or not (0 <= item.center_x <= 1 and 0 <= item.center_y <= 1)
+        or not (0 < item.longest_fill <= 1)
+        or not (0 < item.foreground_fraction <= 1)
+        or len(item.background_rgb) != 3
+        or any(channel < 0 or channel > 255 for channel in item.background_rgb)
+        for item in bounds
+    ):
+        return False
+    if not (
+        reference_bounds.canvas_width == source_bounds.canvas_width
+        == normalized_bounds.canvas_width
+        and reference_bounds.canvas_height == source_bounds.canvas_height
+        == normalized_bounds.canvas_height
+        and abs(
+            normalized_bounds.longest_fill - reference_bounds.longest_fill
+        ) <= 0.035
+        and abs(normalized_bounds.center_x - reference_bounds.center_x) <= 0.035
+        and abs(normalized_bounds.center_y - reference_bounds.center_y) <= 0.035
+    ):
+        return False
+
+    forward_scale = evidence.get("forward_scale")
+    inverse_affine = evidence.get("inverse_affine")
+    if not (
+        isinstance(forward_scale, (int, float))
+        and not isinstance(forward_scale, bool)
+        and math.isfinite(float(forward_scale))
+        and 0.70 <= float(forward_scale) <= 1.45
+        and isinstance(inverse_affine, list)
+        and len(inverse_affine) == 6
+        and all(
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+            for value in inverse_affine
+        )
+        and abs(float(inverse_affine[1])) <= 1e-8
+        and abs(float(inverse_affine[3])) <= 1e-8
+        and abs(float(inverse_affine[0]) - float(inverse_affine[4])) <= 1e-8
+        and abs(
+            float(inverse_affine[0]) - (1.0 / float(forward_scale))
+        ) <= 1e-7
+    ):
+        return False
+
+    # The comparison reference must itself be one unambiguous raw primary
+    # Create result in this same owner/project boundary.
+    reference_runs = list(db.scalars(
+        select(ImageRun)
+        .where(
+            ImageRun.project_root_id == project.root_id,
+            ImageRun.created_by == project.owner,
+            ImageRun.operation.in_((
+                ImageOperation.CREATIVE_GENERATE.value,
+                ImageOperation.REFERENCE_RENDER.value,
+            )),
+            ImageRun.status.in_(("accepted", "review_required")),
+            select(ImageAttempt.id).where(
+                ImageAttempt.run_id == ImageRun.id,
+                ImageAttempt.output_hash == reference_sha256,
+            ).exists(),
+        )
+        .order_by(ImageRun.id)
+        .with_for_update()
+    ))
+    return len([
+        reference_run
+        for reference_run in reference_runs
+        if primary_create_run(reference_run)
+    ]) == 1
 
 
 def _creative_direction_commit_response(
@@ -1623,6 +2294,26 @@ def commit_project_creative_directions(
         project=project,
         candidate=selected,
     )
+    companion_views_by_candidate = {
+        candidate_id: _creative_candidate_companion_views(
+            db,
+            project=project,
+            candidate=by_id[candidate_id],
+        )
+        for candidate_id in requested_ids
+    }
+    companion_view_sets = {
+        tuple(view.view for view in views)
+        for views in companion_views_by_candidate.values()
+    }
+    if len(companion_view_sets) != 1:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "the Create directions do not share one complete comparison-"
+                "view set"
+            ),
+        )
     try:
         available_outputs = len(list(db.scalars(select(ImageAsset.id).where(
             ImageAsset.root_id == project.root_id,
@@ -1641,7 +2332,7 @@ def commit_project_creative_directions(
 
         project.selected_candidate_asset_id = selected.id
         project.updated_at = utcnow()
-        ensure_project_family(db, project)
+        family = ensure_project_family(db, project)
 
         selected_source_id = selected_run.source_asset_id or selected.id
         selected_source = db.get(ImageAsset, selected_source_id)
@@ -1694,6 +2385,9 @@ def commit_project_creative_directions(
                 variation_label=retained["label"],
                 created_by=request.created_by,
                 allow_unselected_creative_candidate=True,
+                companion_views=companion_views_by_candidate[
+                    retained["candidate_id"]
+                ],
                 commit=False,
             )
             retained_records.append({
@@ -1704,6 +2398,20 @@ def commit_project_creative_directions(
                 "project_root_id": result.project_root_id,
                 "asset_id": result.asset_id,
             })
+
+        # Retained directions are persistence side effects of the designer's
+        # one atomic selection, not newer design activity. Record the chosen
+        # Original last so Collections reopens the direction the designer
+        # actually selected. A later edit on any sibling still receives its
+        # own newer Project.updated_at and naturally becomes most recent.
+        selected_activity_at = utcnow()
+        if retained_records:
+            selected_activity_at = max(
+                selected_activity_at,
+                family.updated_at + timedelta(microseconds=1),
+            )
+        project.updated_at = selected_activity_at
+        family.updated_at = selected_activity_at
 
         decision = StudioCreateDecisionRecord(
             project_root_id=project.root_id,
@@ -1842,15 +2550,24 @@ def _persist_create_failure_evidence(
     created_by: str,
     error_code: str,
     error: ImageAgentError | None = None,
+    errors: tuple[ImageAgentError, ...] = (),
     rejected_result: ImageAgentResult | None = None,
+    rejected_results: tuple[ImageAgentResult, ...] = (),
     rejected_error_category: Literal[
         "validation", "provider", "evaluation", "quality"
     ] = "quality",
 ) -> tuple[tuple[str, ...], str | None]:
     """Commit Create attempt evidence and its zero-charge failure together."""
 
-    if error is not None and rejected_result is not None:
-        raise ValueError("Create failure evidence must have one terminal cause")
+    if rejected_result is not None and rejected_results:
+        raise ValueError(
+            "use either rejected_result or rejected_results for Create evidence"
+        )
+    terminal_errors = (*errors, *((error,) if error is not None else ()))
+    terminal_rejections = (
+        rejected_results
+        if rejected_result is None else (rejected_result,)
+    )
     try:
         observed_run_ids = tuple(
             persist_image_agent_result(
@@ -1862,23 +2579,28 @@ def _persist_create_failure_evidence(
             for result in completed_results
         )
         failed_run_id = None
-        if error is not None and error.plan is not None:
-            failed_run_id = persist_image_agent_failure(
+        for failed_error in terminal_errors:
+            if failed_error.plan is not None:
+                failed_run_id = persist_image_agent_failure(
+                    db,
+                    failed_error.plan,
+                    failed_error,
+                    created_by=created_by,
+                    commit=False,
+                )
+        rejected_run_ids = tuple(
+            persist_image_agent_result(
                 db,
-                error.plan,
-                error,
-                created_by=created_by,
-                commit=False,
-            )
-        elif rejected_result is not None:
-            failed_run_id = persist_image_agent_result(
-                db,
-                rejected_result,
+                rejected,
                 created_by=created_by,
                 status_override="failed",
                 error_category_override=rejected_error_category,
                 commit=False,
             )
+            for rejected in terminal_rejections
+        )
+        if rejected_run_ids:
+            failed_run_id = rejected_run_ids[-1]
         if studio_job is not None:
             record_failed_create_studio_job(
                 db,
@@ -1890,7 +2612,7 @@ def _persist_create_failure_evidence(
     except Exception:
         db.rollback()
         raise
-    return observed_run_ids, failed_run_id
+    return (*observed_run_ids, *rejected_run_ids), failed_run_id
 
 
 def _json_value_contains_text(value: JsonValue, expected: str) -> bool:
@@ -1911,6 +2633,462 @@ def _json_value_contains_text(value: JsonValue, expected: str) -> bool:
     return False
 
 
+_COMPARISON_VIEW_INSTRUCTIONS = {
+    "three_quarter": (
+        "COMPARISON VIEW CONTRACT: Render the exact same finished jewelry "
+        "design from a high front three-quarter angle, approximately 35 degrees "
+        "off the primary view. Keep the complete piece visible, centered, and at "
+        "a consistent review scale on a neutral warm-white studio background. "
+        "Preserve every stone, prong, setting, contour, proportion, material, "
+        "finish, and repeated element. Change only the camera angle; do not "
+        "redesign, simplify, add, remove, or relocate anything. This is a "
+        "review-only comparison view, not a saved revision or production fact."
+    ),
+}
+
+
+def _result_with_main_view_audit(
+    result: ImageAgentResult,
+    *,
+    reference_direction: int,
+    candidate_direction: int,
+    audit: MainViewComparabilityAudit,
+    decision: MainViewComparabilityDecision,
+    audited_reference_image: bytes,
+    audited_candidate_image: bytes | None = None,
+) -> ImageAgentResult:
+    """Bind request-level comparability evidence to the candidate image run."""
+
+    audited_candidate = audited_candidate_image or result.image_bytes
+    reference_sha256 = hashlib.sha256(audited_reference_image).hexdigest()
+    candidate_sha256 = hashlib.sha256(audited_candidate).hexdigest()
+    if (
+        decision.reference_sha256 != reference_sha256
+        or decision.candidate_sha256 != candidate_sha256
+    ):
+        raise ValueError("main-view adjudication does not bind the audited pixels")
+    passed = audit.passed
+    check = QualityCheck(
+        code="cross_direction_main_view_comparable",
+        passed=passed,
+        severity=CheckSeverity.HARD,
+        message=(
+            "primary direction uses the shared request camera and framing"
+            if passed else
+            "primary direction is not proven comparable at the shared camera "
+            "and framing"
+        ),
+        evidence={
+            "contract": MAIN_VIEW_CONTRACT,
+            "reference_direction": reference_direction,
+            "candidate_direction": candidate_direction,
+            "result_sha256": hashlib.sha256(result.image_bytes).hexdigest(),
+            "audited_reference_sha256": reference_sha256,
+            "audited_candidate_sha256": candidate_sha256,
+            "adjudication": decision.evidence(),
+            "audit": audit.model_dump(mode="json"),
+        },
+    )
+    selected_attempt = result.run.selected_attempt
+    attempts = tuple(
+        attempt.model_copy(update={
+            "qa_checks": (*attempt.qa_checks, check),
+            **({"qa_verdict": QualityVerdict.FAIL} if not passed else {}),
+        })
+        if attempt.attempt_number == selected_attempt else attempt
+        for attempt in result.run.attempts
+    )
+    quality = result.quality.model_copy(update={
+        "checks": (*result.quality.checks, check),
+        **({"verdict": QualityVerdict.FAIL} if not passed else {}),
+    })
+    run = result.run.model_copy(update={
+        "attempts": attempts,
+        **({"verdict": QualityVerdict.FAIL} if not passed else {}),
+    })
+    return result.model_copy(update={
+        "run": run,
+        "quality": quality,
+        **({"accepted": False, "review_required": False} if not passed else {}),
+    })
+
+
+MainViewRepairGenerator = Callable[
+    [int, MainViewComparabilityAudit], ImageAgentResult
+]
+MainViewRepairValidator = Callable[
+    [int, ImageAgentResult], tuple[int, str, str, str] | None
+]
+MainViewPresentationNormalizer = Callable[
+    [bytes, ImageAgentResult], ImageAgentResult
+]
+
+
+def _audit_primary_main_view_set(
+    generated: list[ImageAgentResult],
+    *,
+    inspect: MainViewComparabilityInspector,
+    db: Session,
+    studio_job: StudioJobRecord | None,
+    created_by: str,
+    repair: MainViewRepairGenerator | None = None,
+    validate_repair: MainViewRepairValidator | None = None,
+    normalize_presentation: MainViewPresentationNormalizer | None = None,
+    maximum_repair_attempts: int = 1,
+) -> tuple[
+    list[ImageAgentResult], tuple[ImageAgentResult, ...], JSONResponse | None
+]:
+    """Audit directions and repair only a mismatched later presentation.
+
+    Direction 1 remains the request's comparison anchor. A rejected later
+    direction may be repaired a bounded number of times with its exact pixels
+    as source and quality authority. Rejected images stay as append-only run
+    evidence and can never become a canonical candidate or a charged Studio
+    output.
+    """
+
+    if len(generated) < 2:
+        return generated, (), None
+    if maximum_repair_attempts < 0 or maximum_repair_attempts > 2:
+        raise ValueError("main-view repair attempts must be between zero and two")
+    audited = list(generated)
+    rejected_evidence: list[ImageAgentResult] = []
+    reference = generated[0]
+    for index, candidate in enumerate(generated[1:], start=1):
+        repair_attempt = 0
+        normalization_attempted = False
+        while True:
+            try:
+                decision = adjudicate_main_view_comparability(
+                    reference.image_bytes,
+                    candidate.image_bytes,
+                    inspect=inspect,
+                )
+                audit = decision.audit
+            except RenderUnavailable as exc:
+                rejected_evidence.append(candidate)
+                completed = tuple(audited[:index])
+                terminal_rejections = (
+                    *rejected_evidence,
+                    *audited[index + 1:],
+                )
+                observed_run_ids, _failed_run_id = (
+                    _persist_create_failure_evidence(
+                        db,
+                        studio_job=studio_job,
+                        completed_results=completed,
+                        created_by=created_by,
+                        error_code=(
+                            "creative_main_view_comparability_unavailable"
+                        ),
+                        rejected_results=tuple(terminal_rejections),
+                        rejected_error_category="quality",
+                    )
+                )
+                response = JSONResponse(status_code=503, content={
+                    "error_category": "provider_failure",
+                    "code": "creative_main_view_comparability_unavailable",
+                    "detail": str(exc),
+                })
+                if observed_run_ids:
+                    response.headers["X-Facetta-Completed-Run-Count"] = str(
+                        len(observed_run_ids)
+                    )
+                return audited, tuple(terminal_rejections), response
+
+            audited_candidate = _result_with_main_view_audit(
+                candidate,
+                reference_direction=1,
+                candidate_direction=index + 1,
+                audit=audit,
+                decision=decision,
+                audited_reference_image=reference.image_bytes,
+            )
+            if decision.uncertain:
+                rejected_evidence.append(audited_candidate)
+                completed = tuple(audited[:index])
+                terminal_rejections = (
+                    *rejected_evidence,
+                    *audited[index + 1:],
+                )
+                observed_run_ids, _failed_run_id = (
+                    _persist_create_failure_evidence(
+                        db,
+                        studio_job=studio_job,
+                        completed_results=completed,
+                        created_by=created_by,
+                        error_code="creative_main_view_comparability_uncertain",
+                        rejected_results=tuple(terminal_rejections),
+                        rejected_error_category="quality",
+                    )
+                )
+                response = JSONResponse(status_code=422, content={
+                    "error_category": "quality_failure",
+                    "code": "creative_main_view_comparability_uncertain",
+                    "detail": (
+                        f"Direction {index + 1}'s exact pixels received "
+                        "conflicting camera evidence. Nothing was saved or "
+                        "charged, and no camera repair was attempted."
+                    ),
+                })
+                if observed_run_ids:
+                    response.headers["X-Facetta-Completed-Run-Count"] = str(
+                        len(observed_run_ids)
+                    )
+                return audited, tuple(terminal_rejections), response
+            if audit.passed:
+                audited[index] = audited_candidate
+                break
+
+            rejected_evidence.append(audited_candidate)
+            if (
+                audit.framing_only_mismatch
+                and normalize_presentation is not None
+                and not normalization_attempted
+            ):
+                normalization_attempted = True
+                try:
+                    normalized_candidate = normalize_presentation(
+                        reference.image_bytes,
+                        candidate,
+                    )
+                    normalized_audit = prove_normalized_main_view_comparability(
+                        reference.image_bytes,
+                        candidate,
+                        normalized_candidate,
+                        audit,
+                    )
+                except PresentationNormalizationError as exc:
+                    completed = tuple(audited[:index])
+                    terminal_rejections = (
+                        *rejected_evidence,
+                        *audited[index + 1:],
+                    )
+                    observed_run_ids, _failed_run_id = (
+                        _persist_create_failure_evidence(
+                            db,
+                            studio_job=studio_job,
+                            completed_results=completed,
+                            created_by=created_by,
+                            error_code=(
+                                "creative_presentation_normalization_untrusted"
+                            ),
+                            rejected_results=tuple(terminal_rejections),
+                            rejected_error_category="quality",
+                        )
+                    )
+                    response = JSONResponse(status_code=422, content={
+                        "error_category": "quality_failure",
+                        "code": (
+                            "creative_presentation_normalization_untrusted"
+                        ),
+                        "detail": (
+                            "Facetta could not prove safe jewelry bounds for "
+                            "deterministic framing normalization. Nothing was "
+                            f"saved or charged. ({exc.code})"
+                        ),
+                    })
+                    if observed_run_ids:
+                        response.headers[
+                            "X-Facetta-Completed-Run-Count"
+                        ] = str(len(observed_run_ids))
+                    return (
+                        audited,
+                        tuple(terminal_rejections),
+                        response,
+                    )
+                audited[index] = _result_with_main_view_audit(
+                    normalized_candidate,
+                    reference_direction=1,
+                    candidate_direction=index + 1,
+                    audit=normalized_audit,
+                    decision=decision,
+                    audited_reference_image=reference.image_bytes,
+                    audited_candidate_image=candidate.image_bytes,
+                )
+                break
+
+            if (
+                normalization_attempted
+                or repair is None
+                or repair_attempt >= maximum_repair_attempts
+            ):
+                completed = tuple(audited[:index])
+                terminal_rejections = (
+                    *rejected_evidence,
+                    *audited[index + 1:],
+                )
+                observed_run_ids, _failed_run_id = (
+                    _persist_create_failure_evidence(
+                        db,
+                        studio_job=studio_job,
+                        completed_results=completed,
+                        created_by=created_by,
+                        error_code="creative_main_views_incomparable",
+                        rejected_results=tuple(terminal_rejections),
+                        rejected_error_category="quality",
+                    )
+                )
+                response = JSONResponse(status_code=422, content={
+                    "error_category": "quality_failure",
+                    "code": "creative_main_views_incomparable",
+                    "detail": (
+                        f"Direction {index + 1} did not match Direction 1's "
+                        "camera, crop, and review scale after a bounded repair. "
+                        "Nothing was saved or charged."
+                    ),
+                })
+                if observed_run_ids:
+                    response.headers["X-Facetta-Completed-Run-Count"] = str(
+                        len(observed_run_ids)
+                    )
+                return audited, tuple(terminal_rejections), response
+
+            repair_attempt += 1
+            try:
+                repaired = repair(index, audit)
+            except ImageAgentError as exc:
+                completed = tuple(audited[:index])
+                terminal_rejections = (
+                    *rejected_evidence,
+                    *audited[index + 1:],
+                )
+                observed_run_ids, failed_run_id = _persist_create_failure_evidence(
+                    db,
+                    studio_job=studio_job,
+                    completed_results=completed,
+                    created_by=created_by,
+                    error_code=exc.code,
+                    error=exc,
+                    rejected_results=tuple(terminal_rejections),
+                    rejected_error_category="quality",
+                )
+                response = image_agent_error_response(
+                    exc, image_run_id=failed_run_id
+                )
+                if observed_run_ids:
+                    response.headers["X-Facetta-Completed-Run-Count"] = str(
+                        len(observed_run_ids)
+                    )
+                return audited, tuple(terminal_rejections), response
+
+            contract_error = (
+                validate_repair(index, repaired)
+                if validate_repair is not None else None
+            )
+            if contract_error is not None:
+                status_code, category, code, detail = contract_error
+                rejected_evidence.append(repaired)
+                completed = tuple(audited[:index])
+                terminal_rejections = (
+                    *rejected_evidence,
+                    *audited[index + 1:],
+                )
+                observed_run_ids, _failed_run_id = (
+                    _persist_create_failure_evidence(
+                        db,
+                        studio_job=studio_job,
+                        completed_results=completed,
+                        created_by=created_by,
+                        error_code=code,
+                        rejected_results=tuple(terminal_rejections),
+                        rejected_error_category=(
+                            "quality" if category == "quality_failure"
+                            else "evaluation"
+                        ),
+                    )
+                )
+                response = JSONResponse(status_code=status_code, content={
+                    "error_category": category,
+                    "code": code,
+                    "detail": detail,
+                })
+                if observed_run_ids:
+                    response.headers["X-Facetta-Completed-Run-Count"] = str(
+                        len(observed_run_ids)
+                    )
+                return audited, tuple(terminal_rejections), response
+            candidate = repaired
+    return audited, tuple(rejected_evidence), None
+
+
+def _comparison_view_contract_error(
+    result: ImageAgentResult,
+    *,
+    source_image: bytes,
+    view: Literal["three_quarter"],
+) -> tuple[str, str] | None:
+    """Fail closed unless angle and exact-source preservation were audited."""
+
+    if result.plan.operation is not ImageOperation.REFERENCE_RENDER:
+        return (
+            "creative_comparison_operation_mismatch",
+            "comparison generator returned the wrong operation",
+        )
+    if result.plan.source_hash != hashlib.sha256(source_image).hexdigest():
+        return (
+            "creative_comparison_source_binding_mismatch",
+            "comparison generator was not bound to the exact direction pixels",
+        )
+    instruction = _COMPARISON_VIEW_INSTRUCTIONS[view]
+    if instruction not in result.plan.intent:
+        return (
+            "creative_comparison_view_binding_mismatch",
+            "comparison generator did not preserve the prescribed shared angle",
+        )
+    if _uploaded_media_type(result.image_bytes) is None:
+        return (
+            "creative_comparison_unsupported_format",
+            "comparison generator returned an unsupported image format",
+        )
+    checks = {check.code: check for check in result.quality.checks}
+    required = (
+        "requested_presentation_applied",
+        "source_design_preserved",
+        "visible_components_preserved",
+        "local_geometry_preserved",
+        "stone_shape_and_cut_family_preserved",
+    )
+    failed = [code for code in required if not checks.get(code, None)
+              or not checks[code].passed]
+    if failed:
+        return (
+            "creative_comparison_qa_unconfirmed",
+            "comparison view did not prove angle and identity preservation: "
+            + ", ".join(failed),
+        )
+    return None
+
+
+def _main_view_repair_quality_error(
+    result: ImageAgentResult,
+) -> tuple[int, str, str, str] | None:
+    """Reject a camera repair that bypassed the normal identity/count QA."""
+
+    failed_hard = tuple(
+        check.code
+        for check in result.quality.checks
+        if check.severity is CheckSeverity.HARD and not check.passed
+    )
+    if (
+        result.quality.verdict is QualityVerdict.FAIL
+        or not (result.accepted or result.review_required)
+        or failed_hard
+    ):
+        suffix = (
+            ": " + ", ".join(failed_hard)
+            if failed_hard else ""
+        )
+        return (
+            422,
+            "quality_failure",
+            "creative_main_view_repair_qa_unconfirmed",
+            "camera repair did not pass the ordinary jewelry identity and "
+            f"component-count QA{suffix}",
+        )
+    return None
+
+
 @router.post(
     "/from-prompt", status_code=201, response_model=ProjectDetail,
     response_model_exclude_none=True,
@@ -1919,6 +3097,8 @@ def create_project_from_prompt(
     request: ProjectFromPromptRequest,
     db: DbSession,
     generate: CreativePromptGeneratorDep,
+    render_comparison: CreativeGeneratorDep,
+    inspect_main_views: MainViewComparabilityInspectorDep,
     principal: PrincipalDep,
 ):
     """Create several category-neutral visual concepts before specification.
@@ -1934,6 +3114,8 @@ def create_project_from_prompt(
             job_id=request.studio_job_id,
             owner=actor,
             action_id="create",
+            # A prescribed comparison angle is bundled review evidence for
+            # each requested direction, not a second user-charged output.
             requested_outputs=request.variation_count,
         )
     except ProviderStudioJobError as exc:
@@ -1952,35 +3134,28 @@ def create_project_from_prompt(
                 "code": "creative_reference_invalid_image",
                 "detail": f"a role-labeled reference could not be decoded: {exc}",
             })
-    generated = []
+    generated: list[ImageAgentResult] = []
+    generation_errors: list[ImageAgentError] = []
+    effective_prompt = (
+        f"{with_jewelry_symmetry_contract(request.prompt)}\n\n"
+        f"{MAIN_VIEW_CONTRACT}"
+    )
     for offset in range(request.variation_count):
         variant = request.starting_variant + offset
         try:
             result = (
                 generate(
-                    request.prompt,
+                    effective_prompt,
                     variant,
                     reference_board=advisory_board.image,
                     reference_instruction=advisory_board.instruction,
                 )
                 if advisory_board is not None
-                else generate(request.prompt, variant)
+                else generate(effective_prompt, variant)
             )
         except ImageAgentError as exc:
-            observed_run_ids, failed_run_id = _persist_create_failure_evidence(
-                db,
-                studio_job=studio_job,
-                completed_results=tuple(generated),
-                created_by=request.owner,
-                error_code=exc.code,
-                error=exc,
-            )
-            response = image_agent_error_response(
-                exc, image_run_id=failed_run_id)
-            if observed_run_ids:
-                response.headers["X-Facetta-Completed-Run-Count"] = str(
-                    len(observed_run_ids))
-            return response
+            generation_errors.append(exc)
+            continue
         if result.plan.operation.value != "CREATIVE_GENERATE":
             observed_run_ids, _failed_run_id = (
                 _persist_create_failure_evidence(
@@ -1989,6 +3164,7 @@ def create_project_from_prompt(
                     completed_results=tuple(generated),
                     created_by=request.owner,
                     error_code="create_generator_operation_mismatch",
+                    errors=tuple(generation_errors),
                     rejected_result=result,
                     rejected_error_category="evaluation",
                 )
@@ -2013,6 +3189,7 @@ def create_project_from_prompt(
                     completed_results=tuple(generated),
                     created_by=request.owner,
                     error_code="create_reference_binding_mismatch",
+                    errors=tuple(generation_errors),
                     rejected_result=result,
                     rejected_error_category="evaluation",
                 )
@@ -2036,6 +3213,7 @@ def create_project_from_prompt(
                     completed_results=tuple(generated),
                     created_by=request.owner,
                     error_code="image_output_unsupported_format",
+                    errors=tuple(generation_errors),
                     rejected_result=result,
                 )
             )
@@ -2049,13 +3227,191 @@ def create_project_from_prompt(
             return response
         generated.append(result)
 
+    if not generated:
+        terminal_error = generation_errors[-1]
+        _observed_run_ids, failed_run_id = _persist_create_failure_evidence(
+            db,
+            studio_job=studio_job,
+            completed_results=(),
+            created_by=request.owner,
+            error_code=terminal_error.code,
+            errors=tuple(generation_errors),
+        )
+        return image_agent_error_response(
+            terminal_error, image_run_id=failed_run_id,
+        )
+
+    if request.comparison_views and generation_errors:
+        terminal_error = generation_errors[-1]
+        _observed_run_ids, failed_run_id = _persist_create_failure_evidence(
+            db,
+            studio_job=studio_job,
+            completed_results=tuple(generated),
+            created_by=request.owner,
+            error_code="creative_comparison_incomplete_direction_set",
+            errors=tuple(generation_errors),
+        )
+        return image_agent_error_response(
+            terminal_error, image_run_id=failed_run_id,
+        )
+
+    def repair_prompt_main_view(
+        index: int,
+        audit: MainViewComparabilityAudit,
+    ) -> ImageAgentResult:
+        original = generated[index]
+        repair_instruction = compile_main_view_repair_instruction(
+            effective_prompt,
+            audit=audit,
+            reference_direction=1,
+            candidate_direction=index + 1,
+        )
+        # Camera repair is an edit of this exact direction, never a new prompt
+        # generation.  Binding both source and quality authority to the
+        # rejected candidate preserves its jewelry identity while the provider
+        # corrects presentation only.
+        return invoke_creative_render_generator(
+            render_comparison,
+            original.image_bytes,
+            repair_instruction,
+            original.plan.variant,
+            quality_source_image=original.image_bytes,
+            camera_reference_image=generated[0].image_bytes,
+        )
+
+    def validate_prompt_main_view_repair(
+        index: int,
+        result: ImageAgentResult,
+    ) -> tuple[int, str, str, str] | None:
+        original = generated[index]
+        if result.plan.operation is not ImageOperation.REFERENCE_RENDER:
+            return (
+                500,
+                "validation_failure",
+                "creative_main_view_repair_operation_mismatch",
+                "prompt camera repair returned the wrong operation",
+            )
+        if MAIN_VIEW_REPAIR_CONTRACT not in result.plan.intent:
+            return (
+                500,
+                "validation_failure",
+                "creative_main_view_repair_contract_mismatch",
+                "prompt camera repair did not bind the canonical camera contract",
+            )
+        if result.plan.source_hash != hashlib.sha256(
+            original.image_bytes
+        ).hexdigest():
+            return (
+                500,
+                "validation_failure",
+                "creative_main_view_repair_source_binding_mismatch",
+                "prompt camera repair did not bind the exact rejected direction",
+            )
+        if result.plan.camera_reference_hash != hashlib.sha256(
+            generated[0].image_bytes
+        ).hexdigest():
+            return (
+                500,
+                "validation_failure",
+                "creative_main_view_repair_camera_binding_mismatch",
+                "prompt camera repair did not bind Direction 1 as camera reference",
+            )
+        if _uploaded_media_type(result.image_bytes) is None:
+            return (
+                422,
+                "quality_failure",
+                "creative_main_view_repair_unsupported_format",
+                "prompt camera repair returned an unsupported image format",
+            )
+        return _main_view_repair_quality_error(result)
+
+    generated, rejected_main_views, main_view_error = (
+        _audit_primary_main_view_set(
+        generated,
+        inspect=inspect_main_views,
+        db=db,
+        studio_job=studio_job,
+        created_by=request.owner,
+        repair=repair_prompt_main_view,
+        validate_repair=validate_prompt_main_view_repair,
+        normalize_presentation=normalize_main_view_result,
+        maximum_repair_attempts=1,
+    ))
+    if main_view_error is not None:
+        return main_view_error
+
+    comparison_results: list[list[tuple[str, ImageAgentResult]]] = [
+        [] for _result in generated
+    ]
+    completed_for_evidence = list(generated)
+    for candidate_index, primary in enumerate(generated):
+        for view in request.comparison_views:
+            instruction = _COMPARISON_VIEW_INSTRUCTIONS[view]
+            try:
+                comparison = invoke_creative_render_generator(
+                    render_comparison,
+                    primary.image_bytes,
+                    instruction,
+                    0,
+                    quality_source_image=primary.image_bytes,
+                )
+            except ImageAgentError as exc:
+                observed_run_ids, failed_run_id = _persist_create_failure_evidence(
+                    db,
+                    studio_job=studio_job,
+                    completed_results=tuple(completed_for_evidence),
+                    created_by=request.owner,
+                    error_code=exc.code,
+                    error=exc,
+                    rejected_results=rejected_main_views,
+                )
+                response = image_agent_error_response(
+                    exc, image_run_id=failed_run_id)
+                if observed_run_ids:
+                    response.headers["X-Facetta-Completed-Run-Count"] = str(
+                        len(observed_run_ids))
+                return response
+            contract_error = _comparison_view_contract_error(
+                comparison,
+                source_image=primary.image_bytes,
+                view=view,
+            )
+            if contract_error is not None:
+                code, detail = contract_error
+                observed_run_ids, _failed_run_id = _persist_create_failure_evidence(
+                    db,
+                    studio_job=studio_job,
+                    completed_results=tuple(completed_for_evidence),
+                    created_by=request.owner,
+                    error_code=code,
+                    rejected_results=(*rejected_main_views, comparison),
+                    rejected_error_category="quality",
+                )
+                response = JSONResponse(status_code=422, content={
+                    "error_category": "quality_failure",
+                    "code": code,
+                    "detail": detail,
+                })
+                if observed_run_ids:
+                    response.headers["X-Facetta-Completed-Run-Count"] = str(
+                        len(observed_run_ids))
+                return response
+            comparison_results[candidate_index].append((view, comparison))
+            completed_for_evidence.append(comparison)
+
     persisted = persist_prompt_creative_project(
         db,
         candidates=tuple(CreativeCandidateInput(
             image=result.image_bytes,
             instruction=request.prompt,
             image_run=result,
-        ) for result in generated),
+            comparison_views=tuple(CreativeComparisonViewInput(
+                view=view,
+                image=comparison.image_bytes,
+                instruction=_COMPARISON_VIEW_INSTRUCTIONS[view],
+                image_run=comparison,
+            ) for view, comparison in comparison_results[index]),
+        ) for index, result in enumerate(generated)),
         reference_board=(
             SourceAssetInput(
                 image=advisory_board.image,
@@ -2083,6 +3439,8 @@ def create_project_from_prompt(
         collection=request.collection,
         tags=request.tags,
         studio_job=studio_job,
+        failed_image_errors=tuple(generation_errors),
+        rejected_image_results=rejected_main_views,
     )
     project = db.get(Project, persisted.root_id)
     if project is None:  # pragma: no cover - transaction invariant
@@ -2100,6 +3458,8 @@ def create_project_from_drawing(
     request: ProjectFromDrawingRequest,
     db: DbSession,
     generate: CreativeGeneratorDep,
+    understand_source: SourceUnderstandingInspectorDep,
+    inspect_main_views: MainViewComparabilityInspectorDep,
     principal: PrincipalDep,
 ):
     """Create reviewable beauty renders without inventing a factory spec.
@@ -2185,6 +3545,47 @@ def create_project_from_drawing(
         )
 
     quality_source = render_source
+    rough_drawing_fallback = False
+    try:
+        visible_facts = understand_source(render_source, request.source_kind)
+    except RenderUnavailable as exc:
+        if request.source_kind == "drawing":
+            # A rough sketch is valid creative input even when the advisory
+            # vision pass cannot inventory it.  Keep the exact pixels bound to
+            # the canonical REFERENCE_RENDER route and let the designer's
+            # sentence carry intent; do not manufacture source facts merely to
+            # satisfy an inspection step.
+            visible_facts = conservative_source_visible_facts(
+                render_source, request.source_kind
+            )
+            rough_drawing_fallback = True
+        else:
+            _persist_create_failure_evidence(
+                db,
+                studio_job=studio_job,
+                completed_results=(),
+                created_by=request.owner,
+                error_code="source_understanding_unavailable",
+            )
+            return JSONResponse(status_code=503, content={
+                "error_category": "provider_failure",
+                "code": "source_understanding_unavailable",
+                "detail": str(exc),
+            })
+    if requires_rough_drawing_interpretation(visible_facts):
+        rough_drawing_fallback = True
+    effective_instruction = with_jewelry_symmetry_contract(
+        f"{effective_instruction}\n\n"
+        f"{compile_source_preservation_brief(visible_facts)}"
+    )
+    if rough_drawing_fallback:
+        effective_instruction = (
+            f"{effective_instruction}\n\n"
+            f"{compile_rough_drawing_intent_brief()}"
+        )
+    effective_instruction = (
+        f"{effective_instruction}\n\n{MAIN_VIEW_CONTRACT}"
+    )
     render_source_capability: Literal[
         "CREATIVE_SOURCE_REGION", "CREATIVE_REFERENCE_BOARD"
     ] = "CREATIVE_SOURCE_REGION"
@@ -2324,6 +3725,164 @@ def create_project_from_drawing(
             return response
         generated.append(result)
 
+    def repair_uploaded_main_view(
+        index: int,
+        audit: MainViewComparabilityAudit,
+    ) -> ImageAgentResult:
+        original = generated[index]
+        repair_instruction = compile_main_view_repair_instruction(
+            effective_instruction,
+            audit=audit,
+            reference_direction=1,
+            candidate_direction=index + 1,
+        )
+        # Retry from the exact rejected direction, never from Direction 1 and
+        # never from the earlier upload.  The candidate pixels are the only
+        # source that can preserve the variation while changing its camera.
+        return invoke_creative_render_generator(
+            generate,
+            original.image_bytes,
+            repair_instruction,
+            original.plan.variant,
+            quality_source_image=original.image_bytes,
+            camera_reference_image=generated[0].image_bytes,
+        )
+
+    def validate_uploaded_main_view_repair(
+        index: int,
+        result: ImageAgentResult,
+    ) -> tuple[int, str, str, str] | None:
+        original = generated[index]
+        if result.plan.operation is not ImageOperation.REFERENCE_RENDER:
+            return (
+                500,
+                "validation_failure",
+                "creative_main_view_repair_operation_mismatch",
+                "uploaded-source camera repair returned the wrong operation",
+            )
+        if MAIN_VIEW_REPAIR_CONTRACT not in result.plan.intent:
+            return (
+                500,
+                "validation_failure",
+                "creative_main_view_repair_contract_mismatch",
+                "uploaded-source camera repair did not bind the camera contract",
+            )
+        if result.plan.source_hash != hashlib.sha256(
+            original.image_bytes
+        ).hexdigest():
+            return (
+                500,
+                "validation_failure",
+                "creative_main_view_repair_source_binding_mismatch",
+                "uploaded-source camera repair did not bind the exact "
+                "rejected direction",
+            )
+        if result.plan.camera_reference_hash != hashlib.sha256(
+            generated[0].image_bytes
+        ).hexdigest():
+            return (
+                500,
+                "validation_failure",
+                "creative_main_view_repair_camera_binding_mismatch",
+                "uploaded-source camera repair did not bind Direction 1 as "
+                "camera reference",
+            )
+        if reference_role_contract is not None and not (
+            reference_role_contract in result.plan.style_constraints
+            or _json_value_contains_text(
+                result.plan.normalized_intent,
+                reference_role_contract,
+            )
+        ):
+            return (
+                500,
+                "validation_failure",
+                "creative_main_view_repair_reference_binding_mismatch",
+                "uploaded-source repair lost its role-labeled reference contract",
+            )
+        if _uploaded_media_type(result.image_bytes) is None:
+            return (
+                422,
+                "quality_failure",
+                "creative_main_view_repair_unsupported_format",
+                "uploaded-source camera repair returned an unsupported image format",
+            )
+        return _main_view_repair_quality_error(result)
+
+    generated, rejected_main_views, main_view_error = (
+        _audit_primary_main_view_set(
+        generated,
+        inspect=inspect_main_views,
+        db=db,
+        studio_job=studio_job,
+        created_by=request.owner,
+        repair=repair_uploaded_main_view,
+        validate_repair=validate_uploaded_main_view_repair,
+        normalize_presentation=normalize_main_view_result,
+        maximum_repair_attempts=1,
+    ))
+    if main_view_error is not None:
+        return main_view_error
+
+    comparison_results: list[list[tuple[str, ImageAgentResult]]] = [
+        [] for _result in generated
+    ]
+    completed_for_evidence = list(generated)
+    for candidate_index, primary in enumerate(generated):
+        for view in request.comparison_views:
+            instruction = _COMPARISON_VIEW_INSTRUCTIONS[view]
+            try:
+                comparison = invoke_creative_render_generator(
+                    generate,
+                    primary.image_bytes,
+                    instruction,
+                    0,
+                    quality_source_image=primary.image_bytes,
+                )
+            except ImageAgentError as exc:
+                observed_run_ids, failed_run_id = _persist_create_failure_evidence(
+                    db,
+                    studio_job=studio_job,
+                    completed_results=tuple(completed_for_evidence),
+                    created_by=request.owner,
+                    error_code=exc.code,
+                    error=exc,
+                    rejected_results=rejected_main_views,
+                )
+                response = image_agent_error_response(
+                    exc, image_run_id=failed_run_id)
+                if observed_run_ids:
+                    response.headers["X-Facetta-Completed-Run-Count"] = str(
+                        len(observed_run_ids))
+                return response
+            contract_error = _comparison_view_contract_error(
+                comparison,
+                source_image=primary.image_bytes,
+                view=view,
+            )
+            if contract_error is not None:
+                code, detail = contract_error
+                observed_run_ids, _failed_run_id = _persist_create_failure_evidence(
+                    db,
+                    studio_job=studio_job,
+                    completed_results=tuple(completed_for_evidence),
+                    created_by=request.owner,
+                    error_code=code,
+                    rejected_results=(*rejected_main_views, comparison),
+                    rejected_error_category="quality",
+                )
+                response = JSONResponse(status_code=422, content={
+                    "error_category": "quality_failure",
+                    "code": code,
+                    "detail": detail,
+                })
+                if observed_run_ids:
+                    response.headers["X-Facetta-Completed-Run-Count"] = str(
+                        len(observed_run_ids))
+                return response
+            comparison_results[candidate_index].append((view, comparison))
+            completed_for_evidence.append(comparison)
+
     persisted = persist_creative_project(
         db,
         source_image=image,
@@ -2354,12 +3913,19 @@ def create_project_from_drawing(
             image=result.image_bytes,
             instruction=effective_instruction,
             image_run=result,
-        ) for result in generated),
+            comparison_views=tuple(CreativeComparisonViewInput(
+                view=view,
+                image=comparison.image_bytes,
+                instruction=_COMPARISON_VIEW_INSTRUCTIONS[view],
+                image_run=comparison,
+            ) for view, comparison in comparison_results[index]),
+        ) for index, result in enumerate(generated)),
         owner=request.owner,
         title=request.title,
         collection=request.collection,
         tags=request.tags,
         studio_job=studio_job,
+        rejected_image_results=rejected_main_views,
     )
     project = db.get(Project, persisted.root_id)
     if project is None:  # pragma: no cover - transaction invariant

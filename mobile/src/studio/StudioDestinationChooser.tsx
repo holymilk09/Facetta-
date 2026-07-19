@@ -16,6 +16,8 @@ export interface StudioDestinationChooserProps {
   onSelect: (destinationId: StudioDestinationId) => void;
   title?: string;
   description?: string;
+  /** Omit the destination the designer is already viewing to avoid no-op loops. */
+  excludeDestinations?: readonly StudioDestinationId[];
 }
 
 const availabilityLabel = (
@@ -41,9 +43,11 @@ export function StudioDestinationChooser({
   onSelect,
   title = 'Where next?',
   description = 'Choose what you want to do with this saved revision.',
+  excludeDestinations = [],
 }: StudioDestinationChooserProps) {
   const destinations = STUDIO_DESTINATIONS.filter((destination) => (
-    destination.id !== 'factory' || destination.isAvailable(context)
+    !excludeDestinations.includes(destination.id)
+    && (destination.id !== 'factory' || destination.isAvailable(context))
   ));
 
   return (

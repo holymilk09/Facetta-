@@ -80,6 +80,7 @@ class StudioMarkupCandidate:
     asset_capability: str
     requested_change: str
     region_description: str
+    annotations: tuple[dict[str, object], ...]
     drift: float | None
     next_spec: Spec | None
     ignored_fields: tuple[str, ...]
@@ -127,6 +128,19 @@ def _utc(value: datetime) -> datetime:
 def _candidate(record: StudioMarkupCandidateRecord) -> StudioMarkupCandidate:
     payload = record.payload
     raw_spec = payload.get("next_spec")
+    raw_annotations = payload.get("annotations")
+    annotations = tuple(
+        item for item in raw_annotations
+        if isinstance(item, dict)
+    ) if isinstance(raw_annotations, list) else ()
+    if not annotations:
+        # Additive compatibility for candidates written before ordered
+        # multi-region evidence was introduced.  The singular indexed columns
+        # remain authoritative for those rows; no database rewrite is needed.
+        annotations = ({
+            "region_description": record.region_description,
+            "change_instruction": record.requested_change,
+        },)
     return StudioMarkupCandidate(
         candidate_id=record.id,
         run_id=record.image_run_id,
@@ -147,6 +161,7 @@ def _candidate(record: StudioMarkupCandidateRecord) -> StudioMarkupCandidate:
         asset_capability=record.asset_capability,
         requested_change=record.requested_change,
         region_description=record.region_description,
+        annotations=annotations,
         drift=payload.get("drift"),
         next_spec=Spec.model_validate(raw_spec) if raw_spec is not None else None,
         ignored_fields=tuple(payload.get("ignored_fields", ())),
@@ -323,6 +338,7 @@ def store_studio_markup_candidate(
     candidate: MarkupWarningCandidate,
     *,
     studio_job_id: str | None = None,
+    annotations: tuple[dict[str, object], ...] | None = None,
 ) -> StudioMarkupCandidate:
     source = db.get(ImageAsset, candidate.source_asset_id)
     root = db.get(ImageAsset, candidate.project_root_id)
@@ -408,6 +424,10 @@ def store_studio_markup_candidate(
         requested_change=candidate.requested_change,
         region_description=candidate.region_description,
         payload={
+            "annotations": list(annotations or ({
+                "region_description": candidate.region_description,
+                "change_instruction": candidate.requested_change,
+            },)),
             "drift": candidate.drift,
             "next_spec": (
                 candidate.next_spec.model_dump(mode="json")
@@ -704,6 +724,7 @@ def accept_studio_markup_candidate(
                 "source_asset_id": source.id,
                 "image_run_id": candidate.run_id,
                 "instruction": candidate.requested_change,
+                "annotations": list(candidate.annotations),
             },
             interpretation={
                 "operation": candidate.operation,

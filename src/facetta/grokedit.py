@@ -1,5 +1,4 @@
-"""Grok-powered spec editing: the same structural guarantees as the Claude
-edit agent, running entirely on the xAI key.
+"""Provider-backed spec editing with deterministic structural guarantees.
 
 The edit agent's promise — change ONE element and nothing else — was never the
 model's to keep: `agent.scope_guard` enforces it by construction, and the
@@ -10,13 +9,17 @@ existing scope guard and validator do the guaranteeing. It also carries the
 reading of the designer's note back for confirmation BEFORE anything executes
 — understanding is confirmed, never assumed.
 
-Runs on XAI_KEY alone; anthropic is never imported here.
+The compatibility entry points retain their historic ``grok_*`` names, but
+the language proposal can be supplied by xAI or OpenAI.  Provider selection
+never changes the authority boundary: ``scope_guard`` still grafts only the
+resolved target subtree and the caller still validates before persistence.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 
 from pydantic import ValidationError
 
@@ -25,26 +28,120 @@ from facetta.agent import (
     _target_ref, edit_system_prompt, resolve_target, scope_guard,
 )
 from facetta.assistant import DEFAULT_ASSISTANT_NAME
+from facetta.config import env_value
 from facetta.spec import Spec
 
 GROK_CHAT_MODEL_ENV = "FACETTA_XAI_CHAT"
 DEFAULT_GROK_CHAT_MODEL = "grok-4.3"
+OPENAI_CHAT_MODEL_ENV = "FACETTA_OPENAI_CHAT"
+DEFAULT_OPENAI_CHAT_MODEL = "gpt-5.4-mini"
+
+_STONE_COLOR_WORD = re.compile(
+    r"\b(?:colou?r|colorless|colourless|black|white|grey|gray|brown|red|"
+    r"orange|yellow|green|blue|purple|violet|pink|champagne|cognac)\b",
+    re.IGNORECASE,
+)
+_STONE_NON_COLOR_CHANGE = re.compile(
+    r"\b(?:shape|cut|outline|silhouette|size|dimension|carat|weight|count|"
+    r"number|position|setting|prong|bezel|species|replace|remove|add|larger|"
+    r"smaller|wider|narrower|longer|shorter|\d+(?:\.\d+)?\s*mm)\b",
+    re.IGNORECASE,
+)
 
 
 class GrokEditUnavailable(Exception):
-    """No key, provider failure, or unusable output after the repair retry."""
+    """Structured provider/configuration failure for the edit proposal.
+
+    The name is retained for API compatibility.  Callers should use the
+    attributes instead of parsing the human-readable message.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "edit_provider_unavailable",
+        provider: str | None = None,
+        retryable: bool = True,
+        status_code: int = 502,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.provider = provider
+        self.retryable = retryable
+        self.status_code = status_code
 
 
-def _chat_json(system: str, user: str) -> dict:
-    """One xAI chat call, JSON object out — the assistant._assistant_chat
-    shape, isolated here so tests monkeypatch exactly one seam."""
-    from facetta.concept import _provider_key
+def _response_output_text(payload: object) -> str:
+    """Extract one assistant text value from an OpenAI Responses payload."""
+    if not isinstance(payload, dict):
+        raise ValueError("OpenAI returned a non-object response")
+    direct = payload.get("output_text")
+    if isinstance(direct, str) and direct.strip():
+        return direct
+    output = payload.get("output")
+    if not isinstance(output, list):
+        raise ValueError("OpenAI response did not contain output items")
+    for item in output:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if (isinstance(block, dict)
+                    and block.get("type") == "output_text"
+                    and isinstance(block.get("text"), str)):
+                return block["text"]
+    raise ValueError("OpenAI response did not contain output text")
 
-    key = _provider_key("XAI_KEY")
-    if not key:
+
+def _openai_chat_json(key: str, system: str, user: str) -> dict:
+    """One OpenAI Responses call using the same JSON-object contract."""
+    import httpx
+
+    try:
+        response = httpx.post(
+            "https://api.openai.com/v1/responses",
+            timeout=120.0,
+            headers={"Authorization": f"Bearer {key}"},
+            json={
+                "model": os.environ.get(
+                    OPENAI_CHAT_MODEL_ENV, DEFAULT_OPENAI_CHAT_MODEL),
+                "store": False,
+                "input": [
+                    {
+                        "role": "developer",
+                        "content": [{"type": "input_text", "text": system}],
+                    },
+                    {
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": user}],
+                    },
+                ],
+                "text": {"format": {"type": "json_object"}},
+                # An EditResult carries the complete specification, not a
+                # terse patch, so leave enough room for the guarded proposal.
+                "max_output_tokens": 12_000,
+            },
+        )
+        response.raise_for_status()
+        data = json.loads(_response_output_text(response.json()))
+        if not isinstance(data, dict):
+            raise ValueError(f"provider returned non-object JSON: {data!r}")
+        return data
+    except Exception as exc:
         raise GrokEditUnavailable(
-            "no XAI_KEY configured — the edit agent needs a chat key")
+            f"OpenAI edit call failed: {exc}",
+            code="openai_edit_call_failed",
+            provider="openai",
+            retryable=True,
+            status_code=502,
+        ) from exc
 
+
+def _xai_chat_json(key: str, system: str, user: str) -> dict:
+    """One xAI chat-completions call using its JSON-object contract."""
     import httpx
 
     try:
@@ -63,10 +160,36 @@ def _chat_json(system: str, user: str) -> dict:
         if not isinstance(data, dict):
             raise ValueError(f"provider returned non-object JSON: {data!r}")
         return data
-    except GrokEditUnavailable:
-        raise
     except Exception as exc:
-        raise GrokEditUnavailable(f"grok edit call failed: {exc}") from exc
+        raise GrokEditUnavailable(
+            f"xAI edit call failed: {exc}",
+            code="xai_edit_call_failed",
+            provider="xai",
+            retryable=True,
+            status_code=502,
+        ) from exc
+
+
+def _chat_json(system: str, user: str) -> dict:
+    """Return one JSON proposal from the configured supported provider.
+
+    xAI remains the preferred compatibility route when both keys exist.
+    OpenAI is the supported fallback used by the local Facetta configuration.
+    """
+    xai_key = env_value("XAI_KEY")
+    if xai_key:
+        return _xai_chat_json(xai_key, system, user)
+    openai_key = env_value("OPENAI_API_KEY")
+    if openai_key:
+        return _openai_chat_json(openai_key, system, user)
+    raise GrokEditUnavailable(
+        "no XAI_KEY or OPENAI_API_KEY configured — the edit agent needs a "
+        "supported chat key",
+        code="edit_provider_not_configured",
+        provider=None,
+        retryable=False,
+        status_code=503,
+    )
 
 
 _RESULT_SHAPE = (
@@ -100,7 +223,28 @@ def grok_plan_edit(instruction: str, current: Spec) -> EditResult:
             return EditResult.model_validate(data)
         except ValidationError as exc:
             raise GrokEditUnavailable(
-                f"edit proposal failed validation twice: {exc}") from exc
+                f"edit proposal failed validation twice: {exc}",
+                code="edit_response_invalid",
+                retryable=False,
+                status_code=502,
+            ) from exc
+
+
+def _stone_color_only_prefix(
+    instruction: str,
+    target: tuple[str, int | str | None],
+) -> str | None:
+    """Return the only authorized leaf prefix for an unambiguous color ask."""
+    if target[0] not in {"stone", "side_stones"}:
+        return None
+    if target[0] == "side_stones" and not isinstance(target[1], int):
+        return None
+    if (not _STONE_COLOR_WORD.search(instruction)
+            or _STONE_NON_COLOR_CHANGE.search(instruction)):
+        return None
+    if target[0] == "stone":
+        return "stone.color"
+    return f"side_stones[{target[1]}].color"
 
 
 def grok_plan_scoped_edit(annotation: Annotation,
@@ -110,9 +254,30 @@ def grok_plan_scoped_edit(annotation: Annotation,
     anything else is impossible, exactly as in agent.plan_scoped_edit. The
     caller still re-validates the guarded spec before saving a version."""
     target = resolve_target(current, annotation)
-    proposed = grok_plan_edit(
-        _frame_annotation(target, annotation.instruction), current)
+    color_prefix = _stone_color_only_prefix(annotation.instruction, target)
+    framed_instruction = _frame_annotation(target, annotation.instruction)
+    if color_prefix is not None:
+        framed_instruction = (
+            f"Edit ONLY {color_prefix}. Keep the stone species, cut, carat, "
+            "dimensions, clarity, phenomena, count, position, every other "
+            "stone group, and every non-stone field EXACTLY unchanged.\n\n"
+            f"Color change requested: {annotation.instruction}"
+        )
+    proposed = grok_plan_edit(framed_instruction, current)
     guarded, changed, ignored = scope_guard(current, target, proposed.spec)
+    if color_prefix is not None:
+        unauthorized = [
+            path for path in changed
+            if not (path == color_prefix or path.startswith(color_prefix + "."))
+        ]
+        if unauthorized:
+            raise GrokEditUnavailable(
+                "the edit proposal changed stone facts outside the requested "
+                "color fields",
+                code="edit_scope_violation",
+                retryable=False,
+                status_code=502,
+            )
     return ScopedEditResult(
         spec=guarded, target=_target_label(target),
         isolate_ref=_target_ref(target),

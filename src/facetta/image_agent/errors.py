@@ -51,10 +51,17 @@ class ProviderCallError(ImageAgentError):
     category = FailureCategory.PROVIDER
     default_code = "image_provider_call_failed"
 
-    def __init__(self, message: str, *, code: str | None = None,
-                 retryable: bool = True) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str | None = None,
+        retryable: bool = True,
+        fallback_eligible: bool = False,
+    ) -> None:
         super().__init__(message, code=code)
         self.retryable = retryable
+        self.fallback_eligible = fallback_eligible
 
 
 class ImageProviderFailure(ImageAgentError):

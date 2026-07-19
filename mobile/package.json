@@ -28,6 +28,7 @@
   },
   "scripts": {
     "start": "expo start",
+    "preview:bypass": "EXPO_PUBLIC_API_URL=http://127.0.0.1:8000 EXPO_PUBLIC_FACETTA_PREVIEW_BYPASS=true expo start --web --port 8081 --clear",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",

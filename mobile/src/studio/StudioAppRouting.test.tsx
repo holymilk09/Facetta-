@@ -75,7 +75,14 @@ jest.mock('./StudioCreateWorkspace', () => {
   const ReactLocal = require('react');
   const { Pressable, Text, TextInput, View } = require('react-native');
   const { DEFAULT_API_URL } = require('../config');
+  const EMPTY_STUDIO_CREATE_DRAFT = { sentence: '', references: [], candidateCount: 1 };
   return {
+    EMPTY_STUDIO_CREATE_DRAFT,
+    draftAfterGeneration: (current: any, submitted: any) => (
+      current === submitted
+        ? { ...EMPTY_STUDIO_CREATE_DRAFT, candidateCount: submitted.candidateCount }
+        : current
+    ),
     StudioCreateWorkspace: ({
       onSave, resumeProject, resumeStudioJobId, draft, onDraftChange, onGenerationSucceeded,
     }: {
@@ -183,14 +190,12 @@ jest.mock('./StudioRefineWorkspace', () => {
   const { Pressable, Text, View } = require('react-native');
   return {
     StudioRefineWorkspace: ({
-      workspaceMode, lineage, onReviewStartingDesign, destinationContext,
-      onSelectDestination,
+      workspaceMode, lineage, onReviewStartingDesign, onSelectDestination,
     }: {
       workspaceMode?: 'refine' | 'specifications';
       lineage?: { sourceDesignVersion?: number } | null;
       onReviewStartingDesign?: () => void;
-      destinationContext?: { activeRevisionId?: string | null };
-      onSelectDestination?: (destination: 'library' | 'client') => void;
+      onSelectDestination?: (destinationId: 'library' | 'client') => void;
     }) => ReactLocal.createElement(
       View,
       null,
@@ -207,14 +212,12 @@ jest.mock('./StudioRefineWorkspace', () => {
           ReactLocal.createElement(Text, null, 'Review starting design'),
         )
         : null,
-      !destinationContext?.activeRevisionId
-        || onSelectDestination === undefined ? null : ReactLocal.createElement(
+      onSelectDestination === undefined ? null : ReactLocal.createElement(
         Pressable,
         { accessibilityRole: 'button', onPress: () => onSelectDestination('library') },
         ReactLocal.createElement(Text, null, 'Refine handoff to Collections'),
       ),
-      !destinationContext?.activeRevisionId
-        || onSelectDestination === undefined ? null : ReactLocal.createElement(
+      onSelectDestination === undefined ? null : ReactLocal.createElement(
         Pressable,
         { accessibilityRole: 'button', onPress: () => onSelectDestination('client') },
         ReactLocal.createElement(Text, null, 'Refine handoff to Present'),
@@ -231,17 +234,17 @@ jest.mock('./StudioViewsWorkspace', () => {
 
 jest.mock('./StudioPresentWorkspace', () => {
   const ReactLocal = require('react');
-  const { Text, View } = require('react-native');
+  const { Text } = require('react-native');
   return {
     StudioPresentWorkspace: ({ lineage, initialDestination }: any) => ReactLocal.createElement(
-      View,
+      ReactLocal.Fragment,
       null,
       ReactLocal.createElement(
-        Text, null, `Present route reached for ${lineage?.sourceAssetId ?? 'none'}`,
+        Text,
+        null,
+        `Present route reached for ${lineage?.sourceAssetId ?? 'none'}`,
       ),
-      ReactLocal.createElement(
-        Text, null, `Present destination ${initialDestination ?? 'choose'}`,
-      ),
+      ReactLocal.createElement(Text, null, `Present destination ${initialDestination ?? 'client'}`),
     ),
   };
 });
@@ -287,23 +290,21 @@ jest.mock('./StudioCollectionsWorkspace', () => {
         ReactLocal.createElement(Text, null, 'Continue refining exact revision'),
       ),
       ReactLocal.createElement(
-        Text,
+        Pressable,
         { accessibilityRole: 'button', onPress: () => onSelectDestination('client') },
-        'Present exact current revision',
+        ReactLocal.createElement(Text, null, 'Present exact current revision'),
       ),
       ReactLocal.createElement(
-        Text,
+        Pressable,
         { accessibilityRole: 'button', onPress: () => onSelectDestination('marketing') },
-        'Market exact current revision',
+        ReactLocal.createElement(Text, null, 'Market exact current revision'),
       ),
-      destinationContext?.activeProjectId
-        && destinationContext?.activeRevisionId
-        && destinationContext?.hasExactSpecification
-        && destinationContext?.factoryEligible ? ReactLocal.createElement(
-        Text,
-        { accessibilityRole: 'button', onPress: () => onSelectDestination('factory') },
-        'Review optional Factory readiness',
-      ) : null,
+      destinationContext?.factoryEligible && destinationContext?.hasExactSpecification
+        ? ReactLocal.createElement(
+          Pressable,
+          { accessibilityRole: 'button', onPress: () => onSelectDestination('factory') },
+          ReactLocal.createElement(Text, null, 'Review optional Factory readiness'),
+        ) : null,
     ),
   };
 });
@@ -638,7 +639,7 @@ test('Create restores its full draft after leaving for every global destination'
   }
 });
 
-test('a successful Create generation clears the setup before the next Create session', async () => {
+test('a successful Create generation clears consumed inputs but preserves its review quantity', async () => {
   authenticate();
   const view = await render(<App />);
 
@@ -650,13 +651,13 @@ test('a successful Create generation clears the setup before the next Create ses
   await fireEvent.press(view.getByText('Mock generation succeeded'));
 
   expect(view.getByLabelText('Mock draft sentence').props.value).toBe('');
-  expect(view.getByText('Mock draft count: 2')).toBeTruthy();
+  expect(view.getByText('Mock draft count: 4')).toBeTruthy();
   expect(view.getByText('Mock master source: none')).toBeTruthy();
 
   await fireEvent.press(view.getByRole('tab', { name: 'Studio' }));
   await fireEvent.press(await view.findByText('Start from an idea or reference'));
   expect(view.getByLabelText('Mock draft sentence').props.value).toBe('');
-  expect(view.getByText('Mock draft count: 2')).toBeTruthy();
+  expect(view.getByText('Mock draft count: 4')).toBeTruthy();
   expect(view.getByText('Mock master source: none')).toBeTruthy();
 });
 
@@ -681,7 +682,7 @@ test('a direct authenticated account switch clears the previous designer Create 
   expect(await view.findByText('Start from an idea or reference')).toBeTruthy();
   await fireEvent.press(view.getByText('Start from an idea or reference'));
   expect(view.getByLabelText('Mock draft sentence').props.value).toBe('');
-  expect(view.getByText('Mock draft count: 2')).toBeTruthy();
+  expect(view.getByText('Mock draft count: 1')).toBeTruthy();
   expect(view.getByText('Mock master source: none')).toBeTruthy();
   await fireEvent.press(view.getByLabelText('Account menu'));
   expect(view.getByText('designer-b@example.com')).toBeTruthy();
@@ -1042,12 +1043,11 @@ test('Collections sends the exact active revision to Present', async () => {
   expect(view.queryByText('Review optional Factory readiness')).toBeNull();
   fireEvent.press(await view.findByText('Present exact current revision'));
   expect(await view.findByText('Present route reached for asset_1')).toBeTruthy();
-  expect(await view.findByText('Present destination client')).toBeTruthy();
-
+  expect(view.getByText('Present destination client')).toBeTruthy();
   fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
-  fireEvent.press(await view.findByText('Market exact current revision'));
+  await fireEvent.press(await view.findByText('Market exact current revision'));
   expect(await view.findByText('Present route reached for asset_1')).toBeTruthy();
-  expect(await view.findByText('Present destination marketing')).toBeTruthy();
+  expect(view.getByText('Present destination marketing')).toBeTruthy();
 });
 
 test('Collections opens optional Factory readiness before the review pack is ready', async () => {

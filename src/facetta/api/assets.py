@@ -16,7 +16,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -43,7 +43,9 @@ from facetta.disclaimer import is_stampable, stamp_b64, stamp_image
 from facetta.markup_snapshot import (
     MarkupSnapshot,
     MarkupSnapshotImageError,
+    TextMarkupAnnotation,
     composite_markup_snapshot,
+    strip_markup_authorization_metadata,
 )
 from facetta.project_backbone import is_primary_revision
 from facetta.provider_job_gate import (
@@ -81,6 +83,42 @@ router = APIRouter(
         Depends(require_asset_project_boundary),
     ],
 )
+
+
+def _edit_unavailable_response(
+    exc: Exception,
+    *,
+    code: str,
+    steps: list[dict] | None = None,
+    **context: object,
+) -> JSONResponse:
+    """Map the edit planner's typed failure without parsing its message."""
+    provider_error_code = str(getattr(
+        exc, "code", "edit_provider_unavailable"))
+    not_configured = provider_error_code.endswith("_not_configured")
+    content: dict[str, object] = {
+        "detail": (
+            "Facetta's edit service is not configured."
+            if not_configured
+            else "Facetta's edit service is temporarily unavailable."
+        ),
+        # The top-level code is what clients classify.  Keep the operation
+        # context separately so setup failures are not flattened to HTTP_503.
+        "code": provider_error_code,
+        "operation_code": code,
+        "category": "provider",
+        "retryable": bool(getattr(exc, "retryable", True)),
+    }
+    provider = getattr(exc, "provider", None)
+    if provider:
+        content["provider"] = provider
+    if steps is not None:
+        content["steps"] = steps
+    content.update(context)
+    return JSONResponse(
+        status_code=int(getattr(exc, "status_code", 502)),
+        content=content,
+    )
 
 DbSession = Annotated[Session, Depends(get_db)]
 PrincipalDep = Annotated[AuthenticatedPrincipal, Depends(require_principal_boundary)]
@@ -533,8 +571,19 @@ class MarkupReadRequest(BaseModel):
         Field(min_length=1, max_length=14_000_000),
     ] | None = None
     markup_snapshot: MarkupSnapshot | None = None
+    instruction: Annotated[str, Field(max_length=2000)] | None = None
     created_by: str = "usr_pending"
     assistant_name: str | None = None
+
+    @field_validator("instruction")
+    @classmethod
+    def normalize_instruction(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("instruction must contain a change request")
+        return normalized
 
     @model_validator(mode="after")
     def require_exactly_one_markup_input(self) -> MarkupReadRequest:
@@ -578,6 +627,7 @@ def markup_read(
         try:
             marked = base64.b64decode(
                 request.marked_image_base64 or "", validate=True)
+            marked = strip_markup_authorization_metadata(marked)
         except (binascii.Error, ValueError):
             return JSONResponse(status_code=422, content={
                 "detail": "marked_image_base64 is not valid base64"})
@@ -592,10 +642,36 @@ def markup_read(
         if linked is not None else ()
     )
     try:
-        reading = (
-            read_markup(bytes(asset.image), marked, form_elements)
-            if form_elements else read_markup(bytes(asset.image), marked)
-        )
+        if request.markup_snapshot is not None:
+            reading = read_markup(
+                bytes(asset.image),
+                marked,
+                form_elements,
+                designer_instruction=request.instruction,
+                ordered_local_instructions=tuple(
+                    annotation.instruction
+                    or (
+                        annotation.text
+                        if isinstance(annotation, TextMarkupAnnotation)
+                        else None
+                    )
+                    for annotation in request.markup_snapshot.annotations
+                ),
+            )
+        elif request.instruction is not None:
+            reading = read_markup(
+                bytes(asset.image),
+                marked,
+                form_elements,
+                designer_instruction=request.instruction,
+            )
+        else:
+            # Preserve the compatibility call shape for legacy raster notes
+            # and tests while typed-instruction clients migrate.
+            reading = (
+                read_markup(bytes(asset.image), marked, form_elements)
+                if form_elements else read_markup(bytes(asset.image), marked)
+            )
     except RenderUnavailable as exc:
         return _provider_error(exc)
 
@@ -703,6 +779,602 @@ class MarkupApplyRequest(BaseModel):
     studio_job_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
 
 
+def _union_markup_masks(source_image: bytes, masks: list[bytes]) -> bytes:
+    """Return one exact-size white-on-black authorization union."""
+
+    import io
+
+    from PIL import Image, ImageChops
+
+    try:
+        source_size = Image.open(io.BytesIO(source_image)).size
+    except Exception as exc:  # pragma: no cover - stored asset invariant
+        raise ValueError("the source revision image is not decodable") from exc
+    union = Image.new("L", source_size, 0)
+    for raw in masks:
+        try:
+            mask = Image.open(io.BytesIO(raw)).convert("L")
+        except Exception as exc:
+            raise ValueError("an annotation mask is not a decodable image") from exc
+        if mask.size != source_size:
+            raise ValueError(
+                "every annotation mask must match the exact source revision raster"
+            )
+        union = ImageChops.lighter(
+            union,
+            mask.point(lambda pixel: 255 if pixel > 0 else 0),
+        )
+    if union.getbbox() is None:
+        raise ValueError("the combined annotation mask contains no marked region")
+    output = io.BytesIO()
+    union.save(output, format="PNG")
+    return output.getvalue()
+
+
+def _ordered_markup_instruction(annotations: list[MarkupAnnotation]) -> str:
+    numbered = " ".join(
+        f"{index}. Inside '{annotation.region_description.strip()}': "
+        f"{annotation.change_instruction.strip()}"
+        for index, annotation in enumerate(annotations, start=1)
+    )
+    return (
+        "APPLY ALL ORDERED MARKED CHANGES IN ONE PREVIEW. Each numbered change "
+        "is required and applies only to its named marked region. The union of "
+        "the supplied regions is the absolute edit boundary; preserve every "
+        "pixel outside it. " + numbered
+    )
+
+
+def _trusted_multi_markup_preview(
+    *,
+    db: Session,
+    asset: ImageAsset,
+    request: MarkupApplyRequest,
+    linked,
+    design_id: str | None,
+    current_design_version: int | None,
+    derived_mask: bytes | None,
+    markup_notes_valid: bool,
+):
+    """Compile 2–8 confirmed regions into one temporary exact-source result."""
+
+    from time import monotonic
+
+    from facetta.agent import Annotation, AnnotationUnresolved
+    from facetta.grokedit import GrokEditUnavailable, grok_plan_scoped_edit
+    from facetta.image_agent import (
+        ImageAgentError,
+        ImageOperation,
+        ImageRunStatus,
+        build_image_plan,
+    )
+    from facetta.image_run_store import (
+        persist_image_agent_failure,
+        persist_image_agent_result,
+    )
+    from facetta.studio_markup_candidates import store_studio_markup_candidate
+    from facetta.warning_candidates import (
+        MarkupWarningCandidate,
+        store_markup_warning_candidate,
+    )
+
+    source_bytes = bytes(asset.image)
+    source_spec = linked[2]
+    working_spec = source_spec
+    steps: list[dict] = []
+    ignored_fields: list[str] = []
+    form_bindings: list[dict[str, object]] = []
+    spec_changed = False
+    reserved_asset_id: str | None = None
+
+    if derived_mask is not None and any(
+        annotation.mask_base64 for annotation in request.annotations
+    ):
+        return JSONResponse(status_code=422, content={
+            "detail": (
+                "a saved markup asset already defines the authorized edit "
+                "union; remove the separate annotation masks"
+            ),
+            "code": "markup_mask_source_ambiguous",
+            "category": "validation",
+            "steps": steps,
+        })
+
+    note_masks: list[bytes] = []
+    if derived_mask is not None:
+        note_masks.append(derived_mask)
+
+    try:
+        mapped_revision = load_revision_component_map(db, asset.id)
+    except ComponentMapError as exc:
+        return JSONResponse(status_code=409, content={
+            "detail": exc.detail,
+            "code": exc.code,
+            "category": "validation",
+            "steps": steps,
+        })
+
+    for index, note in enumerate(request.annotations, start=1):
+        annotation_evidence = note.model_dump(exclude={"mask_base64"})
+        step: dict = {
+            "annotation_index": index,
+            "annotation": annotation_evidence,
+        }
+        targets_spec = bool(
+            note.target_section or note.target_ref or note.target_element_id
+        )
+        form_edit = (
+            note.target_section == "design_form"
+            or note.target_element_id is not None
+        )
+        if targets_spec and not request.update_spec:
+            return JSONResponse(status_code=422, content={
+                "detail": (
+                    "a geometry, stone, setting, metal, or dimensional change "
+                    "must update the image and specification together"
+                ),
+                "code": "spec_sync_required",
+                "category": "validation",
+                "steps": steps,
+            })
+        if note.target_component_id is not None:
+            # Component promotion is already fail-closed for one temporary
+            # markup preview. Reject before provider work for an atomic batch.
+            return JSONResponse(status_code=422, content={
+                "detail": (
+                    "component-aware edits cannot enter temporary review until "
+                    "candidate component maps can be promoted atomically"
+                ),
+                "code": "component_edit_qa_review_required",
+                "category": "quality",
+                "steps": steps,
+            })
+        if mapped_revision is not None:
+            return JSONResponse(status_code=422, content={
+                "detail": "select one resolved component on this mapped revision",
+                "code": "target_component_required",
+                "category": "validation",
+                "valid_target_component_ids": [
+                    component.component_id
+                    for component in mapped_revision.components
+                    if component.resolution == "resolved"
+                ],
+                "steps": steps,
+            })
+
+        note_mask = derived_mask
+        if note_mask is None:
+            if not note.mask_base64:
+                return JSONResponse(status_code=422, content={
+                    "detail": (
+                        "every multi-region refinement requires either one saved "
+                        "markup asset or a mask for each ordered annotation"
+                    ),
+                    "code": "multi_region_mask_required",
+                    "category": "validation",
+                    "annotation_index": index,
+                    "steps": steps,
+                })
+            try:
+                note_mask = base64.b64decode(note.mask_base64, validate=True)
+            except (binascii.Error, ValueError):
+                return JSONResponse(status_code=422, content={
+                    "detail": "mask_base64 is not valid base64",
+                    "code": "annotation_mask_invalid",
+                    "category": "validation",
+                    "annotation_index": index,
+                    "steps": steps,
+                })
+            note_masks.append(note_mask)
+
+        if form_edit:
+            if note.target_section != "design_form" or not note.target_element_id:
+                return JSONResponse(status_code=422, content={
+                    "detail": (
+                        "a design-form edit must name target_section "
+                        "'design_form' and exactly one stable target_element_id"
+                    ),
+                    "code": "form_element_required",
+                    "category": "validation",
+                    "steps": steps,
+                })
+            if not markup_notes_valid or derived_mask is None:
+                return JSONResponse(status_code=422, content={
+                    "detail": (
+                        "a design-form edit requires a saved same-raster markup "
+                        "asset with a usable highlighted mask"
+                    ),
+                    "code": "form_markup_mask_required",
+                    "category": "validation",
+                    "steps": steps,
+                })
+            from facetta.design_form_revision import (
+                DesignFormRevisionError,
+                region_from_markup_mask,
+                revise_visual_form_element,
+            )
+
+            if all(
+                element.element_id != note.target_element_id
+                for element in working_spec.design_form.elements
+            ):
+                return JSONResponse(status_code=422, content={
+                    "detail": (
+                        "the current specification has no confirmed form element "
+                        f"{note.target_element_id!r}"
+                    ),
+                    "code": "form_element_not_found",
+                    "category": "validation",
+                    "steps": steps,
+                })
+            reserved_asset_id = reserved_asset_id or new_id("ast")
+            try:
+                form_region = region_from_markup_mask(
+                    note_mask, source_bytes, view=note.form_view,
+                )
+                planned = grok_plan_scoped_edit(
+                    Annotation(
+                        ref=None,
+                        section="design_form",
+                        index=None,
+                        target_element_id=note.target_element_id,
+                        instruction=note.change_instruction,
+                    ),
+                    working_spec,
+                )
+                planned_element = next(
+                    element for element in planned.spec.design_form.elements
+                    if element.element_id == note.target_element_id
+                )
+                confirmed = planned_element.confirmed_form_description
+                proposed = revise_visual_form_element(
+                    working_spec,
+                    element_id=note.target_element_id,
+                    confirmed_form_description=confirmed,
+                    region=form_region,
+                    asset_id=reserved_asset_id,
+                    asset_sha256="0" * 64,
+                )
+            except AnnotationUnresolved as exc:
+                return JSONResponse(status_code=422, content={
+                    "detail": str(exc),
+                    "code": "form_interpretation_unresolved",
+                    "category": "validation",
+                    "annotation_index": index,
+                    "steps": steps,
+                })
+            except GrokEditUnavailable as exc:
+                return _edit_unavailable_response(
+                    exc,
+                    code="form_interpretation_unavailable",
+                    annotation_index=index,
+                    steps=steps,
+                )
+            except DesignFormRevisionError as exc:
+                return JSONResponse(status_code=422, content={
+                    "detail": exc.detail,
+                    "code": exc.code,
+                    "category": "validation",
+                    "annotation_index": index,
+                    "steps": steps,
+                })
+            validated = validate_spec(proposed, get_vocabulary())
+            if not validated.ok:
+                return JSONResponse(status_code=422, content={
+                    "detail": [issue.as_detail() for issue in validated.issues],
+                    "code": "form_spec_invalid",
+                    "category": "validation",
+                    "annotation_index": index,
+                    "steps": steps,
+                })
+            working_spec = proposed
+            spec_changed = True
+            changed = (
+                "design_form element " + note.target_element_id
+                + " confirmed form -> " + confirmed
+            )
+            form_bindings.append({
+                "element_id": note.target_element_id,
+                "confirmed": confirmed,
+                "region": form_region,
+            })
+            step.update(spec_synced=True, changed_fields=[changed])
+        elif note.target_section or note.target_ref:
+            try:
+                scoped = grok_plan_scoped_edit(
+                    Annotation(
+                        ref=note.target_ref,
+                        section=note.target_section,
+                        index=note.index,
+                        instruction=note.change_instruction,
+                    ),
+                    working_spec,
+                )
+            except AnnotationUnresolved as exc:
+                return JSONResponse(status_code=422, content={
+                    "detail": str(exc),
+                    "code": "batch_annotation_unresolved",
+                    "category": "validation",
+                    "annotation_index": index,
+                    "steps": steps,
+                })
+            except GrokEditUnavailable as exc:
+                return _edit_unavailable_response(
+                    exc,
+                    code="batch_interpretation_unavailable",
+                    annotation_index=index,
+                    steps=steps,
+                )
+            if scoped is None:
+                return JSONResponse(status_code=422, content={
+                    "detail": "the ordered specification change was unresolved",
+                    "code": "batch_annotation_unresolved",
+                    "category": "validation",
+                    "annotation_index": index,
+                    "steps": steps,
+                })
+            validated = validate_spec(scoped.spec, get_vocabulary())
+            if not validated.ok:
+                return JSONResponse(status_code=422, content={
+                    "detail": [issue.as_detail() for issue in validated.issues],
+                    "code": "batch_spec_invalid",
+                    "category": "validation",
+                    "annotation_index": index,
+                    "steps": steps,
+                })
+            working_spec = validated.spec
+            spec_changed = True
+            ignored_fields.extend(scoped.ignored_fields)
+            step.update(
+                spec_synced=True,
+                changed_fields=scoped.changed_fields,
+                ignored_fields=scoped.ignored_fields,
+            )
+        else:
+            step.update(
+                spec_synced=False,
+                spec_note="visual-only edit; specification inherited",
+            )
+        steps.append(step)
+
+    try:
+        union_mask = _union_markup_masks(source_bytes, note_masks)
+    except ValueError as exc:
+        return JSONResponse(status_code=422, content={
+            "detail": str(exc),
+            "code": "multi_region_mask_invalid",
+            "category": "validation",
+            "steps": steps,
+        })
+
+    instruction = _ordered_markup_instruction(request.annotations)
+    region_description = (
+        f"union of {len(request.annotations)} ordered designer-marked regions: "
+        + "; ".join(note.region_description for note in request.annotations)
+    )
+    try:
+        plan = build_image_plan(
+            ImageOperation.LOCAL_EDIT,
+            instruction,
+            spec=working_spec,
+            source_spec=source_spec if spec_changed else None,
+            source_image=source_bytes,
+            mask_bytes=union_mask,
+            mask_provenance=(
+                "persisted_designer_markup_union"
+                if derived_mask is not None
+                else "client_supplied_markup_union"
+            ),
+            region_description=region_description,
+            frozen=(
+                "all pixels outside the union of ordered marked regions",
+                "all untargeted specification sections",
+                "camera and composition unless explicitly requested",
+            ),
+            variant=request.variant,
+        )
+        image_agent_result = _trusted_image_agent().run(
+            plan,
+            source_image=source_bytes,
+            mask_bytes=union_mask,
+        )
+    except ImageAgentError as exc:
+        run_id = None
+        if exc.plan is not None:
+            run_id = persist_image_agent_failure(
+                db,
+                exc.plan,
+                exc,
+                project_root_id=asset.root_id,
+                source_asset_id=asset.id,
+                created_by=request.created_by,
+            )
+        return image_agent_error_response(
+            exc,
+            image_run_id=run_id,
+            extra={"steps": steps},
+        )
+
+    if form_bindings:
+        from facetta.design_form_revision import (
+            DesignFormRevisionError,
+            revise_visual_form_element,
+        )
+
+        try:
+            for binding in form_bindings:
+                working_spec = revise_visual_form_element(
+                    working_spec,
+                    element_id=str(binding["element_id"]),
+                    confirmed_form_description=str(binding["confirmed"]),
+                    region=binding["region"],
+                    asset_id=reserved_asset_id,
+                    asset_bytes=image_agent_result.image_bytes,
+                )
+        except DesignFormRevisionError as exc:
+            return JSONResponse(status_code=422, content={
+                "detail": exc.detail,
+                "code": exc.code,
+                "category": "validation",
+                "steps": steps,
+            })
+        validated = validate_spec(working_spec, get_vocabulary())
+        if not validated.ok:
+            return JSONResponse(status_code=422, content={
+                "detail": [issue.as_detail() for issue in validated.issues],
+                "code": "form_spec_invalid",
+                "category": "validation",
+                "steps": steps,
+            })
+
+    failed = [check.code for check in image_agent_result.quality.failed_checks]
+    warnings = [
+        check.message for check in image_agent_result.quality.failed_checks
+        if check.severity.value == "warning"
+    ]
+    qa_report = {
+        **image_agent_result.quality.model_dump(mode="json"),
+        "accepted": image_agent_result.accepted,
+        "review_required": image_agent_result.review_required,
+        "summary": (
+            "Image checks passed."
+            if image_agent_result.accepted
+            else "Image needs explicit designer review."
+        ),
+        "failed_checks": failed,
+        "warnings": warnings,
+    }
+    routing_summary = {
+        "attempt_count": len(image_agent_result.run.attempts),
+        "used_retry": len(image_agent_result.run.attempts) > 1,
+        "used_fallback": any(
+            attempt.fallback for attempt in image_agent_result.run.attempts
+        ),
+        "cache_hit": any(
+            attempt.cached for attempt in image_agent_result.run.attempts
+        ),
+        "run_id": None,
+    }
+    stored_preview_result = image_agent_result
+    if request.preview_only and not image_agent_result.review_required:
+        stored_preview_result = image_agent_result.model_copy(update={
+            "accepted": False,
+            "review_required": True,
+            "run": image_agent_result.run.model_copy(update={
+                "status": ImageRunStatus.REVIEW_REQUIRED,
+            }),
+        })
+    run_id = persist_image_agent_result(
+        db,
+        stored_preview_result,
+        project_root_id=asset.root_id,
+        source_asset_id=asset.id,
+        created_by=request.created_by,
+        commit=request.studio_job_id is None,
+    )
+    routing_summary["run_id"] = run_id
+    candidate_drift = next((
+        check.evidence.get("drift")
+        for check in image_agent_result.quality.checks
+        if check.code == "outside_mask_drift"
+    ), None)
+    ordered_evidence = tuple(
+        note.model_dump(exclude={"mask_base64"})
+        for note in request.annotations
+    )
+    compatibility_candidate = MarkupWarningCandidate(
+        candidate_id=new_id("cand"),
+        run_id=run_id,
+        project_root_id=asset.root_id,
+        source_asset_id=asset.id,
+        expected_active_asset_id=asset.id,
+        reserved_asset_id=reserved_asset_id,
+        expected_design_version=current_design_version,
+        image_bytes=image_agent_result.image_bytes,
+        media_type=_sniff_media_type(image_agent_result.image_bytes),
+        operation=ImageOperation.LOCAL_EDIT.value,
+        asset_capability="LOCALIZED_EDIT",
+        requested_change=instruction,
+        region_description=region_description,
+        drift=(
+            float(candidate_drift)
+            if isinstance(candidate_drift, (int, float)) else None
+        ),
+        next_spec=working_spec if spec_changed else None,
+        ignored_fields=tuple(dict.fromkeys(ignored_fields)),
+        qa=qa_report,
+        routing=routing_summary,
+        created_by=request.created_by,
+        expires_at=monotonic() + (2 * 60 * 60),
+    )
+    candidate = (
+        store_studio_markup_candidate(
+            db,
+            compatibility_candidate,
+            studio_job_id=request.studio_job_id,
+            annotations=ordered_evidence,
+        )
+        if request.studio_job_id is not None
+        else store_markup_warning_candidate(
+            run_id=compatibility_candidate.run_id,
+            project_root_id=compatibility_candidate.project_root_id,
+            source_asset_id=compatibility_candidate.source_asset_id,
+            expected_active_asset_id=(
+                compatibility_candidate.expected_active_asset_id
+            ),
+            reserved_asset_id=compatibility_candidate.reserved_asset_id,
+            expected_design_version=(
+                compatibility_candidate.expected_design_version
+            ),
+            image_bytes=compatibility_candidate.image_bytes,
+            media_type=compatibility_candidate.media_type,
+            operation=compatibility_candidate.operation,
+            asset_capability=compatibility_candidate.asset_capability,
+            requested_change=compatibility_candidate.requested_change,
+            region_description=compatibility_candidate.region_description,
+            drift=compatibility_candidate.drift,
+            next_spec=compatibility_candidate.next_spec,
+            ignored_fields=compatibility_candidate.ignored_fields,
+            qa=compatibility_candidate.qa,
+            routing=compatibility_candidate.routing,
+            created_by=compatibility_candidate.created_by,
+        )
+    )
+    return {
+        "final_asset_id": None,
+        "root_id": asset.root_id,
+        "design_id": design_id,
+        "design_version": current_design_version,
+        "revision": None,
+        "spec_version": current_design_version,
+        "spec_change": [],
+        "ignored_fields": list(dict.fromkeys(ignored_fields)),
+        "qa": qa_report,
+        "routing": routing_summary,
+        "image_run_id": run_id,
+        "warning_candidate": {
+            "run_id": run_id,
+            "candidate_id": candidate.candidate_id,
+            "preview_url": (
+                f"/studio/markup-candidates/{run_id}/{candidate.candidate_id}/image"
+                if request.studio_job_id is not None
+                else f"/image-runs/{run_id}/candidates/{candidate.candidate_id}/image"
+            ),
+            "qa": qa_report,
+            "operation": ImageOperation.LOCAL_EDIT.value,
+            "requested_change": instruction,
+            "annotations": list(ordered_evidence),
+            "studio_job_id": getattr(candidate, "studio_job_id", None),
+            "save_as_variation_url": (
+                f"/studio/markup-candidates/{run_id}/"
+                f"{candidate.candidate_id}/save-as-variation"
+                if request.studio_job_id is not None else None
+            ),
+        },
+        "steps": steps,
+    }
+
+
 @router.post("/{asset_id}/markup/apply", status_code=201)
 def markup_apply(
     asset_id: str,
@@ -712,13 +1384,10 @@ def markup_apply(
 ):
     """Phase 2: execute confirmed annotations.
 
-    Production requests carry a durable Refine Studio job, an exact expected
-    design version, and exactly one confirmed instruction. The older no-version
-    or unlinked compatibility path is available only outside production until
-    its historical callers are migrated. For each annotation, the linked
-    design's spec moves first through the scoped edit; a physically impossible
-    change skips the image edit so image and spec remain in lockstep. The
-    accepted image and immutable DesignVersion then commit atomically.
+    Production requests carry a durable Refine Studio job and an exact expected
+    design version. One to eight confirmed annotations compile into exactly one
+    union-masked temporary candidate. The older no-version compatibility path
+    remains sequential outside production until its historical callers migrate.
     """
     actor = principal_actor(principal, request.created_by)
     request = request.model_copy(update={"created_by": actor})
@@ -745,16 +1414,6 @@ def markup_apply(
 
     from facetta.agent import Annotation, AnnotationUnresolved
     from facetta.grokedit import GrokEditUnavailable, grok_plan_scoped_edit
-
-    if ((production or request.expected_design_version is not None)
-            and len(request.annotations) != 1):
-        return JSONResponse(status_code=422, content={
-            "detail": ("trusted markup applies exactly one confirmed "
-                       "instruction at a time"),
-            "code": "single_instruction_required",
-            "category": "validation",
-            "instruction_count": len(request.annotations),
-        })
 
     asset = _get_asset(db, asset_id)
     start_bytes = bytes(asset.image)
@@ -835,6 +1494,18 @@ def markup_apply(
                 "current_active_asset_id": active_asset_id,
             })
 
+    if request.expected_design_version is not None and len(request.annotations) > 1:
+        return _trusted_multi_markup_preview(
+            db=db,
+            asset=asset,
+            request=request,
+            linked=linked,
+            design_id=design_id,
+            current_design_version=current_design_version,
+            derived_mask=derived_mask,
+            markup_notes_valid=markup_notes_valid,
+        )
+
     current = asset
     steps: list[dict] = []
     for note in request.annotations:
@@ -869,6 +1540,16 @@ def markup_apply(
         # cannot substitute for that provenance.
         mask_bytes = derived_mask
         if note.mask_base64:
+            if derived_mask is not None:
+                return JSONResponse(status_code=422, content={
+                    "detail": (
+                        "a saved markup asset already defines the authorized "
+                        "edit region; remove the separate annotation mask"
+                    ),
+                    "code": "markup_mask_source_ambiguous",
+                    "category": "validation",
+                    "steps": steps,
+                })
             try:
                 supplied_mask = base64.b64decode(
                     note.mask_base64, validate=True)
@@ -1032,13 +1713,11 @@ def markup_apply(
                     "steps": steps,
                 })
             except GrokEditUnavailable as exc:
-                status = 503 if "KEY" in str(exc) else 502
-                return JSONResponse(status_code=status, content={
-                    "detail": str(exc),
-                    "code": "form_interpretation_unavailable",
-                    "category": "provider",
-                    "steps": steps,
-                })
+                return _edit_unavailable_response(
+                    exc,
+                    code="form_interpretation_unavailable",
+                    steps=steps,
+                )
             except DesignFormRevisionError as exc:
                 return JSONResponse(status_code=422, content={
                     "detail": exc.detail,
@@ -1082,9 +1761,11 @@ def markup_apply(
                 steps.append(step)
                 continue
             except GrokEditUnavailable as exc:
-                status = 503 if "KEY" in str(exc) else 502
-                return JSONResponse(status_code=status, content={
-                    "detail": str(exc), "steps": steps})
+                return _edit_unavailable_response(
+                    exc,
+                    code="spec_interpretation_unavailable",
+                    steps=steps,
+                )
             if scoped is not None:
                 validated = validate_spec(scoped.spec, get_vocabulary())
                 if not validated.ok:
@@ -2230,10 +2911,14 @@ def respond_checklist(asset_id: str, request: ChecklistRespondRequest,
                                if linked else None),
                     name=request.assistant_name or "")
             except GrokEditUnavailable as exc:
-                status = 503 if "KEY" in str(exc) else 502
-                out["interpretation_error"] = str(exc)
-                return JSONResponse(status_code=status,
-                                    content={"detail": str(exc), **out})
+                out["interpretation_error"] = (
+                    "Facetta's edit service is unavailable."
+                )
+                return _edit_unavailable_response(
+                    exc,
+                    code="checklist_interpretation_unavailable",
+                    **out,
+                )
             row.understood_as = interpretation["understood_as"]
             db.commit()
             out["interpretation"] = interpretation

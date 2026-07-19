@@ -93,7 +93,7 @@ zero-charge failed Activity record for the stale decision.
 ## Run the API
 
 ```sh
-uv run uvicorn facetta.main:app --reload
+FACETTA_ENV=development FACETTA_AUTH_MODE=test PYTHONPATH=src uv run uvicorn facetta.main:app --reload
 ```
 
 ### Health check
@@ -284,7 +284,7 @@ driver, so you can paste it verbatim.
    …) on first boot — no manual migration step.
 
    ```sh
-   uv run uvicorn facetta.main:app --reload
+   FACETTA_ENV=development FACETTA_AUTH_MODE=test PYTHONPATH=src uv run uvicorn facetta.main:app --reload
    ```
 
 **Which connection type?** Supabase offers three, all handled automatically:

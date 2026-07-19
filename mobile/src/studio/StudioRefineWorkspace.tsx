@@ -1,14 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View,
+  ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text,
+  useWindowDimensions, View,
 } from 'react-native';
 
 import { Button, ChipRow, Field, Notice } from '../components';
 import { radius, theme } from '../theme';
 import type {
   ComponentCatalog, ComponentCatalogOption, ComponentCatalogPath,
-  ConfirmedMarkupAnnotation, JsonObject, JsonValue, ProjectDetail, StudioComponentTargeting,
-  StudioFactPath,
+  ConfirmedMarkupAnnotation, JsonObject, JsonValue, MarkupReadResponse, ProjectDetail,
+  StudioComponentTargeting, StudioContinuationPrompt, StudioFactPath,
 } from '../trusted/types';
 import {
   ANNOTATION_SNAPSHOT_SCHEMA_VERSION,
@@ -27,6 +28,13 @@ import { StudioComparisonInspector } from './StudioComparisonInspector';
 import { StudioReviewImage } from './StudioReviewImage';
 import { StudioDestinationChooser } from './StudioDestinationChooser';
 import type { StudioDestinationContext, StudioDestinationId } from './destinations';
+import {
+  StudioCanvasEditPanel,
+  type StudioCanvasEditMode,
+  type StudioCanvasEditRequest,
+  type StudioCanvasEditWorkingState,
+} from './StudioCanvasEditPanel';
+import { StudioPromptHistory } from './StudioPromptHistory';
 
 const REFINE_CREDITS_PER_OUTPUT = getStudioAction('refine').creditEstimate ?? 0;
 
@@ -42,7 +50,8 @@ const PATHS: readonly { id: ComponentCatalogPath; label: string; help: string }[
 export type StudioRefineApi = Pick<StudioGateway,
   'getComponentCatalog' | 'getStudioComponentTargeting' | 'readMarkup'>
   & Partial<Pick<StudioGateway,
-    'getProject' | 'prepareStudioComponentMap' | 'reviseStudioFacts'>>;
+    'getProject' | 'getStudioContinuationPrompts'
+    | 'prepareStudioComponentMap' | 'reviseStudioFacts'>>;
 
 export type StudioRefineWorkspaceMode = 'refine' | 'specifications';
 
@@ -56,12 +65,14 @@ export interface StudioRefineWorkspaceProps {
       'resumeRefine' | 'saveCatalogPreviewAsVariation' | 'saveMarkupPreviewAsVariation'
       | 'saveVisualPreviewAsVariation'>>;
   lineage: ExactStudioLineage | StudioVisualLineage | null;
+  project?: ProjectDetail | null;
   createdBy: string;
   sourceImageUrl?: string | null;
   workspaceMode?: StudioRefineWorkspaceMode;
   onReviewStartingDesign?: () => void;
   onApplied: (project: ProjectDetail) => void;
   onVariationCreated?: (project: ProjectDetail) => void;
+  onStartNewDesign?: () => void;
   destinationContext?: StudioDestinationContext;
   onSelectDestination?: (destinationId: StudioDestinationId) => void;
   imageRequestHeaders?: Readonly<Record<string, string>>;
@@ -181,10 +192,27 @@ function friendlyFactOption(value: string): string {
   return value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function confirmedAnnotationsFromRead(
+  reading: MarkupReadResponse,
+): ConfirmedMarkupAnnotation[] {
+  return (reading.interpretations ?? [reading.interpretation]).map((interpretation) => ({
+    region_description: interpretation.target_region,
+    change_instruction: interpretation.requested_change,
+    impact: interpretation.impact,
+    target_section: interpretation.target_section,
+    target_ref: interpretation.target_spec_reference,
+    index: interpretation.target_index,
+    target_component_id: interpretation.target_component_id,
+    target_element_id: interpretation.target_element_id,
+    form_view: 'three_quarter',
+    mask_base64: null,
+  }));
+}
+
 export function StudioRefineWorkspace({
-  api, gateway, lineage, createdBy, sourceImageUrl = null, workspaceMode = 'refine',
+  api, gateway, lineage, project = null, createdBy, sourceImageUrl = null, workspaceMode = 'refine',
   onReviewStartingDesign, onApplied, onVariationCreated, destinationContext,
-  onSelectDestination,
+  onSelectDestination, onStartNewDesign,
   imageRequestHeaders, resumeReviewJobId, reviewSourceIsActive = true,
 }: StudioRefineWorkspaceProps) {
   const exactLineage = hasExactSpecification(lineage) ? lineage : null;
@@ -207,6 +235,7 @@ export function StudioRefineWorkspace({
     estimatedCredits?: number;
   } | null>(null);
   const [instruction, setInstruction] = useState('');
+  const [previewPrompt, setPreviewPrompt] = useState<string | null>(null);
   const [understoodAs, setUnderstoodAs] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<AnnotationCanvasSnapshot>({
     schema_version: ANNOTATION_SNAPSHOT_SCHEMA_VERSION,
@@ -221,12 +250,24 @@ export function StudioRefineWorkspace({
   const [variationName, setVariationName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [acceptedOutcome, setAcceptedOutcome] = useState<AcceptedRefineOutcome | null>(null);
+  const [continuationPrompts, setContinuationPrompts] = useState<
+    readonly StudioContinuationPrompt[] | null
+  >(null);
   const [factProject, setFactProject] = useState<ProjectDetail | null>(null);
   const [factDraft, setFactDraft] = useState<Partial<Record<StudioFactPath, string>>>({});
   const [factsLoading, setFactsLoading] = useState(false);
   const [activeFactGroup, setActiveFactGroup] = useState<FactGroupId>('identity');
   const [factReview, setFactReview] = useState<readonly FactChangeReview[] | null>(null);
+  const [canvasMode, setCanvasMode] = useState<StudioCanvasEditMode>('describe');
+  const [canvasWorking, setCanvasWorking] = useState<StudioCanvasEditWorkingState>(null);
+  const { width } = useWindowDimensions();
+  const isWideCanvas = Platform.OS === 'web' && width >= 1000;
   const decisionInFlight = useRef(false);
+  const everyMarkCarriesInstruction = snapshot.annotations.length > 0
+    && snapshot.annotations.every((annotation) => (
+      (annotation.instruction
+        ?? (annotation.type === 'text' ? annotation.text : '')).trim().length > 0
+    ));
   const lineageKey = lineage === null
     ? 'none'
     : `${lineage.projectId}:${lineage.sourceAssetId}:${hasExactSpecification(lineage)
@@ -251,6 +292,7 @@ export function StudioRefineWorkspace({
     setMode('instruction');
     setOptionId(null);
     setInstruction('');
+    setPreviewPrompt(null);
     setUnderstoodAs(null);
     setNamingVariation(false);
     setVariationName('');
@@ -300,7 +342,7 @@ export function StudioRefineWorkspace({
       if (!current) return;
       setTargetingLoading(false);
       if (result.error !== null) {
-        setTargetingError('Precise component targeting is not available for this revision. Describe an appearance change or use Mark up instead.');
+        setTargetingError('Precise component targeting is not available for this revision. Describe the changes or use Annotate image instead.');
         return;
       }
       if (result.data.asset_id !== sourceAssetId) {
@@ -455,6 +497,7 @@ export function StudioRefineWorkspace({
     setBusy(false);
     setOptionId(null);
     setInstruction('');
+    setPreviewPrompt(null);
     setUnderstoodAs(null);
     setPreview(null);
     setNamingVariation(false);
@@ -468,6 +511,26 @@ export function StudioRefineWorkspace({
       current === null || current.lineageKey === lineageKey ? current : null
     ));
   }, [lineageKey]);
+
+  useEffect(() => {
+    let current = true;
+    if (lineage === null || typeof api.getStudioContinuationPrompts !== 'function') {
+      setContinuationPrompts(null);
+      return () => { current = false; };
+    }
+    void api.getStudioContinuationPrompts(lineage.projectId).then((result) => {
+      if (!current) return;
+      setContinuationPrompts(result.error === null ? result.data.prompts : null);
+    });
+    return () => { current = false; };
+  }, [
+    api,
+    acceptedOutcome?.lineageKey,
+    lineage?.projectId,
+    preview?.candidate.id,
+    preview?.candidate.status,
+    project?.active_asset_id,
+  ]);
 
   const selected = useMemo(() => catalog?.options.find((option) => option.id === optionId) ?? null,
     [catalog, optionId]);
@@ -626,6 +689,7 @@ export function StudioRefineWorkspace({
       if (!lineageRequestIsCurrent(requestedLineageKey, requestedLineageEpoch)) return;
       setBusy(false);
       if (result.error !== null) { setError(designerErrorMessage(result.error, 'refine')); return; }
+      setPreviewPrompt(`Change ${path.replaceAll('.', ' ')} to ${selected.display}.`);
       setPreview({
         candidate: result.data.candidate,
         kind: 'catalog',
@@ -646,10 +710,17 @@ export function StudioRefineWorkspace({
     let markupAssetId: string | null = null;
     if (mode === 'annotation') {
       if (snapshot.annotations.length === 0) {
-        setBusy(false); setError('Mark one region before creating a preview.'); return;
+        setBusy(false); setError('Mark at least one area before creating a preview.'); return;
+      }
+      if (!instruction.trim() && !everyMarkCarriesInstruction) {
+        setBusy(false);
+        setError('Describe what should change in the marked areas, or place a Text instruction at every marked location.');
+        return;
       }
       const read = await api.readMarkup(lineage.sourceAssetId, {
-        markup_snapshot: snapshot, created_by: createdBy,
+        markup_snapshot: snapshot,
+        ...(instruction.trim() ? { instruction: instruction.trim() } : {}),
+        created_by: createdBy,
       });
       if (!lineageRequestIsCurrent(requestedLineageKey, requestedLineageEpoch)) return;
       if (read.error !== null) { setBusy(false); setError(designerErrorMessage(read.error, 'refine')); return; }
@@ -657,26 +728,53 @@ export function StudioRefineWorkspace({
           && read.data.expected_design_version !== exactLineage.sourceDesignVersion) {
         setBusy(false); setError('The annotation was interpreted against a different revision. Reopen the design.'); return;
       }
-      const interpretation = read.data.interpretation;
-      if (!exactSpecification && interpretation.impact !== 'visual_only') {
+      const confirmedAnnotations = confirmedAnnotationsFromRead(read.data);
+      if (confirmedAnnotations.length === 0) {
+        setBusy(false);
+        setError('Facetta could not match the marks to editable jewelry regions. Adjust the marks and try again.');
+        return;
+      }
+      if (!exactSpecification && confirmedAnnotations.some(
+        ({ impact }) => impact !== 'visual_only',
+      )) {
         setBusy(false);
         setError('This mark changes jewelry structure or construction. Confirm design facts before previewing it.');
         return;
       }
-      annotation = {
-        region_description: interpretation.target_region,
-        change_instruction: interpretation.requested_change,
-        impact: interpretation.impact,
-        target_section: interpretation.target_section,
-        target_ref: interpretation.target_spec_reference,
-        index: interpretation.target_index,
-        target_component_id: interpretation.target_component_id,
-        target_element_id: interpretation.target_element_id,
-        form_view: 'three_quarter',
-        mask_base64: null,
-      };
+      [annotation] = confirmedAnnotations;
       markupAssetId = read.data.markup_asset_id;
-      setUnderstoodAs(interpretation.understood_as);
+      setUnderstoodAs(read.data.interpretation.understood_as);
+      const result = exactLineage !== null
+        ? await gateway.previewMarkupRefine({
+            ...exactLineage, createdBy, annotation, annotations: confirmedAnnotations,
+            markupAssetId,
+          })
+        : await gateway.previewVisualRefine({
+            ...lineage,
+            createdBy,
+            instruction: instruction.trim() || 'Apply every placed text instruction.',
+            rawUserInstruction: instruction.trim() || confirmedAnnotations
+              .map((item) => item.change_instruction)
+              .join(' '),
+            inputMode: 'point',
+            annotations: confirmedAnnotations.map((item) => ({
+              region_description: item.region_description,
+              change_instruction: item.change_instruction,
+            })),
+            scope: 'marked_region',
+            markupAssetId: markupAssetId ?? '',
+          });
+      if (!lineageRequestIsCurrent(requestedLineageKey, requestedLineageEpoch)) return;
+      setBusy(false);
+      if (result.error !== null) { setError(designerErrorMessage(result.error, 'refine')); return; }
+      setPreviewPrompt(instruction.trim() || confirmedAnnotations
+        .map((item) => item.change_instruction)
+        .join(' '));
+      setPreview({
+        candidate: result.data.candidate,
+        kind: exactLineage !== null ? 'markup' : 'visual',
+      });
+      return;
     } else if (!instruction.trim()) {
       setBusy(false); return;
     }
@@ -684,23 +782,162 @@ export function StudioRefineWorkspace({
       ? await gateway.previewMarkupRefine({
           ...exactLineage, createdBy, annotation, markupAssetId,
         })
-      : await gateway.previewVisualRefine(mode === 'annotation'
-        ? {
-            ...lineage,
-            createdBy,
-            instruction: annotation.change_instruction,
-            scope: 'marked_region',
-            markupAssetId: markupAssetId ?? '',
-          }
-        : {
-            ...lineage,
-            createdBy,
-            instruction: annotation.change_instruction,
-            scope: 'appearance',
-          });
+      : await gateway.previewVisualRefine({
+          ...lineage,
+          createdBy,
+          instruction: annotation.change_instruction,
+          rawUserInstruction: instruction.trim(),
+          inputMode: 'describe',
+          scope: 'appearance',
+        });
     if (!lineageRequestIsCurrent(requestedLineageKey, requestedLineageEpoch)) return;
     setBusy(false);
     if (result.error !== null) { setError(designerErrorMessage(result.error, 'refine')); return; }
+    setPreviewPrompt(instruction.trim());
+    setPreview({
+      candidate: result.data.candidate,
+      kind: exactLineage !== null ? 'markup' : 'visual',
+    });
+  };
+
+  const makeCanvasPreview = async (request: StudioCanvasEditRequest): Promise<void> => {
+    if (lineage === null || busy || !reviewSourceIsActive) return;
+    const requestedLineageKey = lineageKey;
+    const requestedLineageEpoch = lineageEpochRef.current;
+    const typedInstruction = request.instruction.trim();
+    const designerInstruction = request.mode === 'symmetry'
+      ? 'Make the corresponding left and right jewelry elements symmetrical.'
+      : typedInstruction;
+    if (!typedInstruction
+        && !(request.mode === 'point' && everyMarkCarriesInstruction)) return;
+
+    setAcceptedOutcome(null);
+    setCanvasWorking('preview');
+    setBusy(true);
+    setError(null);
+    setUnderstoodAs(null);
+
+    let annotation: ConfirmedMarkupAnnotation = {
+      region_description: 'entire visible jewelry presentation',
+      change_instruction: typedInstruction,
+      impact: 'visual_only',
+      target_section: null,
+      target_ref: null,
+      index: null,
+      target_component_id: null,
+      target_element_id: null,
+      form_view: 'three_quarter',
+      mask_base64: null,
+    };
+    let markupAssetId: string | null = null;
+
+    if (request.mode === 'point') {
+      if (snapshot.annotations.length === 0) {
+        setBusy(false);
+        setCanvasWorking(null);
+        setError('Mark at least one area before creating a preview.');
+        return;
+      }
+      const read = await api.readMarkup(lineage.sourceAssetId, {
+        markup_snapshot: snapshot,
+        ...(typedInstruction ? { instruction: typedInstruction } : {}),
+        created_by: createdBy,
+      });
+      if (!lineageRequestIsCurrent(requestedLineageKey, requestedLineageEpoch)) return;
+      if (read.error !== null) {
+        setBusy(false);
+        setCanvasWorking(null);
+        setError(designerErrorMessage(read.error, 'refine'));
+        return;
+      }
+      if (exactLineage !== null
+          && read.data.expected_design_version !== exactLineage.sourceDesignVersion) {
+        setBusy(false);
+        setCanvasWorking(null);
+        setError('The mark belongs to a different revision. Reopen the current design and mark it again.');
+        return;
+      }
+      const confirmedAnnotations = confirmedAnnotationsFromRead(read.data);
+      if (confirmedAnnotations.length === 0) {
+        setBusy(false);
+        setCanvasWorking(null);
+        setError('Facetta could not match the marks to editable jewelry regions. Adjust the marks and try again.');
+        return;
+      }
+      [annotation] = confirmedAnnotations;
+      markupAssetId = read.data.markup_asset_id;
+      setUnderstoodAs(read.data.interpretation.understood_as);
+      const result = exactLineage !== null
+        ? await gateway.previewMarkupRefine({
+            ...exactLineage,
+            createdBy,
+            annotation,
+            annotations: confirmedAnnotations,
+            markupAssetId,
+          })
+        : await gateway.previewVisualRefine({
+            ...lineage,
+            createdBy,
+            instruction: typedInstruction,
+            rawUserInstruction: designerInstruction || confirmedAnnotations
+              .map((item) => item.change_instruction)
+              .join(' '),
+            inputMode: 'point',
+            annotations: confirmedAnnotations.map((item) => ({
+              region_description: item.region_description,
+              change_instruction: item.change_instruction,
+            })),
+            scope: 'marked_region',
+            markupAssetId: markupAssetId ?? '',
+          });
+      if (!lineageRequestIsCurrent(requestedLineageKey, requestedLineageEpoch)) return;
+      setBusy(false);
+      setCanvasWorking(null);
+      if (result.error !== null) {
+        setError(designerErrorMessage(result.error, 'refine'));
+        return;
+      }
+      setPreviewPrompt(typedInstruction || 'Changes described on the marked areas.');
+      setPreview({
+        candidate: result.data.candidate,
+        kind: exactLineage !== null ? 'markup' : 'visual',
+      });
+      return;
+    } else {
+      const freeze = request.mode === 'angle'
+        ? ' Change only the camera viewpoint. Keep the exact jewelry geometry, stone count, settings, metal, finish, scale, lighting family, and background fixed.'
+        : request.mode === 'background'
+          ? ' Change only the background and its natural contact shadow. Keep the exact jewelry, camera viewpoint, crop, scale, stones, settings, metal, and finish fixed.'
+          : request.mode === 'symmetry'
+            ? ' This is an intentional bilateral symmetry repair. Change only the corresponding left and right elements needed to match the requested pattern. Keep the center element and every unmentioned jewelry and presentation detail fixed.'
+          : ' Make only the requested changes. Keep every unmentioned design, material, camera, and background detail fixed.';
+      annotation = { ...annotation, change_instruction: `${typedInstruction}${freeze}` };
+    }
+
+    const result = exactLineage !== null
+      ? await gateway.previewMarkupRefine({
+          ...exactLineage,
+          createdBy,
+          annotation,
+          markupAssetId,
+        })
+      : await gateway.previewVisualRefine({
+          ...lineage,
+          createdBy,
+          instruction: annotation.change_instruction,
+          rawUserInstruction: designerInstruction,
+          inputMode: request.mode,
+          scope: 'appearance',
+        });
+
+    if (!lineageRequestIsCurrent(requestedLineageKey, requestedLineageEpoch)) return;
+    setBusy(false);
+    setCanvasWorking(null);
+    if (result.error !== null) {
+      setError(designerErrorMessage(result.error, 'refine'));
+      return;
+    }
+    setPreviewPrompt(designerInstruction);
     setPreview({
       candidate: result.data.candidate,
       kind: exactLineage !== null ? 'markup' : 'visual',
@@ -766,6 +1003,7 @@ export function StudioRefineWorkspace({
       return;
     }
     setPreview(null);
+    setPreviewPrompt(null);
     setNamingVariation(false);
     setVariationName('');
   };
@@ -824,6 +1062,24 @@ export function StudioRefineWorkspace({
     onVariationCreated?.(result.data.project);
   };
 
+  const applyCanvasPreview = async (): Promise<void> => {
+    setCanvasWorking('apply');
+    try {
+      await apply();
+    } finally {
+      setCanvasWorking(null);
+    }
+  };
+
+  const discardCanvasPreview = async (): Promise<void> => {
+    setCanvasWorking('discard');
+    try {
+      await discard();
+    } finally {
+      setCanvasWorking(null);
+    }
+  };
+
   if (lineage === null) {
     return (
       <View style={styles.empty}>
@@ -838,6 +1094,196 @@ export function StudioRefineWorkspace({
       <View style={styles.empty}>
         <Text style={styles.title}>Choose an exact saved revision first</Text>
         <Text style={styles.body}>Specifications can only update recorded facts on an exact revision.</Text>
+      </View>
+    );
+  }
+
+  if (workspaceMode === 'refine' && isWideCanvas) {
+    const sourceUnavailable = sourceImageUrl === null;
+    const editDisabled = !reviewSourceIsActive || sourceUnavailable;
+    const variationSupported = preview !== null && (preview.kind === 'catalog'
+      ? gateway.saveCatalogPreviewAsVariation !== undefined
+      : preview.kind === 'markup'
+        ? gateway.saveMarkupPreviewAsVariation !== undefined
+        : gateway.saveVisualPreviewAsVariation !== undefined);
+    const previewSummary = preview === null ? null : {
+      title: 'Compare it with the source',
+      summary: understoodAs
+        ?? 'This is a temporary image-model result. Apply only after the jewelry outside your request still matches.',
+    };
+    return (
+      <View style={styles.canvasWorkspace}>
+        <ScrollView
+          testID="refine-web-canvas"
+          style={styles.canvasStage}
+          contentContainerStyle={styles.canvasStageContent}>
+          <View style={styles.canvasHeader}>
+            <Text style={styles.eyebrow}>{preview === null ? 'DESIGN CANVAS' : 'TEMPORARY PREVIEW'}</Text>
+            <Text style={styles.canvasHeading}>{preview === null
+              ? 'Edit beside the design.'
+              : 'Check the change before it enters history.'}</Text>
+            <Text style={styles.canvasSubheading}>{preview === null
+              ? 'Mark one or several areas, describe the changes, or choose a quick action. The source stays visible while you work.'
+              : 'The source remains unchanged until you choose Apply.'}</Text>
+          </View>
+
+          {preview !== null && sourceImageUrl !== null ? (
+            <StudioComparisonInspector
+              before={{
+                label: 'Selected saved direction',
+                roleLabel: 'Source',
+                accessibilityLabel: 'Selected source design',
+                source: { uri: sourceImageUrl },
+                imageRequestHeaders,
+                onLoad: () => visualReview.markReady(sourceVisualKey),
+                onError: () => visualReview.markFailed(sourceVisualKey),
+              }}
+              after={{
+                label: 'Temporary change',
+                roleLabel: 'Preview',
+                accessibilityLabel: 'Temporary edited design preview',
+                source: { uri: preview.candidate.assetUrl },
+                imageRequestHeaders,
+                onLoad: () => visualReview.markReady(candidateVisualKey),
+                onError: () => visualReview.markFailed(candidateVisualKey),
+              }}
+              compactHeight={520}
+              inspectionTitle="Compare source and temporary change"
+              inspectionHelp="Inspect the marked areas and confirm the rest of the jewelry has not drifted."
+              testID="canvas-edit-comparison"
+            />
+          ) : sourceImageUrl === null ? (
+            <View style={styles.canvasUnavailable}>
+              <Text style={styles.reviewTitle}>The selected image is unavailable.</Text>
+              <Text style={styles.pathHelp}>Reopen the design from Collections before editing it.</Text>
+            </View>
+          ) : canvasMode === 'point' ? (
+            <View style={styles.annotationStage}>
+              <AnnotationCanvas
+                sourceUri={sourceImageUrl}
+                value={snapshot}
+                onChange={setSnapshot}
+                drawingEnabled
+                initialTool="text"
+              />
+              <Text style={styles.annotationHelp}>
+                Point or draw around every relevant area. Use the panel to describe the changes that belong there.
+              </Text>
+            </View>
+          ) : (
+            <StudioReviewImage
+              accessibilityLabel="Selected design to edit"
+              inspectionLabel="Selected design"
+              source={{ uri: sourceImageUrl }}
+              imageRequestHeaders={imageRequestHeaders}
+              onLoad={() => visualReview.markReady(sourceVisualKey)}
+              onError={() => visualReview.markFailed(sourceVisualKey)}
+              style={styles.canvasSourceImage}
+            />
+          )}
+
+          {acceptedOutcome !== null && (
+            <View accessibilityRole="summary" style={styles.acceptedOutcomeCard}>
+              <Text style={styles.acceptedOutcomeEyebrow}>SAVED</Text>
+              <Text style={styles.acceptedOutcomeTitle}>{acceptedOutcome.revision === null
+                ? 'Saved as a new immutable revision.'
+                : `Saved as Revision ${acceptedOutcome.revision}.`}</Text>
+              <Text style={styles.acceptedOutcomeBody}>
+                The previous revision remains available in Collections. You can continue editing this new revision here.
+              </Text>
+            </View>
+          )}
+        </ScrollView>
+
+        <ScrollView
+          testID="refine-web-tools"
+          style={styles.canvasToolRail}
+          contentContainerStyle={styles.canvasToolRailContent}>
+          <StudioPromptHistory
+            project={project}
+            continuationPrompts={continuationPrompts}
+            previewPrompt={preview === null ? null : previewPrompt}
+            onStartNewDesign={onStartNewDesign}
+            compact
+          />
+          <StudioCanvasEditPanel
+            annotation={{
+              markCount: snapshot.annotations.length,
+              everyMarkCarriesInstruction,
+              label: snapshot.annotations.length === 0
+                ? 'No area marked yet'
+                : `${snapshot.annotations.length} mark${snapshot.annotations.length === 1 ? '' : 's'} ready`,
+            }}
+            preview={previewSummary}
+            working={canvasWorking}
+            disabled={editDisabled}
+            disabledReason={!reviewSourceIsActive
+              ? 'This preview came from an older revision. Reopen the current design before making another change.'
+              : sourceUnavailable ? 'The selected source image is unavailable.' : null}
+            error={error}
+            creditEstimate={REFINE_CREDITS_PER_OUTPUT}
+            instructionValue={instruction}
+            onInstructionChange={setInstruction}
+            onModeChange={(nextMode) => {
+              setCanvasMode(nextMode);
+              setMode(nextMode === 'point' ? 'annotation' : 'instruction');
+              setError(null);
+            }}
+            onRequestAnnotation={() => {
+              setCanvasMode('point');
+              setMode('annotation');
+              setError(null);
+            }}
+            onClearAnnotation={() => setSnapshot((current) => ({
+              ...current,
+              annotations: [],
+            }))}
+            onPreviewChange={(request) => { void makeCanvasPreview(request); }}
+            onApplyPreview={() => { void applyCanvasPreview(); }}
+            onSaveAsVariationPreview={variationSupported ? () => {
+              setNamingVariation(true);
+              setError(null);
+            } : undefined}
+            onDiscardPreview={() => { void discardCanvasPreview(); }}
+          />
+          {preview !== null && namingVariation && variationSupported && (
+            <View style={styles.variationCard}>
+              <Field
+                label="Variation name"
+                value={variationName}
+                onChange={setVariationName}
+                placeholder="e.g. Rose gold halo"
+              />
+              <Text style={styles.checkDetail}>
+                This creates a sibling direction. The selected source revision and its history stay unchanged.
+              </Text>
+              <View style={styles.actions}>
+                <Button
+                  title="Cancel"
+                  kind="ghost"
+                  disabled={busy}
+                  onPress={() => {
+                    setNamingVariation(false);
+                    setVariationName('');
+                    setError(null);
+                  }}
+                />
+                <Button
+                  title={busy ? 'Saving…' : 'Save named variation'}
+                  disabled={busy || variationName.trim().length === 0
+                    || preview.candidate.verdict === 'reject' || !comparisonReady}
+                  onPress={() => { void saveAsVariation(); }}
+                />
+              </View>
+            </View>
+          )}
+          <View style={styles.canvasAdvancedNote}>
+            <Text style={styles.pathTitle}>Need precision controls?</Text>
+            <Text style={styles.pathHelp}>
+              Component maps and advanced specifications remain available from More after you establish the visual direction.
+            </Text>
+          </View>
+        </ScrollView>
       </View>
     );
   }
@@ -991,7 +1437,7 @@ export function StudioRefineWorkspace({
             : 'The accepted preview is now the active immutable revision. The earlier revision remains in Collections.'}</Text>
           <View style={styles.acceptedOutcomeActions}>
             <Button
-              title="Refine another change"
+              title="Continue refining"
               kind="ghost"
               onPress={() => setAcceptedOutcome(null)}
             />
@@ -1008,25 +1454,76 @@ export function StudioRefineWorkspace({
         ? 'SPECIFICATIONS' : 'REFINE'}</Text>
       <Text style={styles.title}>{workspaceMode === 'specifications'
         ? 'Correct the recorded facts for this revision.'
-        : 'Change one thing. Keep the rest.'}</Text>
+        : 'Show Facetta what you want to change.'}</Text>
       <Text style={styles.body}>{workspaceMode === 'specifications'
         ? 'Review only the facts that need correction. Saving appends an immutable specification revision without changing image pixels.'
-        : 'Choose how to target one change. Every change creates a temporary candidate before anything enters design history.'}</Text>
+        : 'Describe everything you want to change. For precise edits, mark every relevant area on the selected design and add the instructions that belong to those marks. You will review a temporary preview before anything is saved.'}</Text>
 
       {!reviewSourceIsActive && <Notice kind="info" text="This Activity result was created from an earlier revision. Review the existing preview below; creating or applying another change from this source is unavailable." />}
 
       {workspaceMode === 'refine' && resuming && <Notice kind="info" text="Checking for a pending preview from this exact revision…" />}
 
+      {workspaceMode === 'refine' && (
+        <View testID="refine-active-design" style={styles.activeDesignCard}>
+          <View style={styles.activeDesignHeader}>
+            <View style={styles.activeDesignCopy}>
+              <Text style={styles.activeDesignEyebrow}>SELECTED DESIGN</Text>
+              <Text style={styles.activeDesignTitle}>{mode === 'annotation'
+                ? 'Mark the areas you want to edit'
+                : 'This is the design you are editing'}</Text>
+            </View>
+            {mode === 'annotation' && (
+              <Text style={styles.markCount}>{snapshot.annotations.length === 0
+                ? 'No marks yet'
+                : `${snapshot.annotations.length} mark${snapshot.annotations.length === 1 ? '' : 's'}`}</Text>
+            )}
+          </View>
+          {sourceImageUrl === null ? (
+            <Notice kind="error" text="The selected design image is unavailable. Reopen it from Collections before refining." />
+          ) : mode === 'annotation' ? (
+            <AnnotationCanvas
+              sourceUri={sourceImageUrl}
+              value={snapshot}
+              onChange={setSnapshot}
+              drawingEnabled
+              initialTool="text"
+              testID="refine-annotation-canvas"
+            />
+          ) : (
+            <StudioReviewImage
+              accessibilityLabel="Selected design being refined"
+              inspectionLabel="Selected design"
+              source={{ uri: sourceImageUrl }}
+              imageRequestHeaders={imageRequestHeaders}
+              style={styles.activeDesignImage}
+            />
+          )}
+          <Text style={styles.activeDesignHelp}>{mode === 'annotation'
+            ? 'Use Arrow, Circle, Rectangle, Freehand, or Text. You can add multiple marks, then describe all of the requested changes below.'
+            : 'Describe all requested changes below, or choose Annotate image to point, circle, draw, or place notes directly on this jewelry.'}</Text>
+        </View>
+      )}
+
+      {workspaceMode === 'refine' && (
+        <StudioPromptHistory
+          project={project}
+          continuationPrompts={continuationPrompts}
+          previewPrompt={preview === null ? null : previewPrompt}
+          onStartNewDesign={onStartNewDesign}
+        />
+      )}
+
       {workspaceMode === 'refine' && <View style={styles.modeRow}>
         {([
           ['component', 'Component', 'Choose a controlled material or construction option.'],
-          ['instruction', 'Describe', 'Describe an appearance-only change in plain language.'],
-          ['annotation', 'Mark up', 'Draw directly on the exact active image.'],
+          ['instruction', 'Describe changes', 'Write all requested changes in plain language.'],
+          ['annotation', 'Annotate image', 'Point, circle, draw, or add notes on the selected design.'],
         ] as const).filter(([id]) => id !== 'component' || componentAvailable)
           .map(([id, label, detail]) => (
             <Pressable
               key={id}
-              accessibilityLabel={`${label} refine mode`}
+              accessibilityLabel={id === 'annotation' ? 'Mark up refine mode'
+                : id === 'instruction' ? 'Describe refine mode' : `${label} refine mode`}
               accessibilityRole="button"
               accessibilityState={{ selected: mode === id }}
               onPress={() => {
@@ -1042,22 +1539,11 @@ export function StudioRefineWorkspace({
       </View>}
 
       {workspaceMode === 'refine'
-        && !exactSpecification && onReviewStartingDesign !== undefined && (
-        <View style={styles.startingFactsCard}>
-          <View style={styles.startingFactsCopy}>
-            <Text style={styles.advancedDisclosureTitle}>Unlock precise ring edits</Text>
-            <Text style={styles.pathHelp}>For a ring direction, review the image-derived starting facts before changing components or construction. Estimates stay clearly separate from facts you confirm. Technical views become available after those facts are recorded; you can keep refining or presenting without them.</Text>
-          </View>
-          <Button title="Review starting design" kind="ghost" onPress={onReviewStartingDesign} />
-        </View>
-      )}
-
-      {workspaceMode === 'refine'
         && targetingError !== null && <Notice kind="error" text={targetingError} />}
       {workspaceMode === 'refine'
         && exactSpecification && !targetingLoading && targetingError === null
         && readyPaths.length === 0 && (
-        <Notice kind="info" text="This revision has no precisely mapped component regions yet. Describe an appearance change or use Mark up; Facetta will not guess component geometry." />
+        <Notice kind="info" text="This revision has no precisely mapped component regions yet. Describe the changes or use Annotate image; Facetta will not guess component geometry." />
       )}
 
       {workspaceMode === 'refine' && mode === 'component' && <>
@@ -1075,7 +1561,7 @@ export function StudioRefineWorkspace({
               : capability?.status === 'unmapped'
                 ? 'Precise targeting has not been mapped for this revision.'
                 : capability?.status === 'unresolved'
-                  ? 'This design is not ready for that precise component change yet. Use Describe or Mark up so Facetta can keep the rest unchanged.'
+                  ? 'This design is not ready for that precise component edit yet. Use Describe changes or Annotate image so Facetta can preserve unmentioned areas.'
                   : 'Precise component targeting is not released for this category.';
             return (
               <Pressable
@@ -1107,18 +1593,24 @@ export function StudioRefineWorkspace({
       </>}
 
       {workspaceMode === 'refine' && mode === 'instruction' && <>
-        <Field label="Appearance change" value={instruction} onChange={setInstruction} multiline
-          placeholder="Make the presentation softer and more luminous while keeping every jewelry detail fixed…" />
+        <Field label="Describe the changes" value={instruction} onChange={setInstruction} multiline
+          placeholder="For example: Make the center stone oval, use finer prongs, and narrow both shoulders. Preserve everything I did not mention." />
         <Notice kind="info" text={exactSpecification
-          ? 'Plain-language mode changes presentation only. Use Component or Mark up for structure, stones, settings, or materials.'
-          : 'Plain-language mode changes appearance only. Structural, stone, setting, and construction changes stay locked until design facts are confirmed.'} />
+          ? 'Facetta will interpret the complete request and preserve unmentioned areas. Use Annotate image when a change belongs to a specific part of the jewelry.'
+          : 'Facetta will interpret the complete visual request and preserve unmentioned areas. Confirm starting design facts only when you need production-specific component or construction control.'} />
       </>}
 
       {workspaceMode === 'refine' && mode === 'annotation' && (sourceImageUrl === null ? (
-        <Notice kind="error" text="The exact active image is unavailable for annotation. Reopen the design or use Describe." />
+        <Notice kind="error" text="The exact active image is unavailable for annotation. Reopen the design or use Describe changes." />
       ) : <>
-        <AnnotationCanvas sourceUri={sourceImageUrl} value={snapshot} onChange={setSnapshot} drawingEnabled />
-        <Text style={styles.pathHelp}>Mark one region and add text or an arrow describing one change. Facetta will show its interpretation before Apply.</Text>
+        <Field
+          label="Instructions for the marked areas"
+          value={instruction}
+          onChange={setInstruction}
+          multiline
+          placeholder="For example: Make both circled shoulders narrower, replace the marked prongs with finer claws, and keep every unmarked area unchanged."
+        />
+        <Text style={styles.pathHelp}>Each mark establishes where to edit; these instructions explain what to change. Facetta will show its interpretation before Apply.</Text>
       </>)}
       {workspaceMode === 'specifications' && mode === 'facts' && <>
         <Notice kind="info" text="Fact corrections cost 0 credits. Image pixels stay unchanged while Facetta appends a new immutable specification revision." />
@@ -1226,10 +1718,12 @@ export function StudioRefineWorkspace({
           ? 'Quick preview · 0 credits'
           : `1 requested output × ${REFINE_CREDITS_PER_OUTPUT} credits = estimated ${REFINE_CREDITS_PER_OUTPUT} credits`}</Text>
       {workspaceMode === 'refine' ? (
-        <Button title={busy ? 'Creating preview…' : 'Preview change'} disabled={busy || !reviewSourceIsActive
+        <Button title={busy ? 'Creating preview…' : 'Preview changes'} disabled={busy || !reviewSourceIsActive
           || (mode === 'component' && (selected === null || !selectedPathReady))
           || (mode === 'instruction' && !instruction.trim())
-          || (mode === 'annotation' && (sourceImageUrl === null || snapshot.annotations.length === 0))}
+          || (mode === 'annotation' && (sourceImageUrl === null
+            || snapshot.annotations.length === 0
+            || (!instruction.trim() && !everyMarkCarriesInstruction)))}
           onPress={() => { void makePreview(); }} />
       ) : factReview === null && (
         <Button title="Review fact changes" disabled={busy || !reviewSourceIsActive || factsLoading || editableFacts.length === 0}
@@ -1241,10 +1735,121 @@ export function StudioRefineWorkspace({
 
 const styles = StyleSheet.create({
   workspace: { padding: 22, paddingBottom: 120, gap: 12 },
+  canvasWorkspace: {
+    flex: 1,
+    minHeight: 0,
+    flexDirection: 'row',
+    backgroundColor: '#f4f1eb',
+  },
+  canvasStage: { flex: 1, minWidth: 0 },
+  canvasStageContent: {
+    width: '100%',
+    maxWidth: 1120,
+    minHeight: '100%',
+    alignSelf: 'center',
+    padding: 28,
+    gap: 18,
+  },
+  canvasHeader: { maxWidth: 720 },
+  canvasHeading: {
+    color: theme.ink,
+    fontFamily: theme.serif,
+    fontSize: 30,
+    lineHeight: 37,
+    marginTop: 7,
+  },
+  canvasSubheading: { color: theme.faint, fontSize: 13, lineHeight: 19, marginTop: 5 },
+  canvasSourceImage: {
+    width: '100%',
+    maxWidth: 760,
+    aspectRatio: 1,
+    alignSelf: 'center',
+    borderRadius: radius.lg,
+    backgroundColor: theme.card,
+  },
+  annotationStage: {
+    width: '100%',
+    maxWidth: 820,
+    alignSelf: 'center',
+    borderWidth: 1,
+    borderColor: theme.line,
+    borderRadius: radius.lg,
+    backgroundColor: theme.card,
+    padding: 14,
+    gap: 10,
+  },
+  annotationHelp: { color: theme.faint, fontSize: 12, lineHeight: 18 },
+  canvasUnavailable: {
+    minHeight: 420,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: theme.line,
+    borderRadius: radius.lg,
+    backgroundColor: theme.card,
+    padding: 28,
+  },
+  canvasToolRail: {
+    width: 360,
+    flexGrow: 0,
+    flexShrink: 0,
+    borderLeftWidth: 1,
+    borderLeftColor: theme.line,
+    backgroundColor: theme.paper,
+  },
+  canvasToolRailContent: { padding: 20, paddingBottom: 100, gap: 14 },
+  canvasAdvancedNote: {
+    borderWidth: 1,
+    borderColor: theme.line,
+    borderRadius: radius.md,
+    backgroundColor: theme.card,
+    padding: 14,
+  },
   empty: { padding: 28, alignItems: 'center', gap: 8 },
   eyebrow: { color: theme.accent, fontSize: 11, fontWeight: '800', letterSpacing: 2 },
   title: { color: theme.ink, fontFamily: theme.serif, fontSize: 28, lineHeight: 34 },
   body: { color: theme.faint, fontSize: 14, lineHeight: 21, maxWidth: 680 },
+  activeDesignCard: {
+    backgroundColor: theme.card,
+    borderColor: theme.line,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    gap: 10,
+    overflow: 'hidden',
+    padding: 12,
+  },
+  activeDesignHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  activeDesignCopy: { flex: 1 },
+  activeDesignEyebrow: {
+    color: theme.accent,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.4,
+  },
+  activeDesignTitle: { color: theme.ink, fontSize: 17, fontWeight: '800', marginTop: 3 },
+  activeDesignImage: {
+    aspectRatio: 1,
+    backgroundColor: '#f1efe9',
+    borderRadius: radius.md,
+    width: '100%',
+  },
+  activeDesignHelp: { color: theme.faint, fontSize: 12, lineHeight: 18 },
+  markCount: {
+    backgroundColor: theme.blush,
+    borderRadius: 999,
+    color: theme.accent,
+    fontSize: 11,
+    fontWeight: '800',
+    overflow: 'hidden',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
   sectionTitle: { color: theme.ink, fontSize: 12, fontWeight: '800', letterSpacing: 1.4, marginTop: 12 },
   pathGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   modeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },

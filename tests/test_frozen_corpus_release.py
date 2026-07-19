@@ -78,7 +78,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
                 else "quick_appearance" if index < 10 else "structural"
             ),
         }
-        for index in range(18)
+        for index in range(19)
     ]
     quality_assignment = {
         "slice": "ring", "evaluation_set_id": "ring-full-matrix-v1",
@@ -178,7 +178,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             "status": "pass",
             "integrity_source_count": 144,
             "quality_source_count": 58,
-            "quality_evaluations_per_source": 18,
+            "quality_evaluations_per_source": 19,
         },
         "evidence": {
             "path": "/secure/replay.json",
@@ -212,9 +212,9 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
                 "missing_source_filenames": [],
                 "errors": [],
             },
-            "captured_attempt_count": 1_044,
-            "expected_evaluation_count": 1_044,
-            "completed_evaluation_count": 1_044,
+            "captured_attempt_count": 1_102,
+            "expected_evaluation_count": 1_102,
+            "completed_evaluation_count": 1_102,
             "integrity_source_count": 144,
             "quality_source_count": 58,
             "all_outside_mask_drift_pass": True,
@@ -244,7 +244,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
                         "facetta-frozen-selected-result-set.v1"
                     ),
                     "result_set_sha256": "e" * 64,
-                    "result_count": 1_044,
+                    "result_count": 1_102,
                 },
                 "checks": {
                     "atomic_image_spec_persistence": True,
@@ -278,9 +278,9 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
                 "reviewer_profile_sha256": "9" * 64,
                 "decisions": [
                     {"item_id": f"item-{index}", "derived_accepted": True}
-                    for index in range(1_044)
+                    for index in range(1_102)
                 ],
-                "accepted_count": 1_044,
+                "accepted_count": 1_102,
                 "accepted_rate": 1.0,
                 "errors": [],
             },
@@ -396,7 +396,7 @@ def test_exact_recomputed_founder_decision_passes_corpus_gate_only(
     assert result["gate_bindings"]["derived_scope"] == {
         "integrity_source_count": 144,
         "quality_source_count": 58,
-        "quality_assignment_count": 1_044,
+        "quality_assignment_count": 1_102,
     }
     assert len(result["gate_bindings"]["implementation_pins_sha256"]) == 64
 
@@ -708,7 +708,7 @@ def test_founder_cannot_approve_failed_persistence_attestation(tmp_path: Path):
     )
 
 
-def test_pinned_workload_must_preserve_144_by_58_by_18_scope(tmp_path: Path):
+def test_pinned_workload_must_preserve_144_by_58_by_19_scope(tmp_path: Path):
     paths = _fixture(tmp_path)
     workload = json.loads(paths["workload"].read_text())
     workload["sources"] = workload["sources"][:1]
@@ -725,7 +725,7 @@ def test_pinned_workload_must_preserve_144_by_58_by_18_scope(tmp_path: Path):
     joined = " ".join(result["errors"])
     assert "exactly 144" in joined
     assert "exactly 58" in joined
-    assert "exactly 1,044" in joined
+    assert "exactly 1,102" in joined
 
 
 def test_founder_and_gia_reviewer_must_use_distinct_public_keys(tmp_path: Path):

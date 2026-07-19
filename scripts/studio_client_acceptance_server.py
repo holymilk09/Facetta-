@@ -38,6 +38,10 @@ from facetta.creative_workflow import (
     get_creative_prompt_generator,
     get_creative_render_generator,
 )
+from facetta.creative_comparability import (
+    MainViewComparabilityAudit,
+    get_main_view_comparability_inspector,
+)
 from facetta.db import (
     Base,
     Design,
@@ -96,10 +100,10 @@ _RING_COMPONENT_INVENTORY: tuple[
         "prongs",
         "Center prongs",
         (
-            (0.39, 0.25, 0.42, 0.30),
-            (0.58, 0.25, 0.61, 0.30),
-            (0.39, 0.42, 0.42, 0.47),
-            (0.58, 0.42, 0.61, 0.47),
+            (0.38, 0.24, 0.41, 0.29),
+            (0.59, 0.24, 0.62, 0.29),
+            (0.38, 0.43, 0.41, 0.48),
+            (0.59, 0.43, 0.62, 0.48),
         ),
     ),
     (
@@ -393,6 +397,17 @@ class _OfflineCatalogAgent:
 FAILED_QA_FIXTURE_PROMPT = "__FACETTA_ACCEPTANCE_FORCE_QA_FAIL__"
 
 
+def _request_prompt(prompt: str) -> str:
+    """Recover the caller's prompt before server-owned rendering contracts.
+
+    Production Create appends the main-view contract as a second paragraph
+    before invoking this disposable provider. Acceptance sentinels must bind
+    to the original request without depending on that internal suffix.
+    """
+
+    return prompt.partition("\n\n")[0].strip()
+
+
 def _quality_rejected_result(plan, image: bytes):
     """Exercise the real closed-loop QA failure path in this server only.
 
@@ -430,9 +445,10 @@ def _prompt_generator(
 ):
     if (reference_board is None) != (reference_instruction is None):
         raise AssertionError("acceptance prompt references lost their role contract")
+    request_prompt = _request_prompt(prompt)
     image = (
         _semantic_ring_png()
-        if prompt == STRUCTURAL_PRE_SPEC_PROMPT
+        if request_prompt == STRUCTURAL_PRE_SPEC_PROMPT
         else _png(_fixture_color(
             "prompt",
             prompt,
@@ -450,7 +466,7 @@ def _prompt_generator(
             () if reference_instruction is None else (reference_instruction,)
         ),
     )
-    if prompt == FAILED_QA_FIXTURE_PROMPT:
+    if request_prompt == FAILED_QA_FIXTURE_PROMPT:
         return _quality_rejected_result(plan, image)
     return _accepted_result(plan, image, source=reference_board)
 
@@ -606,6 +622,21 @@ app.dependency_overrides[get_creative_prompt_generator] = (
 )
 app.dependency_overrides[get_creative_render_generator] = (
     lambda: _render_generator
+)
+app.dependency_overrides[get_main_view_comparability_inspector] = (
+    lambda: lambda _first, _second: MainViewComparabilityAudit(
+        first_complete_piece_visible=True,
+        second_complete_piece_visible=True,
+        camera_view_matches=True,
+        camera_elevation_matches=True,
+        image_plane_rotation_matches=True,
+        crop_and_frame_fill_match=True,
+        review_scale_matches=True,
+        background_family_matches=True,
+        comparable=True,
+        score=98,
+        notes=("Disposable acceptance directions share one fixture camera.",),
+    )
 )
 app.dependency_overrides[get_studio_visual_preview_generator] = (
     lambda: _visual_preview_generator

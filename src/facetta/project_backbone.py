@@ -44,7 +44,7 @@ from facetta.vocabulary import get_vocabulary
 
 if TYPE_CHECKING:
     from facetta.db import StudioJobRecord
-    from facetta.image_agent import ImageAgentResult
+    from facetta.image_agent import ImageAgentError, ImageAgentResult
 
 
 PRIMARY_REVISION_CAPABILITIES = frozenset({
@@ -67,6 +67,9 @@ CONFIRMABLE_PRE_SPEC_CAPABILITIES = frozenset({
 
 PROVENANCE_BY_CAPABILITY = {
     "CREATIVE_RENDER": "pre_spec_creative_candidate",
+    "CREATIVE_COMPARISON_THREE_QUARTER": (
+        "pre_spec_creative_comparison_three_quarter"
+    ),
     "CREATIVE_SOURCE": "designer_supplied_source",
     "CREATIVE_SOURCE_REGION": "designer_selected_source_region",
     "CREATIVE_REFERENCE_BOARD": "role_labeled_reference_board",
@@ -259,10 +262,21 @@ class PersistedProjectResult:
 
 
 @dataclass(frozen=True)
+class CreativeComparisonViewInput:
+    """One metered review view derived from an exact creative candidate."""
+
+    view: Literal["three_quarter"]
+    image: bytes
+    instruction: str
+    image_run: ImageAgentResult
+
+
+@dataclass(frozen=True)
 class CreativeCandidateInput:
     image: bytes
     instruction: str
     image_run: ImageAgentResult
+    comparison_views: tuple[CreativeComparisonViewInput, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -613,6 +627,7 @@ def persist_creative_project(
     collection: str | None = None,
     tags: list[str] | None = None,
     studio_job: StudioJobRecord | None = None,
+    rejected_image_results: tuple[ImageAgentResult, ...] = (),
 ) -> PersistedCreativeProjectResult:
     """Atomically store a pre-spec source and its reviewable render variants.
 
@@ -627,6 +642,14 @@ def persist_creative_project(
         raise ValueError("creative source kind is invalid")
     if any(not candidate.image for candidate in candidates):
         raise ValueError("creative candidate image must not be empty")
+    for candidate in candidates:
+        views = [view.view for view in candidate.comparison_views]
+        if len(views) != len(set(views)) or any(
+            view != "three_quarter" for view in views
+        ):
+            raise ValueError("creative comparison views must be unique and supported")
+        if any(not view.image for view in candidate.comparison_views):
+            raise ValueError("creative comparison view image must not be empty")
     allowed_reference_capabilities = {
         "CREATIVE_REFERENCE_MATERIAL_STYLE",
         "CREATIVE_REFERENCE_CONSTRUCTION_DETAIL",
@@ -719,6 +742,28 @@ def persist_creative_project(
         )
         for candidate in candidates
     ]
+    comparison_rows = [
+        (
+            candidate,
+            view,
+            ImageAsset(
+                id=new_id("ast"),
+                root_id=root_id,
+                parent_asset_id=candidate_row.id,
+                design_id=None,
+                design_version=None,
+                capability="CREATIVE_COMPARISON_THREE_QUARTER",
+                source_kind=source_kind,
+                instruction=view.instruction,
+                image=view.image,
+                media_type=sniff_media_type(view.image),
+                created_by=owner,
+                created_at=now,
+            ),
+        )
+        for candidate, candidate_row in zip(candidates, candidate_rows)
+        for view in candidate.comparison_views
+    ]
     try:
         if studio_job is not None:
             if (
@@ -727,6 +772,9 @@ def persist_creative_project(
                 or studio_job.status != "running"
                 or studio_job.active_design_id is not None
                 or studio_job.source_revision_id is not None
+                # Comparison views are an included internal companion to each
+                # requested direction. They are evidenced, but never counted
+                # as an additional billable Studio output.
                 or studio_job.requested_outputs != len(candidates)
                 or studio_job.completed_outputs != 0
                 or studio_job.charged_outputs != 0
@@ -745,6 +793,7 @@ def persist_creative_project(
             *([render_source] if render_source is not None else []),
             *reference_rows,
             *candidate_rows,
+            *(row for _candidate, _view, row in comparison_rows),
         ])
         from facetta.image_run_store import persist_image_agent_result
 
@@ -760,6 +809,33 @@ def persist_creative_project(
             )
             for candidate, row in zip(candidates, candidate_rows)
         ]
+        image_run_ids.extend(
+            persist_image_agent_result(
+                db,
+                view.image_run,
+                project_root_id=root_id,
+                source_asset_id=candidate_row.id,
+                accepted_asset_id=row.id,
+                created_by=owner,
+                commit=False,
+            )
+            for candidate, candidate_row in zip(candidates, candidate_rows)
+            for _owner_candidate, view, row in comparison_rows
+            if _owner_candidate is candidate
+        )
+        image_run_ids.extend(
+            persist_image_agent_result(
+                db,
+                rejected,
+                project_root_id=root_id,
+                source_asset_id=render_source_id,
+                created_by=owner,
+                status_override="failed",
+                error_category_override="quality",
+                commit=False,
+            )
+            for rejected in rejected_image_results
+        )
         db.flush()
         db.commit()
     except Exception:
@@ -783,6 +859,8 @@ def persist_prompt_creative_project(
     collection: str | None = None,
     tags: list[str] | None = None,
     studio_job: StudioJobRecord | None = None,
+    failed_image_errors: tuple[ImageAgentError, ...] = (),
+    rejected_image_results: tuple[ImageAgentResult, ...] = (),
 ) -> PersistedCreativeProjectResult:
     """Atomically store independent prompt-generated, pre-spec candidates.
 
@@ -794,6 +872,16 @@ def persist_prompt_creative_project(
         raise ValueError("a creative project requires at least one candidate")
     if any(not candidate.image for candidate in candidates):
         raise ValueError("creative candidate image must not be empty")
+    for candidate in candidates:
+        views = [view.view for view in candidate.comparison_views]
+        if len(views) != len(set(views)) or any(
+            view != "three_quarter" for view in views
+        ):
+            raise ValueError("creative comparison views must be unique and supported")
+        if any(not view.image for view in candidate.comparison_views):
+            raise ValueError("creative comparison view image must not be empty")
+    if any(error.plan is None for error in failed_image_errors):
+        raise ValueError("creative failure evidence requires an image plan")
     if reference_board is not None and (
         not reference_board.image
         or reference_board.capability != "CREATIVE_REFERENCE_BOARD"
@@ -833,6 +921,27 @@ def persist_prompt_creative_project(
             created_at=now,
         )
         for index, candidate in enumerate(candidates)
+    ]
+    comparison_rows = [
+        (
+            candidate,
+            view,
+            ImageAsset(
+                id=new_id("ast"),
+                root_id=root_id,
+                parent_asset_id=candidate_row.id,
+                design_id=None,
+                design_version=None,
+                capability="CREATIVE_COMPARISON_THREE_QUARTER",
+                instruction=view.instruction,
+                image=view.image,
+                media_type=sniff_media_type(view.image),
+                created_by=owner,
+                created_at=now,
+            ),
+        )
+        for candidate, candidate_row in zip(candidates, rows)
+        for view in candidate.comparison_views
     ]
     reference_board_row = (
         ImageAsset(
@@ -886,7 +995,9 @@ def persist_prompt_creative_project(
                 or studio_job.status != "running"
                 or studio_job.active_design_id is not None
                 or studio_job.source_revision_id is not None
-                or studio_job.requested_outputs != len(candidates)
+                # Comparison views are included review evidence for each
+                # direction, not a separately charged Studio output.
+                or len(candidates) > studio_job.requested_outputs
                 or studio_job.completed_outputs != 0
                 or studio_job.charged_outputs != 0
             ):
@@ -903,8 +1014,12 @@ def persist_prompt_creative_project(
             project,
             *([reference_board_row] if reference_board_row is not None else []),
             *reference_rows,
+            *(row for _candidate, _view, row in comparison_rows),
         ])
-        from facetta.image_run_store import persist_image_agent_result
+        from facetta.image_run_store import (
+            persist_image_agent_failure,
+            persist_image_agent_result,
+        )
 
         image_run_ids = [
             persist_image_agent_result(
@@ -921,6 +1036,52 @@ def persist_prompt_creative_project(
             )
             for candidate, row in zip(candidates, rows)
         ]
+        image_run_ids.extend(
+            persist_image_agent_result(
+                db,
+                view.image_run,
+                project_root_id=root_id,
+                source_asset_id=candidate_row.id,
+                accepted_asset_id=row.id,
+                created_by=owner,
+                commit=False,
+            )
+            for candidate, candidate_row in zip(candidates, rows)
+            for _owner_candidate, view, row in comparison_rows
+            if _owner_candidate is candidate
+        )
+        image_run_ids.extend(
+            persist_image_agent_failure(
+                db,
+                error.plan,
+                error,
+                project_root_id=root_id,
+                source_asset_id=(
+                    reference_board_row.id
+                    if reference_board_row is not None else None
+                ),
+                created_by=owner,
+                commit=False,
+            )
+            for error in failed_image_errors
+            if error.plan is not None
+        )
+        image_run_ids.extend(
+            persist_image_agent_result(
+                db,
+                rejected,
+                project_root_id=root_id,
+                source_asset_id=(
+                    reference_board_row.id
+                    if reference_board_row is not None else None
+                ),
+                created_by=owner,
+                status_override="failed",
+                error_category_override="quality",
+                commit=False,
+            )
+            for rejected in rejected_image_results
+        )
         db.flush()
         db.commit()
     except Exception:

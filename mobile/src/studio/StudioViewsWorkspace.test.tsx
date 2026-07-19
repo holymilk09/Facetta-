@@ -21,7 +21,10 @@ const project = {
 const preview = {
   candidateId: 'candidate_view', runId: 'run_view', previewUrl: 'https://test/view.png',
   view: 'front' as const, lineage, verdict: 'pass' as const,
-  checks: [{ id: 'geometry', label: 'Geometry', verdict: 'pass' as const, detail: 'Matched.' }],
+  checks: [{
+    id: 'geometry', label: 'Geometry', verdict: 'pass' as const,
+    severity: 'hard' as const, detail: 'Matched.',
+  }],
 };
 
 describe('StudioViewsWorkspace', () => {
@@ -65,9 +68,9 @@ describe('StudioViewsWorkspace', () => {
       </AuthenticatedImageProvider>,
     );
 
-    expect(screen.getByText('TECHNICAL VIEWS')).toBeTruthy();
-    expect(screen.getByText('See the confirmed design from another angle.')).toBeTruthy();
-    expect(screen.getByText(/confirmed design facts/)).toBeTruthy();
+    expect(screen.getByText('MORE ANGLES')).toBeTruthy();
+    expect(screen.getByText('See this design from another angle.')).toBeTruthy();
+    expect(screen.getByText(/uses this exact saved revision/)).toBeTruthy();
     expect(screen.getByText('Exact saved revision')).toBeTruthy();
     expect(screen.queryByText(/(?:Version|Design v)\s*4/i)).toBeNull();
     expect(screen.getByText('1 requested output × 15 credits = estimated 15 credits')).toBeTruthy();
@@ -144,6 +147,90 @@ describe('StudioViewsWorkspace', () => {
     fireEvent.press(await screen.findByText('Save view'));
     expect(acceptLineArtView).not.toHaveBeenCalled();
     expect(screen.getByText('This view cannot be saved')).toBeTruthy();
+  });
+
+  test('labels warning failures for review and allows an explicit save after comparison', async () => {
+    const warningPreview = {
+      ...preview,
+      verdict: 'warn' as const,
+      checks: [{
+        id: 'geometry', label: 'Geometry', verdict: 'pass' as const,
+        severity: 'hard' as const, detail: 'Geometry matched.',
+      }, {
+        id: 'unintended_drift', label: 'Unintended drift', verdict: 'warn' as const,
+        severity: 'warning' as const, detail: 'Expected presentation change.',
+      }],
+    };
+    const acceptLineArtView = jest.fn(async () => ({
+      data: { preview: warningPreview, project }, error: null, status: 201,
+    }));
+    await render(
+      <AuthenticatedImageProvider allowedOrigin="https://test" headers={{ Authorization: 'Bearer first-party-token' }}>
+        <StudioViewsWorkspace
+          gateway={{
+            previewLineArtView: jest.fn(async () => ({
+              data: warningPreview, error: null, status: 202,
+            })),
+            assetImageUrl: jest.fn(() => 'https://test/source.png'),
+            acceptLineArtView,
+            discardLineArtView: jest.fn(),
+          } as any}
+          lineage={lineage}
+          createdBy="designer"
+          onSaved={jest.fn()}
+        />
+      </AuthenticatedImageProvider>,
+    );
+    await act(async () => { fireEvent.press(screen.getByText('Preview view')); });
+    expect(await screen.findByText('Review these differences before saving')).toBeTruthy();
+    expect(screen.getByText('Needs review')).toBeTruthy();
+    expect(screen.queryByText('Could not preserve design')).toBeNull();
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+      fireEvent(screen.getByLabelText('Temporary front view'), 'load');
+    });
+    await act(async () => { fireEvent.press(screen.getByText('Save view')); });
+    expect(acceptLineArtView).toHaveBeenCalledTimes(1);
+  });
+
+  test('blocks saving when a hard check fails even if the overall verdict says warn', async () => {
+    const malformedPreview = {
+      ...preview,
+      verdict: 'warn' as const,
+      checks: [{
+        id: 'geometry', label: 'Geometry', verdict: 'reject' as const,
+        severity: 'hard' as const, detail: 'Geometry changed.',
+      }, {
+        id: 'presentation', label: 'Presentation', verdict: 'warn' as const,
+        severity: 'warning' as const, detail: 'Review presentation.',
+      }],
+    };
+    const acceptLineArtView = jest.fn();
+    await render(
+      <AuthenticatedImageProvider allowedOrigin="https://test" headers={{ Authorization: 'Bearer first-party-token' }}>
+        <StudioViewsWorkspace
+          gateway={{
+            previewLineArtView: jest.fn(async () => ({
+              data: malformedPreview, error: null, status: 202,
+            })),
+            assetImageUrl: jest.fn(() => 'https://test/source.png'),
+            acceptLineArtView,
+            discardLineArtView: jest.fn(),
+          } as any}
+          lineage={lineage}
+          createdBy="designer"
+          onSaved={jest.fn()}
+        />
+      </AuthenticatedImageProvider>,
+    );
+    await act(async () => { fireEvent.press(screen.getByText('Preview view')); });
+    expect(await screen.findByText('This view cannot be saved')).toBeTruthy();
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+      fireEvent(screen.getByLabelText('Temporary front view'), 'load');
+    });
+    fireEvent.press(screen.getByText('Save view'));
+    expect(acceptLineArtView).not.toHaveBeenCalled();
   });
 
   test('does not save when the exact source cannot be displayed for comparison', async () => {

@@ -6,7 +6,7 @@ result and contains no release authority.
 - `manifest.json` pins the exact 144 founder-supplied source hashes and marks
   the 58-reference advisory ring slice.
 - `workload.json` binds all 144 sources to integrity scope and expands the 58
-  ring sources into seven render and eleven edit evaluations: 1,044 logical
+  ring sources into seven render and twelve edit evaluations: 1,102 logical
   sequences. The other 86 sources have an explicit null quality assignment.
 - `config.json` pins the 90/85/90 thresholds, three-attempt ceiling, `0.18`
   outside-mask drift threshold, routing contract, workload, capture/replay,
@@ -14,9 +14,14 @@ result and contains no release authority.
 
 The production config intentionally has no assignment bundle, executor key,
 canonical API-runner key, GIA key, founder key, independent-designer key,
-staging-reviewer key, or six-role authority bundle. All 1,044 quality rows are
+staging-reviewer key, or six-role authority bundle. All 1,102 quality rows are
 unresolved, so the executable provider budget is zero and release status is
 `not_run`.
+
+Necklace symmetry has a separate provider-free contract fixture at
+`../necklace-symmetry-contract-v1/`. It strengthens prompt/evidence validation
+but does **not** expand this corpus's quality-assigned ring slice, run a
+provider, or satisfy external founder/GIA/designer review.
 
 ## Retained run-directory safety
 
@@ -46,7 +51,7 @@ PYTHONPATH=src .venv/bin/python scripts/plan_frozen_corpus_capture.py \
   --out /secure/path/to/evidence-root/provider-call-plan.json plan
 ```
 
-The 3,132-attempt number is only the logical maximum at three attempts per
+The 3,306-attempt number is only the logical maximum at three attempts per
 sequence. It is not an executable budget. Independently review and hash-pin a
 source-specific assignment/applicability bundle first. Every row must declare
 `execute` or `not_applicable`, concrete regions/references, a canonical

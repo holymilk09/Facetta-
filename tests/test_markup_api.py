@@ -7,6 +7,8 @@ chain/version bookkeeping run for real.
 """
 
 import base64
+import copy
+import hashlib
 import io
 
 import pytest
@@ -20,7 +22,10 @@ import facetta.api.assets as assets_mod
 import facetta.specagent as agent
 from facetta.db import (
     Base,
+    DesignVersion,
+    ImageAsset,
     ImageRun,
+    ProjectRevisionRecord,
     StudioJobRecord,
     StudioMarkupCandidateRecord,
     get_db,
@@ -165,6 +170,159 @@ class TestReadMarkup:
 
 
 class TestMarkupEndpoints:
+    def test_markup_read_forwards_normalized_designer_instruction(
+        self,
+        client,
+        monkeypatch,
+    ):
+        captured: dict[str, object] = {}
+
+        def reader(
+            clean: bytes,
+            marked: bytes,
+            form_elements=(),
+            *,
+            designer_instruction: str,
+        ) -> dict:
+            captured.update(
+                clean=clean,
+                marked=marked,
+                form_elements=form_elements,
+                designer_instruction=designer_instruction,
+            )
+            reading = dict(READING)
+            reading["annotations"] = [dict(
+                READING["annotations"][0],
+                change_instruction=designer_instruction,
+            )]
+            reading["understood_as"] = (
+                "Understood as: apply the typed instruction only to the mark."
+            )
+            return reading
+
+        monkeypatch.setattr(assets_mod, "read_markup", reader)
+        asset_id, _design_id = _linked_asset(client)
+        marked = _marked(_png())
+
+        response = client.post(f"/assets/{asset_id}/markup/read", json={
+            "marked_image_base64": base64.b64encode(marked).decode(),
+            "instruction": "  Make the visible metal rose gold  ",
+            "created_by": "usr_pending",
+        })
+
+        assert response.status_code == 200, response.text
+        assert captured["designer_instruction"] == (
+            "Make the visible metal rose gold"
+        )
+        assert response.json()["interpretation"]["requested_change"] == (
+            "Make the visible metal rose gold"
+        )
+
+    def test_markup_read_keeps_location_ambiguity_fail_closed_with_instruction(
+        self,
+        client,
+        monkeypatch,
+    ):
+        captured: dict[str, str] = {}
+
+        def reader(
+            _clean: bytes,
+            _marked: bytes,
+            _form_elements=(),
+            *,
+            designer_instruction: str,
+        ) -> dict:
+            captured["designer_instruction"] = designer_instruction
+            return {
+                "annotations": [],
+                "understood_as": "",
+                "needs_clarification": True,
+                "clarification": "which shoulder does the arrow point to?",
+            }
+
+        monkeypatch.setattr(assets_mod, "read_markup", reader)
+        asset_id, _design_id = _linked_asset(client)
+
+        response = client.post(f"/assets/{asset_id}/markup/read", json={
+            "marked_image_base64": base64.b64encode(_marked(_png())).decode(),
+            "instruction": "Make the visible metal rose gold",
+        })
+
+        assert response.status_code == 422
+        assert captured["designer_instruction"] == (
+            "Make the visible metal rose gold"
+        )
+        assert response.json()["detail"] == (
+            "which shoulder does the arrow point to?"
+        )
+
+    def test_markup_read_rejects_blank_designer_instruction(
+        self,
+        client,
+        monkeypatch,
+    ):
+        monkeypatch.setattr(
+            assets_mod,
+            "read_markup",
+            lambda *_args, **_kwargs: pytest.fail(
+                "blank instruction must fail before vision"
+            ),
+        )
+        asset_id, _design_id = _linked_asset(client)
+
+        response = client.post(f"/assets/{asset_id}/markup/read", json={
+            "marked_image_base64": base64.b64encode(_marked(_png())).decode(),
+            "instruction": "   ",
+        })
+
+        assert response.status_code == 422
+        assert "instruction must contain a change request" in response.text
+
+    def test_markup_read_uses_openai_pair_when_xai_is_unconfigured(
+        self,
+        client,
+        monkeypatch,
+    ):
+        values = {"XAI_KEY": None, "OPENAI_API_KEY": "openai-key"}
+        calls: list[tuple[bytes, bytes, str]] = []
+        monkeypatch.setattr(
+            "facetta.image_agent.vision.env_value",
+            lambda key, default=None: values.get(key, default),
+        )
+        monkeypatch.setattr(
+            "facetta.image_agent.vision.vision_json_pair",
+            lambda *_args: pytest.fail("XAI must not run without XAI_KEY"),
+        )
+        monkeypatch.setattr(
+            "facetta.image_agent.vision.openai_vision_json_pair",
+            lambda _system, clean, marked, ask: (
+                calls.append((clean, marked, ask)) or dict(READING)
+            ),
+        )
+        asset_id, _design_id = _linked_asset(client)
+        with client._facetta_session_factory() as db:
+            clean_asset = db.get(ImageAsset, asset_id)
+            assert clean_asset is not None
+            clean = bytes(clean_asset.image)
+        marked = _marked(clean)
+
+        response = client.post(f"/assets/{asset_id}/markup/read", json={
+            "marked_image_base64": base64.b64encode(marked).decode(),
+            "created_by": "usr_pending",
+        })
+
+        assert response.status_code == 200, response.text
+        assert len(calls) == 1
+        assert calls[0][0] == clean
+        assert calls[0][1] == marked
+        assert calls[0][2].startswith(
+            "Read the designer's marks on the second image."
+        )
+        assert "A visible mark alone does not state change intent" in calls[0][2]
+        assert response.json()["annotations"][0]["target_section"] == (
+            "side_stones"
+        )
+
     def test_production_preview_requires_job_before_edit_planning(
         self,
         client,
@@ -197,19 +355,6 @@ class TestMarkupEndpoints:
         ("job_id", "request_changes", "expected_code"),
         [
             ("job_missing_version", {}, "expected_design_version_required"),
-            ("job_many_annotations", {
-                "expected_design_version": 1,
-                "annotations": [
-                    {
-                        "region_description": "the background",
-                        "change_instruction": "make the background warmer",
-                    },
-                    {
-                        "region_description": "the background",
-                        "change_instruction": "soften the shadow",
-                    },
-                ],
-            }, "single_instruction_required"),
         ],
     )
     def test_production_preview_rejects_noncanonical_request_before_planning(
@@ -487,6 +632,147 @@ class TestMarkupEndpoints:
         assert replay.status_code == 409, replay.text
         assert replay.json()["code"] == "studio_job_terminal"
         assert provider_calls == [True, True]
+
+    def test_openai_only_one_mark_stone_color_preview_stays_temporary(
+        self,
+        client,
+        monkeypatch,
+    ):
+        """The live local configuration has OpenAI but no xAI chat key."""
+        import facetta.grokedit as grokedit
+        from facetta.image_agent import (
+            CheckSeverity,
+            ImageQualityReport,
+            JewelryImageAgent,
+            ProviderImage,
+            QualityCheck,
+            QualityVerdict,
+        )
+
+        class Provider:
+            def execute(self, plan, route, prompt, *, source_image, mask_bytes):
+                return ProviderImage(image_bytes=_png((246, 241, 225)))
+
+        class PassingEvaluator:
+            def evaluate(self, plan, candidate, *, source_image, mask_bytes):
+                return ImageQualityReport(
+                    verdict=QualityVerdict.PASS,
+                    checks=(QualityCheck(
+                        code="outside_mask_preserved",
+                        passed=True,
+                        severity=CheckSeverity.HARD,
+                        message="unmarked jewelry stayed fixed",
+                    ),),
+                    score=98,
+                )
+
+        openai_calls: list[str] = []
+
+        def openai_proposal(_key, _system, user):
+            openai_calls.append(user)
+            edited = copy.deepcopy(HALO_SPEC)
+            edited["side_stones"][0]["color"] = {
+                "trade": "Fancy Yellow",
+                "gia": "yellow diamond appearance, fancy yellow direction",
+            }
+            return {
+                "spec": edited,
+                "changed_fields": [
+                    "side_stones[0].color: F -> Fancy Yellow",
+                ],
+                "isolate_ref": None,
+                "message": "Made the marked side stones fancy yellow.",
+            }
+
+        monkeypatch.delenv("XAI_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "openai-test-key")
+        monkeypatch.setattr(
+            grokedit,
+            "_xai_chat_json",
+            lambda *_args: pytest.fail("xAI must not run in OpenAI-only mode"),
+        )
+        monkeypatch.setattr(grokedit, "_openai_chat_json", openai_proposal)
+        monkeypatch.setattr(
+            assets_mod,
+            "_trusted_image_agent",
+            lambda: JewelryImageAgent(Provider(), PassingEvaluator()),
+        )
+        monkeypatch.setenv("FACETTA_ENV", "production")
+        asset_id, _design_id = _linked_asset(client, created_by="usr_ana")
+        _running_refine_job(
+            client,
+            job_id="job_openai_stone_color",
+            owner="usr_ana",
+            asset_id=asset_id,
+        )
+
+        response = client.post(f"/assets/{asset_id}/markup/apply", json={
+            "expected_design_version": 1,
+            "update_spec": True,
+            "preview_only": True,
+            "created_by": "usr_ana",
+            "studio_job_id": "job_openai_stone_color",
+            "annotations": [{
+                "region_description": "the marked side stones",
+                "change_instruction": "make the side diamonds fancy yellow",
+                "target_section": "side_stones",
+                "index": 0,
+            }],
+        })
+
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["warning_candidate"]["candidate_id"]
+        assert body["final_asset_id"] is None
+        assert body["revision"] is None
+        assert openai_calls and "fancy yellow" in openai_calls[0]
+        Session = client._facetta_session_factory
+        with Session() as db:
+            job = db.get(StudioJobRecord, "job_openai_stone_color")
+            assert job is not None and job.status == "reviewing"
+            assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+            assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+            assert db.scalar(select(func.count()).select_from(DesignVersion)) == 1
+            assert db.scalar(
+                select(func.count()).select_from(StudioMarkupCandidateRecord)
+            ) == 1
+
+    def test_scoped_edit_unavailable_response_is_structured_and_redacted(
+        self,
+        client,
+        monkeypatch,
+    ):
+        import facetta.grokedit as grokedit
+
+        def unavailable(*_args, **_kwargs):
+            raise grokedit.GrokEditUnavailable(
+                "no OPENAI_API_KEY configured",
+                code="edit_provider_not_configured",
+                retryable=False,
+                status_code=503,
+            )
+
+        monkeypatch.setattr(grokedit, "grok_plan_scoped_edit", unavailable)
+        monkeypatch.setenv("FACETTA_ENV", "test")
+        asset_id, _design_id = _linked_asset(client)
+
+        response = client.post(f"/assets/{asset_id}/markup/apply", json={
+            "annotations": [{
+                "region_description": "the marked side stones",
+                "change_instruction": "make the side diamonds fancy yellow",
+                "target_section": "side_stones",
+                "index": 0,
+            }],
+        })
+
+        assert response.status_code == 503, response.text
+        body = response.json()
+        assert body["code"] == "edit_provider_not_configured"
+        assert body["operation_code"] == "spec_interpretation_unavailable"
+        assert body["category"] == "provider"
+        assert body["retryable"] is False
+        assert "KEY" not in body["detail"]
+        assert "OpenAI" not in body["detail"]
 
     def test_read_echoes_and_files_the_notes_leaf(self, client, monkeypatch):
         monkeypatch.setattr(assets_mod, "read_markup",
@@ -878,39 +1164,385 @@ class TestMarkupEndpoints:
             steps[0]["asset_id"]
         assert by_id[steps[0]["asset_id"]]["parent_asset_id"] == aid
 
-    def test_trusted_apply_rejects_more_than_one_confirmed_instruction(
-            self, client, monkeypatch):
-        aid, design_id = _linked_asset(client)
+    def test_trusted_multi_region_preview_is_one_union_masked_atomic_revision(
+        self,
+        client,
+        monkeypatch,
+    ):
+        from facetta.image_agent import (
+            CheckSeverity,
+            ImageQualityReport,
+            JewelryImageAgent,
+            ProviderImage,
+            QualityCheck,
+            QualityVerdict,
+        )
+
+        monkeypatch.setenv("FACETTA_ENV", "production")
+        aid, design_id = _linked_asset(client, created_by="usr_ana")
+        _running_refine_job(
+            client,
+            job_id="job_multi_region",
+            owner="usr_ana",
+            asset_id=aid,
+        )
+        Session = client._facetta_session_factory
+        with Session() as db:
+            source_asset = db.get(ImageAsset, aid)
+            assert source_asset is not None
+            source = bytes(source_asset.image)
+            before_assets = db.scalar(select(func.count()).select_from(ImageAsset))
+            before_versions = db.scalar(
+                select(func.count()).select_from(DesignVersion)
+            )
+            before_revisions = db.scalar(
+                select(func.count()).select_from(ProjectRevisionRecord)
+            )
+
+        def mask_box(box):
+            mask = Image.new("L", (200, 300), 0)
+            ImageDraw.Draw(mask).rectangle(box, fill=255)
+            output = io.BytesIO()
+            mask.save(output, format="PNG")
+            return output.getvalue()
+
+        first_mask = mask_box((10, 10, 55, 55))
+        second_mask = mask_box((145, 235, 190, 285))
+        calls: list[dict[str, object]] = []
+
+        class Provider:
+            def execute(self, plan, route, prompt, *, source_image, mask_bytes):
+                union = Image.open(io.BytesIO(mask_bytes)).convert("L")
+                candidate = Image.open(io.BytesIO(source_image)).convert("RGB")
+                overlay = Image.new("RGB", candidate.size, (76, 68, 61))
+                candidate.paste(overlay, mask=union)
+                output = io.BytesIO()
+                candidate.save(output, format="PNG")
+                calls.append({
+                    "plan": plan,
+                    "mask": mask_bytes,
+                    "source": source_image,
+                })
+                return ProviderImage(image_bytes=output.getvalue())
+
+        class PassingEvaluator:
+            def evaluate(self, plan, candidate, *, source_image, mask_bytes):
+                return ImageQualityReport(
+                    verdict=QualityVerdict.PASS,
+                    checks=(
+                        QualityCheck(
+                            code="inside_mask_effect",
+                            passed=True,
+                            severity=CheckSeverity.HARD,
+                            message="both marked regions changed",
+                        ),
+                        QualityCheck(
+                            code="outside_mask_drift",
+                            passed=True,
+                            severity=CheckSeverity.HARD,
+                            message="outside union stayed fixed",
+                            evidence={"drift": 0.0, "threshold": 0.18},
+                        ),
+                    ),
+                    score=99,
+                )
+
         monkeypatch.setattr(
-            assets_mod, "_trusted_image_agent",
-            lambda: pytest.fail("invalid trusted request must not render"))
+            assets_mod,
+            "_trusted_image_agent",
+            lambda: JewelryImageAgent(Provider(), PassingEvaluator()),
+        )
+        annotations = [
+            {
+                "region_description": "upper-left halo segment",
+                "change_instruction": "warm this metal segment",
+                "mask_base64": base64.b64encode(first_mask).decode(),
+            },
+            {
+                "region_description": "lower-right shank segment",
+                "change_instruction": "soften this reflection",
+                "mask_base64": base64.b64encode(second_mask).decode(),
+            },
+        ]
+        created = client.post(f"/assets/{aid}/markup/apply", json={
+            "expected_design_version": 1,
+            "update_spec": False,
+            "preview_only": True,
+            "created_by": "usr_ana",
+            "studio_job_id": "job_multi_region",
+            "annotations": annotations,
+        })
+
+        assert created.status_code == 201, created.text
+        body = created.json()
+        assert body["final_asset_id"] is None and body["revision"] is None
+        assert len(calls) == 1
+        assert [
+            item["change_instruction"]
+            for item in body["warning_candidate"]["annotations"]
+        ] == ["warm this metal segment", "soften this reflection"]
+        union_bytes = calls[0]["mask"]
+        assert isinstance(union_bytes, bytes)
+        union = Image.open(io.BytesIO(union_bytes)).convert("L")
+        assert union.getpixel((20, 20)) == 255
+        assert union.getpixel((170, 260)) == 255
+        assert union.getpixel((100, 150)) == 0
+        assert calls[0]["plan"].mask_hash == hashlib.sha256(union_bytes).hexdigest()
+
+        candidate_id = body["warning_candidate"]["candidate_id"]
+        preview = client.get(body["warning_candidate"]["preview_url"])
+        assert preview.status_code == 200
+        source_image = Image.open(io.BytesIO(source)).convert("RGB")
+        preview_image = Image.open(io.BytesIO(preview.content)).convert("RGB")
+        assert preview_image.getpixel((100, 150)) == source_image.getpixel((100, 150))
+        assert preview_image.getpixel((20, 20)) != source_image.getpixel((20, 20))
+        assert preview_image.getpixel((170, 260)) != source_image.getpixel((170, 260))
+
+        with Session() as db:
+            durable = db.get(StudioMarkupCandidateRecord, candidate_id)
+            job = db.get(StudioJobRecord, "job_multi_region")
+            assert durable is not None and durable.status == "reviewing"
+            assert [
+                item["region_description"]
+                for item in durable.payload["annotations"]
+            ] == ["upper-left halo segment", "lower-right shank segment"]
+            assert durable.payload["target_mask_sha256"] == hashlib.sha256(
+                union_bytes
+            ).hexdigest()
+            assert job is not None and job.status == "reviewing"
+            assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+            assert db.scalar(select(func.count()).select_from(ImageAsset)) == (
+                before_assets
+            )
+            assert db.scalar(select(func.count()).select_from(DesignVersion)) == (
+                before_versions
+            )
+            assert db.scalar(
+                select(func.count()).select_from(ProjectRevisionRecord)
+            ) == before_revisions
+
+        normalized = client.get(
+            f"/studio/preview-candidates/{candidate_id}?owner=usr_ana"
+        )
+        assert normalized.status_code == 200, normalized.text
+        assert [
+            {
+                "region_description": item["region_description"],
+                "change_instruction": item["change_instruction"],
+            }
+            for item in normalized.json()["annotations"]
+        ] == [
+            {
+                "region_description": item["region_description"],
+                "change_instruction": item["change_instruction"],
+            }
+            for item in annotations
+        ]
+
+        wrong_lineage = client.post(
+            f"/studio/preview-candidates/{candidate_id}/decision",
+            json={
+                "created_by": "usr_ana",
+                "decision": "apply",
+                "expected_active_asset_id": "ast_wrong_revision",
+                "expected_design_version": 1,
+            },
+        )
+        assert wrong_lineage.status_code == 409
+        with Session() as db:
+            job = db.get(StudioJobRecord, "job_multi_region")
+            assert job is not None and job.charged_outputs == 0
+            assert db.scalar(select(func.count()).select_from(ImageAsset)) == (
+                before_assets
+            )
+
+        applied = client.post(
+            f"/studio/preview-candidates/{candidate_id}/decision",
+            json={
+                "created_by": "usr_ana",
+                "decision": "apply",
+                "expected_active_asset_id": aid,
+                "expected_design_version": 1,
+            },
+        )
+        assert applied.status_code == 200, applied.text
+        child_id = applied.json()["terminal_asset_id"]
+        with Session() as db:
+            child = db.get(ImageAsset, child_id)
+            job = db.get(StudioJobRecord, "job_multi_region")
+            revision = db.scalar(select(ProjectRevisionRecord).where(
+                ProjectRevisionRecord.asset_id == child_id
+            ))
+            assert child is not None and child.parent_asset_id == aid
+            assert job is not None and job.status == "succeeded"
+            assert (job.completed_outputs, job.charged_outputs) == (1, 1)
+            assert db.scalar(select(func.count()).select_from(ImageAsset)) == (
+                before_assets + 1
+            )
+            assert db.scalar(select(func.count()).select_from(DesignVersion)) == (
+                before_versions
+            )
+            assert db.scalar(
+                select(func.count()).select_from(ProjectRevisionRecord)
+            ) == before_revisions + 1
+            assert revision is not None
+            assert len(revision.raw_intent["annotations"]) == 2
+        assert len(client.get(
+            f"/assets/{aid}/history"
+        ).json()["history"]) == 2
+        assert len(client.get(f"/designs/{design_id}").json()["versions"]) == 1
+
+    def test_trusted_multi_region_validation_failure_is_atomic_and_zero_charge(
+        self,
+        client,
+        monkeypatch,
+    ):
+        monkeypatch.setenv("FACETTA_ENV", "production")
+        aid, design_id = _linked_asset(client, created_by="usr_ana")
+        _running_refine_job(
+            client,
+            job_id="job_multi_invalid",
+            owner="usr_ana",
+            asset_id=aid,
+        )
+        monkeypatch.setattr(
+            assets_mod,
+            "_trusted_image_agent",
+            lambda: pytest.fail("invalid batch must fail before provider work"),
+        )
+        mask = Image.new("L", (200, 300), 0)
+        ImageDraw.Draw(mask).rectangle((10, 10, 40, 40), fill=255)
+        output = io.BytesIO()
+        mask.save(output, format="PNG")
 
         response = client.post(f"/assets/{aid}/markup/apply", json={
             "expected_design_version": 1,
             "update_spec": False,
+            "preview_only": True,
+            "created_by": "usr_ana",
+            "studio_job_id": "job_multi_invalid",
             "annotations": [
                 {
-                    "region_description": "the background",
-                    "change_instruction": "make the background warmer",
+                    "region_description": "halo",
+                    "change_instruction": "warm it",
+                    "mask_base64": base64.b64encode(output.getvalue()).decode(),
                 },
                 {
-                    "region_description": "the background",
-                    "change_instruction": "soften the shadow",
+                    "region_description": "shank",
+                    "change_instruction": "soften it",
                 },
             ],
         })
 
         assert response.status_code == 422, response.text
-        assert response.json() == {
-            "detail": ("trusted markup applies exactly one confirmed "
-                       "instruction at a time"),
-            "code": "single_instruction_required",
-            "category": "validation",
-            "instruction_count": 2,
-        }
-        assert len(client.get(
-            f"/assets/{aid}/history").json()["history"]) == 1
+        assert response.json()["code"] == "multi_region_mask_required"
+        Session = client._facetta_session_factory
+        with Session() as db:
+            job = db.get(StudioJobRecord, "job_multi_invalid")
+            assert job is not None and job.status == "running"
+            assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+            assert db.scalar(
+                select(func.count()).select_from(StudioMarkupCandidateRecord)
+            ) == 0
+            assert db.scalar(select(func.count()).select_from(ImageRun)) == 0
+            assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+            assert db.scalar(select(func.count()).select_from(DesignVersion)) == 1
+            assert db.scalar(
+                select(func.count()).select_from(ProjectRevisionRecord)
+            ) == 0
         assert len(client.get(f"/designs/{design_id}").json()["versions"]) == 1
+
+    def test_trusted_multi_region_qa_failure_is_evidence_only_and_zero_charge(
+        self,
+        client,
+        monkeypatch,
+    ):
+        from facetta.image_agent import (
+            CheckSeverity,
+            ImageQualityFailure,
+            ImageQualityReport,
+            QualityCheck,
+            QualityVerdict,
+        )
+
+        monkeypatch.setenv("FACETTA_ENV", "production")
+        aid, _design_id = _linked_asset(client, created_by="usr_ana")
+        _running_refine_job(
+            client,
+            job_id="job_multi_qa_failed",
+            owner="usr_ana",
+            asset_id=aid,
+        )
+        mask = Image.new("L", (200, 300), 0)
+        ImageDraw.Draw(mask).rectangle((10, 10, 190, 285), fill=255)
+        output = io.BytesIO()
+        mask.save(output, format="PNG")
+        encoded_mask = base64.b64encode(output.getvalue()).decode()
+        failed_report = ImageQualityReport(
+            verdict=QualityVerdict.FAIL,
+            checks=(QualityCheck(
+                code="outside_mask_drift",
+                passed=False,
+                severity=CheckSeverity.HARD,
+                message="candidate changed protected pixels",
+                evidence={"drift": 0.42, "threshold": 0.18},
+            ),),
+            score=10,
+        )
+
+        class FailingAgent:
+            calls = 0
+
+            def run(self, plan, *, source_image, mask_bytes):
+                del source_image, mask_bytes
+                self.calls += 1
+                raise ImageQualityFailure(
+                    "candidate failed union-mask QA",
+                    report=failed_report,
+                    plan=plan,
+                )
+
+        agent = FailingAgent()
+        monkeypatch.setattr(assets_mod, "_trusted_image_agent", lambda: agent)
+        response = client.post(f"/assets/{aid}/markup/apply", json={
+            "expected_design_version": 1,
+            "update_spec": False,
+            "preview_only": True,
+            "created_by": "usr_ana",
+            "studio_job_id": "job_multi_qa_failed",
+            "annotations": [
+                {
+                    "region_description": "halo",
+                    "change_instruction": "warm it",
+                    "mask_base64": encoded_mask,
+                },
+                {
+                    "region_description": "shank",
+                    "change_instruction": "soften it",
+                    "mask_base64": encoded_mask,
+                },
+            ],
+        })
+
+        assert response.status_code == 422, response.text
+        assert response.json()["code"] == "image_quality_failed"
+        assert agent.calls == 1
+        Session = client._facetta_session_factory
+        with Session() as db:
+            job = db.get(StudioJobRecord, "job_multi_qa_failed")
+            runs = list(db.scalars(select(ImageRun)))
+            assert job is not None
+            assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+            assert len(runs) == 1 and runs[0].status == "failed"
+            assert runs[0].accepted_asset_id is None
+            assert db.scalar(
+                select(func.count()).select_from(StudioMarkupCandidateRecord)
+            ) == 0
+            assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+            assert db.scalar(select(func.count()).select_from(DesignVersion)) == 1
+            assert db.scalar(
+                select(func.count()).select_from(ProjectRevisionRecord)
+            ) == 0
 
     def test_development_unlinked_chain_uses_compatibility_image_only(
         self,

@@ -20,6 +20,10 @@ from facetta.creative_workflow import (
     get_creative_prompt_generator,
     get_creative_render_generator,
 )
+from facetta.creative_comparability import (
+    MainViewComparabilityAudit,
+    get_main_view_comparability_inspector,
+)
 from facetta.db import (
     ApprovalChecklist,
     Base,
@@ -109,6 +113,20 @@ def prespec_journey_client():
 
     clear_studio_visual_candidates_for_tests()
     app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_main_view_comparability_inspector] = (
+        lambda: lambda _first, _second: MainViewComparabilityAudit(
+            first_complete_piece_visible=True,
+            second_complete_piece_visible=True,
+            camera_view_matches=True,
+            camera_elevation_matches=True,
+            image_plane_rotation_matches=True,
+            crop_and_frame_fill_match=True,
+            review_scale_matches=True,
+            background_family_matches=True,
+            comparable=True,
+            score=98,
+        )
+    )
     try:
         yield TestClient(app), Session
     finally:
@@ -136,14 +154,18 @@ def test_complete_prespec_studio_journey_preserves_every_direction(
         return _accepted_result(plan, image)
 
     def generate_preview(source, instruction, scope, mask, variant):
-        assert instruction == "Give the metal a warmer rose-gold appearance"
+        canonical_instruction = (
+            "OVERALL DESIGNER REQUEST: "
+            "Give the metal a warmer rose-gold appearance"
+        )
+        assert instruction == canonical_instruction
         assert scope == "appearance"
         assert mask is None
         assert variant == 4
         preview_sources.append(source)
         plan = build_image_plan(
             ImageOperation.REFERENCE_RENDER,
-            instruction,
+            canonical_instruction,
             source_image=source,
             variant=variant,
         )
@@ -423,13 +445,17 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
         mask: bytes | None,
         variant: int,
     ):
-        assert instruction == "Warm the metal while preserving every contour"
+        canonical_instruction = (
+            "OVERALL DESIGNER REQUEST: "
+            "Warm the metal while preserving every contour"
+        )
+        assert instruction == canonical_instruction
         assert scope == "appearance"
         assert mask is None
         image = _png((105 + variant, 125 + variant, 145 + variant))
         plan = build_image_plan(
             ImageOperation.REFERENCE_RENDER,
-            instruction,
+            canonical_instruction,
             source_image=source,
             variant=variant,
         )

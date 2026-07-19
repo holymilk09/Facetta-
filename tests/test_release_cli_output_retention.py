@@ -104,7 +104,7 @@ def test_review_packet_output_is_retained_without_recomputation(
             "attempts": [],
             "quality_scope": {
                 "source_count": 58,
-                "evaluation_sequence_count": 1044,
+                "evaluation_sequence_count": 1102,
             },
             "integrity_prerequisite": {"status": "pass"},
         }

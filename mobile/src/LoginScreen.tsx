@@ -82,11 +82,13 @@ export function PasswordRecoveryScreen({ onComplete }: { onComplete: () => void 
 export function LoginScreen({
   onSignIn,
   onShowTour,
+  onEnterLocalPreview,
   authService = { requestPasswordReset, signInWithEmail, signUpWithEmail },
   configurationError = supabaseConfigurationError,
 }: {
   onSignIn: (session: Session) => void;
   onShowTour?: () => void;
+  onEnterLocalPreview?: () => void;
   authService?: Pick<typeof import('./auth'), 'requestPasswordReset' | 'signInWithEmail' | 'signUpWithEmail'>;
   configurationError?: string | null;
 }) {
@@ -266,6 +268,15 @@ export function LoginScreen({
               </Pressable>
             )}
 
+            {onEnterLocalPreview !== undefined && (
+              <Pressable
+                accessibilityLabel="Enter local preview"
+                style={[styles.previewButton, shadows.soft]}
+                onPress={onEnterLocalPreview}>
+                <Text style={styles.previewButtonText}>Enter local preview</Text>
+              </Pressable>
+            )}
+
             <View style={styles.switchRow}>
               {mode === 'signin' ? (
                 <>
@@ -370,6 +381,14 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   primaryButtonText: { color: theme.paper, fontSize: 15, letterSpacing: 0.6 },
+  previewButton: {
+    backgroundColor: theme.accent,
+    borderRadius: radius.pill,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  previewButtonText: { color: theme.paper, fontSize: 15, letterSpacing: 0.6, fontWeight: '700' },
   switchRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 16 },
   switchText: { fontSize: 13, color: theme.faint },
   footnote: { marginTop: 24, fontSize: 12, color: theme.faint, fontStyle: 'italic' },
