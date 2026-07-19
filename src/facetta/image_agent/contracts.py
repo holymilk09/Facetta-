@@ -287,6 +287,23 @@ class NecklaceSymmetryAudit(_Contract):
     unrequested_differences_absent: bool | None = None
 
 
+class SixLeafRubyPatternAudit(_Contract):
+    """One visually inventoried ruby-and-leaf motif in the requested pattern."""
+
+    side: Literal["center", "left", "right"]
+    position_from_center: int = Field(ge=0, le=256)
+    ruby_component: str = Field(min_length=1, max_length=500)
+    complete_motif_assessable: bool | None = None
+    leaf_count: int = Field(ge=0, le=24)
+    diamond_leaf_count: int = Field(ge=0, le=24)
+    tsavorite_leaf_count: int = Field(ge=0, le=24)
+    material_sequence: tuple[
+        Literal["diamond", "tsavorite", "other"], ...
+    ] = ()
+    whole_leaf_treatments: bool | None = None
+    observation: str = Field(min_length=1, max_length=1000)
+
+
 class CreativeRenderInspection(_Contract):
     """Comparative evidence for a pre-spec drawing/image beauty render.
 
@@ -314,6 +331,7 @@ class CreativeRenderInspection(_Contract):
     symmetry_expectation_matches: bool | None = None
     symmetry_observations: tuple[str, ...] = ()
     necklace_symmetry_audits: tuple[NecklaceSymmetryAudit, ...] = ()
+    six_leaf_ruby_pattern_audits: tuple[SixLeafRubyPatternAudit, ...] = ()
     text_or_branding_detected: bool | None = None
     major_unintended_changes: tuple[str, ...] = ()
     score: float | None = Field(default=None, ge=0, le=100)

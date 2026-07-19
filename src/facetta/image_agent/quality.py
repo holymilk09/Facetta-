@@ -11,6 +11,7 @@ from facetta.config import env_value
 from facetta.creative_symmetry import (
     JEWELRY_SYMMETRY_CONTRACT,
     JEWELRY_SYMMETRY_REPAIR_CONTRACT,
+    SIX_LEAF_RUBY_PATTERN_CONTRACT,
 )
 from facetta.image_agent.contracts import (
     BlindCountInspection,
@@ -38,6 +39,7 @@ from facetta.image_agent.localization import (
     crop_chromatic_center_assembly,
 )
 from facetta.necklace_symmetry import evaluate_necklace_symmetry_audits
+from facetta.ruby_leaf_pattern import evaluate_six_leaf_ruby_pattern_audits
 from facetta.image_agent.vision import (
     VisionProviderUnavailable,
     check_design_consistency,
@@ -180,6 +182,7 @@ Return JSON only:
  "requested_presentation_applied": true|false|null,
  "symmetry_expectation_matches": true|false|null,
  "symmetry_observations": ["specific left/right or radial evidence"],
+ "six_leaf_ruby_pattern_audits": [{"side":"center|left|right","position_from_center":0,"ruby_component":"specific ruby motif","complete_motif_assessable":true|false|null,"leaf_count":0,"diamond_leaf_count":0,"tsavorite_leaf_count":0,"material_sequence":["diamond|tsavorite|other"],"whole_leaf_treatments":true|false|null,"observation":"specific sequence evidence"}],
  "necklace_symmetry_audits": [{"expectation":"bilateral|explicit_asymmetry|source_asymmetry","centerline_anchor":"visible center element","complete_piece_assessable":true|false|null,"left_count":0,"right_count":0,"pair_audits":[{"position_from_center":1,"left_component":"specific element","right_component":"specific element","motif_order_matches":true|false|null,"orientation_matches":true|false|null,"spacing_matches":true|false|null,"scale_matches":true|false|null,"metal_treatment_matches":true|false|null,"pave_coverage_matches":true|false|null,"gemstone_treatment_matches":true|false|null,"connection_type_matches":true|false|null,"authorized_differences":[],"observation":"specific comparison"}],"unpaired_left":[],"unpaired_right":[],"unpaired_elements_authorized":false,"requested_asymmetry_preserved":null,"unrequested_differences_absent":true|false|null}],
  "text_or_branding_detected": true|false|null,
  "major_unintended_changes": ["specific visible difference"],
@@ -253,6 +256,7 @@ Return JSON only:
  "requested_presentation_applied": true|false|null,
  "symmetry_expectation_matches": true|false|null,
  "symmetry_observations": ["specific left/right or radial evidence"],
+ "six_leaf_ruby_pattern_audits": [{"side":"center|left|right","position_from_center":0,"ruby_component":"specific ruby motif","complete_motif_assessable":true|false|null,"leaf_count":0,"diamond_leaf_count":0,"tsavorite_leaf_count":0,"material_sequence":["diamond|tsavorite|other"],"whole_leaf_treatments":true|false|null,"observation":"specific sequence evidence"}],
  "necklace_symmetry_audits": [{"expectation":"bilateral|explicit_asymmetry|source_asymmetry","centerline_anchor":"visible center element","complete_piece_assessable":true|false|null,"left_count":0,"right_count":0,"pair_audits":[{"position_from_center":1,"left_component":"specific element","right_component":"specific element","motif_order_matches":true|false|null,"orientation_matches":true|false|null,"spacing_matches":true|false|null,"scale_matches":true|false|null,"metal_treatment_matches":true|false|null,"pave_coverage_matches":true|false|null,"gemstone_treatment_matches":true|false|null,"connection_type_matches":true|false|null,"authorized_differences":[],"observation":"specific comparison"}],"unpaired_left":[],"unpaired_right":[],"unpaired_elements_authorized":false,"requested_asymmetry_preserved":null,"unrequested_differences_absent":true|false|null}],
  "text_or_branding_detected": true|false|null,
  "major_unintended_changes": ["specific source-to-candidate difference"],
@@ -403,6 +407,19 @@ def _is_rough_drawing_interpretation(plan: ImageAgentPlan) -> bool:
     return "ROUGH DRAWING INTENT FALLBACK" in plan.intent
 
 
+_SIX_LEAF_RUBY_QA_GUIDANCE = """\
+When the direction contains SIX-LEAF RUBY PATTERN INTERPRETATION, return one
+six_leaf_ruby_pattern_audits row for every governed ruby-and-leaf motif that is
+visible. Count whole leaves individually; diamond_leaf_count plus
+tsavorite_leaf_count must equal leaf_count. material_sequence must list all
+leaves around that ruby. For a center motif, begin at the top leaf and proceed
+clockwise. For a left or right motif, begin at the leaf nearest the necklace
+centerline and proceed toward the top in mirrored reading directions, so equal
+left/right arrays prove the same reflected material phase. Do not infer
+alternation from the necklace's overall balance: record every leaf in order.
+If any motif is cropped or ambiguous, set complete_motif_assessable false."""
+
+
 def _creative_review_system(
     system: str,
     plan: ImageAgentPlan,
@@ -424,9 +441,10 @@ def _creative_review_system(
         contexts.append(_SYMMETRY_REPAIR_QA_CONTEXT)
     if _is_rough_drawing_interpretation(plan):
         contexts.append(_ROUGH_DRAWING_INTERPRETATION_QA_CONTEXT)
+    augmented = system + "\n\n" + _SIX_LEAF_RUBY_QA_GUIDANCE
     if not contexts:
-        return system
-    return system + "\n\n" + "\n\n".join(contexts)
+        return augmented
+    return augmented + "\n\n" + "\n\n".join(contexts)
 
 
 _PROMPT_CREATIVE_RENDER_QA_SYSTEM = """\
@@ -446,6 +464,7 @@ Return JSON only:
  "explicit_stone_facts_match": true|false,
  "symmetry_expectation_matches": true|false|null,
  "symmetry_observations": ["specific left/right or radial evidence"],
+ "six_leaf_ruby_pattern_audits": [{"side":"center|left|right","position_from_center":0,"ruby_component":"specific ruby motif","complete_motif_assessable":true|false|null,"leaf_count":0,"diamond_leaf_count":0,"tsavorite_leaf_count":0,"material_sequence":["diamond|tsavorite|other"],"whole_leaf_treatments":true|false|null,"observation":"specific sequence evidence"}],
  "necklace_symmetry_audits": [{"expectation":"bilateral|explicit_asymmetry|source_asymmetry","centerline_anchor":"visible center element","complete_piece_assessable":true|false|null,"left_count":0,"right_count":0,"pair_audits":[{"position_from_center":1,"left_component":"specific element","right_component":"specific element","motif_order_matches":true|false|null,"orientation_matches":true|false|null,"spacing_matches":true|false|null,"scale_matches":true|false|null,"metal_treatment_matches":true|false|null,"pave_coverage_matches":true|false|null,"gemstone_treatment_matches":true|false|null,"connection_type_matches":true|false|null,"authorized_differences":[],"observation":"specific comparison"}],"unpaired_left":[],"unpaired_right":[],"unpaired_elements_authorized":false,"requested_asymmetry_preserved":null,"unrequested_differences_absent":true|false|null}],
  "text_or_branding_detected": true|false|null,
  "major_unintended_changes": ["specific contradiction of the direction"],
@@ -979,6 +998,10 @@ def _merge_creative_inspections(
         *primary.necklace_symmetry_audits,
         *skeptical.necklace_symmetry_audits,
     )
+    update["six_leaf_ruby_pattern_audits"] = (
+        *primary.six_leaf_ruby_pattern_audits,
+        *skeptical.six_leaf_ruby_pattern_audits,
+    )
     update["notes"] = (
         *(f"primary audit: {note}" for note in primary.notes),
         *(f"skeptical audit: {note}" for note in skeptical.notes),
@@ -1000,7 +1023,8 @@ class GrokPromptCreativeRenderInspector:
             f"Expected output: {plan.expected_output}"
         )
         return CreativeRenderInspection.model_validate(_qa_vision_json(
-            _PROMPT_CREATIVE_RENDER_QA_SYSTEM,
+            _PROMPT_CREATIVE_RENDER_QA_SYSTEM
+            + "\n\n" + _SIX_LEAF_RUBY_QA_GUIDANCE,
             candidate,
             ask,
         ))
@@ -1020,7 +1044,8 @@ class OpenAIPromptCreativeRenderInspector:
             f"Expected output: {plan.expected_output}"
         )
         return CreativeRenderInspection.model_validate(openai_vision_json(
-            _PROMPT_CREATIVE_RENDER_QA_SYSTEM,
+            _PROMPT_CREATIVE_RENDER_QA_SYSTEM
+            + "\n\n" + _SIX_LEAF_RUBY_QA_GUIDANCE,
             candidate,
             ask,
         ))
@@ -2043,6 +2068,34 @@ class RingQualityEvaluator:
                         "pixel_measurement_claimed": False,
                     },
                 ))
+        if SIX_LEAF_RUBY_PATTERN_CONTRACT in plan.intent:
+            leaf_gate = evaluate_six_leaf_ruby_pattern_audits(
+                plan.intent,
+                item.six_leaf_ruby_pattern_audits,
+                necklace_audits=item.necklace_symmetry_audits,
+            )
+            checks.insert(-2, QualityCheck(
+                code="six_leaf_ruby_pattern",
+                passed=leaf_gate.passed,
+                severity=CheckSeverity.HARD,
+                message=(
+                    "every ruby motif has six whole leaves in a matched 3/3 "
+                    "diamond-tsavorite alternating phase"
+                    if leaf_gate.passed else
+                    "six-leaf ruby motif evidence is missing, incomplete, "
+                    "non-alternating, or phase-mismatched"
+                ),
+                evidence={
+                    "audit_count": leaf_gate.audit_count,
+                    "reasons": list(leaf_gate.reasons),
+                    "audits": [
+                        audit.model_dump(mode="json")
+                        for audit in item.six_leaf_ruby_pattern_audits
+                    ],
+                    "provider_free_deterministic_validation": True,
+                    "pixel_measurement_claimed": False,
+                },
+            ))
         if enforce_explicit_counts:
             checks.insert(-2, _match_check(
                 "explicit_counts_match",

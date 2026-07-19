@@ -22,6 +22,7 @@ from facetta.image_agent import (
     NecklaceSymmetryPairAudit,
     QualityVerdict,
     RingQualityEvaluator,
+    SixLeafRubyPatternAudit,
     build_image_plan,
 )
 from facetta.image_agent.prompts import compile_correction_prompt
@@ -100,6 +101,7 @@ def _inspection(
     symmetry: bool | None,
     *observations: str,
     necklace_audits: tuple[NecklaceSymmetryAudit, ...] = (),
+    six_leaf_audits: tuple[SixLeafRubyPatternAudit, ...] = (),
     observed_jewelry_type: ObservedJewelryType | None = None,
 ) -> CreativeRenderInspection:
     return CreativeRenderInspection(
@@ -119,6 +121,7 @@ def _inspection(
             "compared the gold and pave leaf sequence from the pendant outward",
         )),
         necklace_symmetry_audits=necklace_audits,
+        six_leaf_ruby_pattern_audits=six_leaf_audits,
         text_or_branding_detected=False,
         score=96,
     )
@@ -264,6 +267,30 @@ def test_three_leaves_each_side_is_the_same_six_leaf_pattern_contract() -> None:
     assert SIX_LEAF_RUBY_PATTERN_CONTRACT in contracted
     assert "six discrete leaves total" in contracted
     assert "same material phase and order" in contracted
+
+
+def test_six_leaf_prompt_requires_motif_level_alternation_evidence() -> None:
+    instruction = with_jewelry_symmetry_contract(
+        "Each ruby motif on this necklace has 6 leaves: half white diamonds "
+        "and half tsavorite, in an alternating pattern."
+    )
+    plan = build_image_plan(ImageOperation.CREATIVE_GENERATE, instruction)
+    inspection = _inspection(
+        True,
+        "the necklace appears balanced overall",
+        observed_jewelry_type="necklace",
+    )
+
+    report = RingQualityEvaluator(
+        prompt_creative_inspector=_Inspector(inspection),
+        require_cross_inspection=False,
+        require_render_cross_inspection=False,
+    ).evaluate(plan, _png(), source_image=None, mask_bytes=None)
+
+    by_code = {check.code: check for check in report.checks}
+    assert report.verdict is QualityVerdict.FAIL
+    assert by_code["six_leaf_ruby_pattern"].passed is False
+    assert by_code["six_leaf_ruby_pattern"].evidence["audit_count"] == 0
 
 
 def test_unrelated_leaf_prompt_does_not_gain_six_leaf_material_rules() -> None:
