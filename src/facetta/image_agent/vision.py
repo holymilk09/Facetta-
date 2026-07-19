@@ -356,14 +356,21 @@ def configured_vision_json_pair(
     """Use the configured pair inspector with a deterministic priority.
 
     XAI remains the primary reviewer whenever its key is configured. OpenAI is
-    the configuration fallback, allowing Refine markup interpretation to use
-    the same vision provider already available to image QA. We intentionally
-    do not retry a failed XAI request against OpenAI here: provider errors stay
-    visible and fail closed instead of silently creating a second paid audit.
+    both the configuration fallback and the availability fallback when XAI
+    cannot be reached or rejects the configured credentials. Contract errors
+    (including malformed JSON) stay on the primary path and fail closed rather
+    than being reinterpreted by a second reviewer.
     """
 
     if env_value("XAI_KEY"):
-        return vision_json_pair(system, image_a, image_b, user_text)
+        try:
+            return vision_json_pair(system, image_a, image_b, user_text)
+        except VisionProviderUnavailable:
+            if env_value("OPENAI_API_KEY"):
+                return openai_vision_json_pair(
+                    system, image_a, image_b, user_text,
+                )
+            raise
     if env_value("OPENAI_API_KEY"):
         return openai_vision_json_pair(system, image_a, image_b, user_text)
     raise RenderUnavailable(

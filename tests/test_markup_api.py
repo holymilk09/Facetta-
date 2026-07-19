@@ -19,6 +19,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import facetta.api.assets as assets_mod
+from facetta.image_agent import vision as vision_module
 import facetta.specagent as agent
 from facetta.db import (
     Base,
@@ -322,6 +323,54 @@ class TestMarkupEndpoints:
         assert response.json()["annotations"][0]["target_section"] == (
             "side_stones"
         )
+
+    def test_markup_read_falls_back_without_mutating_design_version(
+        self,
+        client,
+        monkeypatch,
+    ):
+        values = {"XAI_KEY": "xai-key", "OPENAI_API_KEY": "openai-key"}
+        calls: list[tuple[str, bytes, bytes]] = []
+        monkeypatch.setattr(
+            vision_module,
+            "env_value",
+            lambda key, default=None: values.get(key, default),
+        )
+
+        def unavailable(_system, clean, marked, _ask):
+            calls.append(("xai", clean, marked))
+            raise vision_module.VisionProviderUnavailable("xai unavailable")
+
+        monkeypatch.setattr(vision_module, "vision_json_pair", unavailable)
+        monkeypatch.setattr(
+            vision_module,
+            "openai_vision_json_pair",
+            lambda _system, clean, marked, _ask: (
+                calls.append(("openai", clean, marked)) or dict(READING)
+            ),
+        )
+        asset_id, design_id = _linked_asset(client)
+        with client._facetta_session_factory() as db:
+            clean_asset = db.get(ImageAsset, asset_id)
+            assert clean_asset is not None
+            clean = bytes(clean_asset.image)
+            versions_before = db.scalar(select(func.count()).select_from(
+                DesignVersion).where(DesignVersion.design_id == design_id)
+            )
+        marked = _marked(clean)
+
+        response = client.post(f"/assets/{asset_id}/markup/read", json={
+            "marked_image_base64": base64.b64encode(marked).decode(),
+            "created_by": "usr_pending",
+        })
+
+        assert response.status_code == 200, response.text
+        assert calls == [("xai", clean, marked), ("openai", clean, marked)]
+        with client._facetta_session_factory() as db:
+            versions_after = db.scalar(select(func.count()).select_from(
+                DesignVersion).where(DesignVersion.design_id == design_id)
+            )
+        assert versions_after == versions_before
 
     def test_production_preview_requires_job_before_edit_planning(
         self,

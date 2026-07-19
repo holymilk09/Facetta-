@@ -81,6 +81,65 @@ def test_configured_pair_router_fails_closed_without_a_vision_key(monkeypatch):
     assert called == []
 
 
+def test_configured_pair_router_falls_back_when_xai_is_unavailable(monkeypatch):
+    values = {"XAI_KEY": "xai-key", "OPENAI_API_KEY": "openai-key"}
+    calls: list[str] = []
+    monkeypatch.setattr(
+        vision_module,
+        "env_value",
+        lambda key, default=None: values.get(key, default),
+    )
+
+    def unavailable(*_args):
+        calls.append("xai")
+        raise vision_module.VisionProviderUnavailable("xai is unavailable")
+
+    monkeypatch.setattr(vision_module, "vision_json_pair", unavailable)
+    monkeypatch.setattr(
+        vision_module,
+        "openai_vision_json_pair",
+        lambda *_args: calls.append("openai") or {"provider": "openai"},
+    )
+
+    result = vision_module.configured_vision_json_pair(
+        "system", b"clean", b"marked", "read marks",
+    )
+
+    assert result == {"provider": "openai"}
+    assert calls == ["xai", "openai"]
+
+
+def test_configured_pair_router_does_not_fallback_on_contract_failure(
+    monkeypatch,
+):
+    values = {"XAI_KEY": "xai-key", "OPENAI_API_KEY": "openai-key"}
+    openai_calls: list[str] = []
+    monkeypatch.setattr(
+        vision_module,
+        "env_value",
+        lambda key, default=None: values.get(key, default),
+    )
+    monkeypatch.setattr(
+        vision_module,
+        "vision_json_pair",
+        lambda *_args: (_ for _ in ()).throw(
+            RenderUnavailable("malformed provider response")
+        ),
+    )
+    monkeypatch.setattr(
+        vision_module,
+        "openai_vision_json_pair",
+        lambda *_args: openai_calls.append("openai"),
+    )
+
+    with pytest.raises(RenderUnavailable, match="malformed provider response"):
+        vision_module.configured_vision_json_pair(
+            "system", b"clean", b"marked", "read marks",
+        )
+
+    assert openai_calls == []
+
+
 def test_specagent_markup_reader_uses_openai_pair_fallback(monkeypatch):
     values = {"XAI_KEY": None, "OPENAI_API_KEY": "openai-key"}
     calls: list[tuple[bytes, bytes]] = []
