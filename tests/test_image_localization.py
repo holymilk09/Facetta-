@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 
+import pytest
 from PIL import Image, ImageDraw
 
 from facetta.image_agent import (
@@ -127,7 +128,18 @@ def test_center_stone_footprint_detects_setting_edit_redesign():
     assert drifted["stable"] is False
 
 
-def test_every_disconnected_marked_region_must_change_visibly():
+@pytest.mark.parametrize("modern_pillow_api", [True, False])
+def test_every_disconnected_marked_region_must_change_visibly(
+    monkeypatch,
+    modern_pillow_api,
+):
+    if not modern_pillow_api:
+        monkeypatch.setattr(
+            Image.Image,
+            "get_flattened_data",
+            None,
+            raising=False,
+        )
     source = Image.new("RGB", (80, 40), (240, 240, 240))
     candidate = source.copy()
     candidate_draw = ImageDraw.Draw(candidate)

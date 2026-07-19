@@ -218,7 +218,11 @@ def openai_vision_json_pair(
                     },
                 ],
                 "text": {"format": {"type": "json_object"}},
-                "max_output_tokens": 1800,
+                # Pair audits can include a complete necklace component
+                # ledger, bilateral comparison, and repeated-motif evidence.
+                # Keep the ceiling aligned with single-image jewelry audits so
+                # valid JSON is not truncated before contract validation.
+                "max_output_tokens": 4000,
             },
         )
         response.raise_for_status()

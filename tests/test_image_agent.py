@@ -402,6 +402,32 @@ class TestPlanning:
         assert "Do not return an unchanged source image" in prompt
         assert "requested_change" in correction
 
+    def test_retry_prompt_for_imperceptible_masked_edit_names_attribute(self):
+        from facetta.image_agent.prompts import (
+            compile_correction_prompt, compile_initial_prompt,
+        )
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            "make only the marked leaf visibly more emerald green",
+            source_image=b"source",
+            mask_bytes=b"mask",
+        )
+        failed_report = report(
+            QualityVerdict.FAIL,
+            code="inside_mask_effect",
+        )
+
+        prompt, correction = compile_correction_prompt(
+            plan,
+            compile_initial_prompt(plan),
+            failed_report,
+        )
+
+        assert "Do not return an unchanged source image" in prompt
+        assert "exact requested attribute visibly changed" in prompt
+        assert "requested geometry visibly changed" not in prompt
+        assert "inside_mask_effect" in correction
+
     def test_band_delta_compiles_visible_symmetric_geometry(self):
         from facetta.image_agent.prompts import compile_initial_prompt
 

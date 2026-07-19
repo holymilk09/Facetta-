@@ -909,12 +909,15 @@ class GrokCreativeRenderInspector:
             "Frozen source facts: " + json.dumps(list(plan.frozen)) + "\n"
             f"Expected output: {plan.expected_output}"
         )
-        return CreativeRenderInspection.model_validate(_qa_vision_json_pair(
+        payload = _qa_vision_json_pair(
             _creative_review_system(_CREATIVE_RENDER_QA_SYSTEM, plan),
             reference,
             candidate,
             ask,
-        ))
+        )
+        return CreativeRenderInspection.model_validate(
+            _normalize_authorized_necklace_differences(payload)
+        )
 
 
 class OpenAICreativeRenderInspector:
@@ -931,12 +934,15 @@ class OpenAICreativeRenderInspector:
             "Frozen source facts: " + json.dumps(list(plan.frozen)) + "\n"
             f"Expected output: {plan.expected_output}"
         )
-        return CreativeRenderInspection.model_validate(openai_vision_json_pair(
+        payload = openai_vision_json_pair(
             _creative_review_system(_CREATIVE_RENDER_QA_SYSTEM, plan),
             reference,
             candidate,
             ask,
-        ))
+        )
+        return CreativeRenderInspection.model_validate(
+            _normalize_authorized_necklace_differences(payload)
+        )
 
 
 class GrokSkepticalCreativeRenderInspector:
@@ -953,13 +959,16 @@ class GrokSkepticalCreativeRenderInspector:
             f"Selected source region: {plan.region_description or 'full source'}\n"
             "Frozen source facts: " + json.dumps(list(plan.frozen))
         )
-        return CreativeRenderInspection.model_validate(_qa_vision_json_pair(
+        payload = _qa_vision_json_pair(
             _creative_review_system(
                 _SKEPTICAL_CREATIVE_RENDER_AUDIT_SYSTEM, plan),
             reference,
             candidate,
             ask,
-        ))
+        )
+        return CreativeRenderInspection.model_validate(
+            _normalize_authorized_necklace_differences(payload)
+        )
 
 
 class OpenAISkepticalCreativeRenderInspector:
@@ -976,13 +985,16 @@ class OpenAISkepticalCreativeRenderInspector:
             f"Selected source region: {plan.region_description or 'full source'}\n"
             "Frozen source facts: " + json.dumps(list(plan.frozen))
         )
-        return CreativeRenderInspection.model_validate(openai_vision_json_pair(
+        payload = openai_vision_json_pair(
             _creative_review_system(
                 _SKEPTICAL_CREATIVE_RENDER_AUDIT_SYSTEM, plan),
             reference,
             candidate,
             ask,
-        ))
+        )
+        return CreativeRenderInspection.model_validate(
+            _normalize_authorized_necklace_differences(payload)
+        )
 
 
 _CREATIVE_MATCH_FIELDS = (
@@ -1102,6 +1114,91 @@ def _normalize_redundant_necklace_counts(
     return inspection.model_copy(update={
         "necklace_symmetry_audits": tuple(normalized),
     })
+
+
+_NECKLACE_DIFFERENCE_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "motif_order": ("motif", "order", "sequence"),
+    "orientation": ("orientation", "angle", "direction"),
+    "spacing": ("spacing", "gap", "distance"),
+    "scale": ("scale", "size", "proportion"),
+    "metal_treatment": ("metal",),
+    "pave_coverage": ("pave", "pavé"),
+    "gemstone_treatment": (
+        "gemstone", "stone", "color", "colour", "emerald", "tsavorite",
+        "ruby", "sapphire", "diamond",
+    ),
+    "connection_type": ("connection", "connector", "link", "join"),
+}
+
+
+def _normalize_authorized_necklace_differences(payload: dict) -> dict:
+    """Canonicalize one unambiguous model-authored difference description.
+
+    Pair-audit schemas accept only typed symmetry dimensions, but vision models
+    occasionally restate the authorized local change in prose.  Map prose only
+    when it names exactly one domain. Unknown or multi-domain descriptions are
+    deliberately left untouched so Pydantic still rejects them fail-closed.
+    """
+
+    audits = payload.get("necklace_symmetry_audits")
+    if not isinstance(audits, list):
+        return payload
+    changed = False
+    normalized_payload = dict(payload)
+    normalized_audits: list[object] = []
+    for raw_audit in audits:
+        if not isinstance(raw_audit, dict):
+            normalized_audits.append(raw_audit)
+            continue
+        pair_audits = raw_audit.get("pair_audits")
+        if not isinstance(pair_audits, list):
+            normalized_audits.append(raw_audit)
+            continue
+        normalized_pairs: list[object] = []
+        audit_changed = False
+        for raw_pair in pair_audits:
+            if not isinstance(raw_pair, dict):
+                normalized_pairs.append(raw_pair)
+                continue
+            differences = raw_pair.get("authorized_differences")
+            if not isinstance(differences, list):
+                normalized_pairs.append(raw_pair)
+                continue
+            normalized: list[object] = []
+            pair_changed = False
+            for difference in differences:
+                if not isinstance(difference, str):
+                    normalized.append(difference)
+                    continue
+                if difference in _NECKLACE_DIFFERENCE_KEYWORDS:
+                    normalized.append(difference)
+                    continue
+                lowered = difference.casefold()
+                matches = [
+                    domain for domain, keywords in
+                    _NECKLACE_DIFFERENCE_KEYWORDS.items()
+                    if any(keyword in lowered for keyword in keywords)
+                ]
+                if len(matches) == 1:
+                    normalized.append(matches[0])
+                    pair_changed = True
+                else:
+                    normalized.append(difference)
+            if pair_changed:
+                raw_pair = dict(raw_pair)
+                raw_pair["authorized_differences"] = list(dict.fromkeys(
+                    normalized
+                ))
+                audit_changed = True
+            normalized_pairs.append(raw_pair)
+        if audit_changed:
+            raw_audit = dict(raw_audit)
+            raw_audit["pair_audits"] = normalized_pairs
+            changed = True
+        normalized_audits.append(raw_audit)
+    if changed:
+        normalized_payload["necklace_symmetry_audits"] = normalized_audits
+    return normalized_payload
 
 
 class GrokPromptCreativeRenderInspector:

@@ -579,6 +579,7 @@ def test_openai_pair_transport_sends_reference_before_candidate(monkeypatch):
 
     content = captured["json"]["input"][1]["content"]
     assert result["protected_regions_preserved"] is True
+    assert captured["json"]["max_output_tokens"] == 4000
     assert content[0]["type"] == "input_image"
     assert content[1]["type"] == "input_image"
     assert content[0]["image_url"] != content[1]["image_url"]

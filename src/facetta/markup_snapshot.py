@@ -320,6 +320,23 @@ def _hotspot_radius(
     )
 
 
+def _point_hotspot_radius(
+    stroke_width: int,
+    min_dimension: int,
+) -> int:
+    """Keep a text/tap annotation local to one jewelry component.
+
+    Arrow endpoints need generous targeting tolerance, but a direct canvas tap
+    is already the designer's location signal.  A smaller bounded footprint
+    avoids authorizing neighboring stones in dense high-jewelry motifs.
+    """
+
+    return min(
+        32,
+        max(stroke_width * 2, max(6, round(min_dimension * 0.03))),
+    )
+
+
 def _draw_hotspot(
     draw: ImageDraw.ImageDraw,
     center: tuple[int, int],
@@ -382,7 +399,7 @@ def _authorization_mask(
             _draw_hotspot(
                 draw,
                 _pixel_point(annotation.anchor, width, height),
-                _hotspot_radius(stroke_width, min_dimension),
+                _point_hotspot_radius(stroke_width, min_dimension),
             )
     return mask
 

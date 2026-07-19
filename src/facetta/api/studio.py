@@ -723,6 +723,9 @@ def generate_studio_visual_preview(
         "mask. Inside the mask, preserve every unrequested jewelry attribute, "
         "including identity, topology, component count, proportions, stone "
         "shapes, stone placement, setting, and construction. "
+        "Make each requested local difference visibly discernible at normal "
+        "review scale inside the mask; an imperceptible near-copy does not "
+        "complete the edit. "
     )
     marked_change_domains, marked_region_count = _marked_region_contract(
         instruction

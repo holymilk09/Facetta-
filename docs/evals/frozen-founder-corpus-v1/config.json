@@ -5,7 +5,7 @@
   "manifest_sha256": "46cdee542b285435c13af4e20945315ed1e39da3c5140ba9b682f0c3c59739f0",
   "frozen_components": {
     "ring_contract": "src/facetta/ring_evals.py@sha256:76f28d4926cc22ccfb6c3fc74ff5cf4db72c8ad674ba33833c8e3fd308f43223",
-    "prompt_bundle": "src/facetta/image_agent/prompts.py@sha256:b3afab86c57ba3c5b638ec872b308cd876cdc992480a480187c2b82e3aedc567",
+    "prompt_bundle": "src/facetta/image_agent/prompts.py@sha256:d565e1ca9ed5754e38636e8d6237929ffc68efe9c4ecdef2abed121dd0adbe18",
     "evaluator_bundle": "src/facetta/evals.py@sha256:65d0bc281910d14f9881b25465ad8856cab62bf0927b76923d86a27617db5431",
     "routing": "grok-primary-openai-fallback.v1",
     "routing_contract": "docs/evals/frozen-founder-corpus-v1/routing-contract.v1.json@sha256:7cabd6223cb9edc74fb06865836d195e681cfede591ca91c8a200e342acd6c88",

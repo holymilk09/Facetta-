@@ -9,6 +9,9 @@ import sys
 
 from facetta.creative_symmetry import with_jewelry_symmetry_contract
 from facetta.image_agent import NecklaceSymmetryAudit, NecklaceSymmetryPairAudit
+from facetta.image_agent.quality import (
+    _normalize_authorized_necklace_differences,
+)
 from facetta.necklace_symmetry import evaluate_necklace_symmetry_audits
 
 
@@ -263,6 +266,39 @@ def test_source_asymmetry_requires_an_identity_source():
     )
     assert without_source.passed is False
     assert any("no identity source" in reason for reason in without_source.reasons)
+
+
+def test_one_unambiguous_prose_authorization_maps_to_typed_dimension():
+    payload = {
+        "necklace_symmetry_audits": [{
+            "pair_audits": [{
+                "authorized_differences": [
+                    "upper-right tsavorite leaf changed to deeper emerald green",
+                ],
+            }],
+        }],
+    }
+
+    normalized = _normalize_authorized_necklace_differences(payload)
+
+    assert normalized["necklace_symmetry_audits"][0]["pair_audits"][0][
+        "authorized_differences"
+    ] == ["gemstone_treatment"]
+
+
+def test_ambiguous_prose_authorization_stays_invalid_and_fail_closed():
+    prose = "change the gemstone color and size"
+    payload = {
+        "necklace_symmetry_audits": [{
+            "pair_audits": [{"authorized_differences": [prose]}],
+        }],
+    }
+
+    normalized = _normalize_authorized_necklace_differences(payload)
+
+    assert normalized["necklace_symmetry_audits"][0]["pair_audits"][0][
+        "authorized_differences"
+    ] == [prose]
 
 
 def test_provider_free_fixture_set_is_contract_only_not_external_quality():

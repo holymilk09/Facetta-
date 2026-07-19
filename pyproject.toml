@@ -7,6 +7,7 @@ dependencies = [
     "anthropic>=0.115.1",
     "cairosvg>=2.9.0",
     "fastapi>=0.115",
+    "pillow>=11.1",
     "psycopg[binary]>=3.1",
     "pydantic>=2.7",
     "pyjwt[crypto]==2.13.0",

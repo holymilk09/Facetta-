@@ -551,12 +551,17 @@ def compile_correction_prompt(
         correction_lines.append(f"- {check.code}: {check.message}.{evidence}")
     correction = "\n".join(correction_lines)
     unchanged_notice = ""
-    if any(check.code in {"requested_change", "crosscheck_requested_change"}
-           for check in failures):
+    if any(check.code in {
+        "requested_change",
+        "crosscheck_requested_change",
+        "inside_mask_effect",
+        "inside_each_mask_region_effect",
+    } for check in failures):
         unchanged_notice = (
             "\nThe previous candidate did not visibly apply the requested edit. "
             "Do not return an unchanged source image. Regenerate the full image "
-            "with the requested geometry visibly changed inside the edit scope, "
+            "with the exact requested attribute visibly changed inside the edit "
+            "scope at normal review scale, "
             "using the exact source-to-result specification delta above.\n"
         )
     prompt = (

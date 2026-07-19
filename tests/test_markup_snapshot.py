@@ -277,6 +277,21 @@ def test_text_authorizes_anchor_hotspot_without_the_rendered_label() -> None:
     assert mask.getpixel((150, 50)) == 0
 
 
+def test_text_hotspot_stays_component_scaled_on_large_jewelry_image() -> None:
+    clean = _png(size=(1_000, 1_000))
+    marked = composite_markup_snapshot(
+        clean,
+        MarkupSnapshot.model_validate(_snapshot(_text())),
+    )
+    encoded_mask = mask_from_markup(clean, marked)
+    assert encoded_mask is not None
+    mask = Image.open(io.BytesIO(encoded_mask)).convert("L")
+
+    assert mask.getpixel((250, 250)) == 255
+    assert mask.getpixel((280, 250)) == 255
+    assert mask.getpixel((283, 250)) == 0
+
+
 def test_open_freehand_remains_valid_and_authorizes_its_stroke() -> None:
     mask = _semantic_mask(_freehand())
 

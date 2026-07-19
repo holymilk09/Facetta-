@@ -8,6 +8,19 @@ import math
 from PIL import Image, UnidentifiedImageError
 
 
+def _pixel_data(image: Image.Image):
+    """Return flattened pixels across supported Pillow releases.
+
+    Pillow 12 renamed ``getdata`` to ``get_flattened_data`` and plans to
+    remove the former in Pillow 14.  Local development and deployed runtimes
+    can legitimately straddle that boundary, so deterministic QA must not
+    depend on only one side of the rename.
+    """
+
+    flattened = getattr(image, "get_flattened_data", None)
+    return flattened() if callable(flattened) else image.getdata()
+
+
 def outside_mask_drift(
     parent_bytes: bytes,
     child_bytes: bytes,
@@ -63,9 +76,9 @@ def inside_mask_effect(
     changed_pixels = 0
     total_channel_delta = 0
     for before, after, authorized in zip(
-        parent.getdata(),
-        child.getdata(),
-        mask.getdata(),
+        _pixel_data(parent),
+        _pixel_data(child),
+        _pixel_data(mask),
         strict=True,
     ):
         if authorized < 128:
@@ -133,8 +146,8 @@ def inside_mask_region_effects(
 
     width, height = parent.size
     authorized = bytearray(value >= 128 for value in mask.tobytes())
-    before_pixels = list(parent.get_flattened_data())
-    after_pixels = list(child.get_flattened_data())
+    before_pixels = list(_pixel_data(parent))
+    after_pixels = list(_pixel_data(child))
     components: list[list[int]] = []
 
     for start, enabled in enumerate(authorized):
