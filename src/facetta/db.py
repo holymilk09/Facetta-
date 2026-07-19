@@ -1490,6 +1490,45 @@ class ImageRunReview(Base):
         DateTime(timezone=True), default=utcnow)
 
 
+class ImageAssetProviderAffinity(Base):
+    """Immutable provider lineage for one accepted image asset.
+
+    This lives beside ``ImageAsset`` so historical immutable asset rows never
+    need to be rewritten.  A row is created only from hash-bound execution
+    evidence; unknown legacy uploads intentionally have no row.
+    """
+
+    __tablename__ = "image_asset_provider_affinities"
+
+    asset_id: Mapped[str] = mapped_column(
+        ForeignKey("image_assets.id"), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32))
+    model: Mapped[str] = mapped_column(String(80))
+    source_run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("image_runs.id"), nullable=True, index=True)
+    source_attempt_id: Mapped[str | None] = mapped_column(
+        ForeignKey("image_attempts.id"), nullable=True, index=True)
+    derivation: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+
+@event.listens_for(ImageAssetProviderAffinity, "before_update")
+def _reject_image_asset_provider_affinity_update(
+    _mapper, _connection, _target,
+) -> None:
+    raise ImmutableImageAssetError(
+        "image provider affinity is immutable; append a new variation"
+    )
+
+
+@event.listens_for(ImageAssetProviderAffinity, "before_delete")
+def _reject_image_asset_provider_affinity_delete(
+    _mapper, _connection, _target,
+) -> None:
+    raise ImmutableImageAssetError("image provider affinity cannot be deleted")
+
+
 class ImmutableImageRunReviewError(RuntimeError):
     """Raised when an explicit designer review decision is rewritten."""
 

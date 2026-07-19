@@ -707,6 +707,8 @@ def generate_studio_visual_preview(
     scope: Literal["appearance", "marked_region"],
     mask_bytes: bytes | None,
     variant: int,
+    locked_provider: str | None = None,
+    locked_model: str | None = None,
 ) -> ImageAgentResult:
     """Run a source-faithful, review-only pre-spec visual edit."""
 
@@ -836,9 +838,16 @@ def generate_studio_visual_preview(
     # still a full 1024-class raster, but returns materially faster and has
     # proven more reliable than medium for source-image edits. QA and explicit
     # Apply remain mandatory before the preview can enter revision history.
+    from facetta.provider_affinity import locked_edit_routes
+
+    locked_routes = (
+        locked_edit_routes(locked_provider, locked_model)
+        if locked_provider is not None and locked_model is not None else None
+    )
     return JewelryImageAgent(
         provider=RoutedImageProvider(openai_quality="low"),
-        use_available_fallback=True,
+        attempt_routes=locked_routes,
+        use_available_fallback=locked_routes is None,
     ).run(
         plan,
         source_image=source_image,
@@ -1532,13 +1541,22 @@ def create_visual_preview(
         })
 
     try:
-        result = generate(
-            bytes(source.image),
-            provider_instruction,
-            request.scope,
-            mask,
-            request.variant,
+        from facetta.provider_affinity import resolve_asset_provider_affinity
+        source_affinity = resolve_asset_provider_affinity(db, source)
+        generation_args = (
+            bytes(source.image), provider_instruction, request.scope,
+            mask, request.variant,
         )
+        if generate is generate_studio_visual_preview:
+            result = generate(
+                *generation_args,
+                locked_provider=(
+                    source_affinity.provider if source_affinity else None
+                ),
+                locked_model=(source_affinity.model if source_affinity else None),
+            )
+        else:
+            result = generate(*generation_args)
     except ImageAgentError as exc:
         run_id = (
             persist_image_agent_failure(

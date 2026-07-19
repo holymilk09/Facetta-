@@ -30,6 +30,7 @@ from facetta.db import (
     Design,
     DesignVersion,
     ImageAsset,
+    ImageAssetProviderAffinity,
     ImageRun,
     ImageRunReview,
     ImmutableImageAssetError,
@@ -464,6 +465,46 @@ def test_preview_does_not_mutate_canonical_history_and_apply_is_atomic(
         assert bytes(durable.image) == b""
 
     assert client.get(body["candidate"]["preview_url"]).status_code == 410
+
+
+def test_cross_provider_candidate_cannot_append_revision(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    with Session() as db:
+        db.add(ImageAssetProviderAffinity(
+            asset_id="ast_selected",
+            provider="openai",
+            model="gpt-image-2",
+            source_run_id=None,
+            source_attempt_id=None,
+            derivation="test_provenance",
+        ))
+        db.commit()
+
+    preview = _preview(client)
+    assert preview.status_code == 201, preview.text
+    body = preview.json()
+    rejected = client.post(
+        f"/studio/image-runs/{body['image_run_id']}/visual-candidates/"
+        f"{body['candidate']['candidate_id']}/accept",
+        json={
+            "created_by": "usr_studio",
+            "expected_active_asset_id": "ast_selected",
+        },
+    )
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()["code"] == "revision_provider_mismatch"
+    with Session() as db:
+        project = db.get(Project, "ast_selected")
+        assert project.selected_candidate_asset_id == "ast_selected"
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord)) == 0
 
 
 def test_normalized_visual_preview_contract_is_owned_cas_guarded_and_idempotent(
@@ -1697,11 +1738,14 @@ def test_visual_preview_saves_directly_as_independent_variation(
         original = db.get(Project, "ast_selected")
         sibling = db.get(Project, sibling_id)
         asset = db.get(ImageAsset, sibling_id)
+        affinity = db.get(ImageAssetProviderAffinity, sibling_id)
         durable = db.get(PreviewCandidateRecord, candidate_id)
         review = db.scalar(select(ImageRunReview).where(
             ImageRunReview.run_id == run_id
         ))
         assert original is not None and sibling is not None and asset is not None
+        assert affinity is not None
+        assert (affinity.provider, affinity.model) == ("xai", "grok_direct")
         assert original.selected_candidate_asset_id == "ast_newer"
         assert sibling.family_id == original.family_id
         assert sibling.variation_label == "Warm metal"

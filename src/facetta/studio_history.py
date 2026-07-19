@@ -648,6 +648,26 @@ def fork_preview_candidate_variation(
     family.updated_at = now
     project.updated_at = now
     db.add_all([new_asset, new_project, review, revision])
+    from facetta.provider_affinity import (
+        attach_asset_provider_affinity,
+        resolve_run_output_affinity,
+    )
+    candidate_affinity = resolve_run_output_affinity(
+        db, run_id=run.id, image_bytes=candidate.image_bytes,
+    )
+    if kind == "studio_visual" and candidate_affinity is None:
+        raise StudioHistoryError(
+            "visual_preview_provider_unproven",
+            "the preview provider could not be proven from generation evidence",
+            status_code=422,
+        )
+    if candidate_affinity is not None:
+        attach_asset_provider_affinity(
+            db,
+            asset_id=new_asset.id,
+            affinity=candidate_affinity,
+            derivation="variation_attempt",
+        )
     studio_job_id = getattr(candidate, "studio_job_id", None)
     if studio_job_id is not None:
         from facetta.studio_jobs import (
@@ -831,6 +851,31 @@ def apply_pre_spec_visual_candidate(
         expected_active_asset_id=expected_active_asset_id,
         created_by=created_by,
     )
+    from facetta.provider_affinity import (
+        attach_asset_provider_affinity,
+        resolve_asset_provider_affinity,
+        resolve_run_output_affinity,
+    )
+    source_affinity = resolve_asset_provider_affinity(db, source)
+    candidate_affinity = resolve_run_output_affinity(
+        db, run_id=run.id, image_bytes=candidate.image_bytes,
+    )
+    if candidate_affinity is None:
+        raise StudioHistoryError(
+            "visual_preview_provider_unproven",
+            "the preview provider could not be proven from generation evidence",
+            status_code=422,
+        )
+    if source_affinity is not None and (
+        source_affinity.provider != candidate_affinity.provider
+        or source_affinity.model != candidate_affinity.model
+    ):
+        raise StudioHistoryError(
+            "revision_provider_mismatch",
+            "this image engine differs from the revision lineage; save it "
+            "as a new variation instead",
+            status_code=409,
+        )
     continuation_prompt = (
         db.get(StudioContinuationPromptRecord, candidate.continuation_prompt_id)
         if candidate.continuation_prompt_id is not None else None
@@ -938,6 +983,12 @@ def apply_pre_spec_visual_candidate(
     )
     try:
         db.add_all([child, review, record])
+        attach_asset_provider_affinity(
+            db,
+            asset_id=child.id,
+            affinity=candidate_affinity,
+            derivation="accepted_attempt",
+        )
         # Flush the append-only rows inside this transaction before the raw
         # compare-and-set update references the new asset. This is required
         # for databases with immediate foreign-key enforcement.
