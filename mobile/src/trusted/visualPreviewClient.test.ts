@@ -49,6 +49,20 @@ const applyPayload = {
   new_asset_id: 'asset applied', design_version: null, project: projectPayload,
 };
 
+const normalizedPreviewPayload = {
+  candidate_id: 'candidate visual', kind: 'visual', status: 'reviewing',
+  image_run_id: 'run visual', project_root_id: 'project visual',
+  source_asset_id: 'asset source', expected_active_asset_id: 'asset source',
+  expected_design_version: null, source_sha256: 'a'.repeat(64),
+  output_sha256: 'b'.repeat(64), requested_change: 'Warm the center stone',
+  verdict: 'pass', qa, studio_job_id: 'job visual', terminal_asset_id: null,
+  created_at: '2026-07-19T00:00:00Z', expires_at: '2099-01-01T00:00:00Z',
+  resolved_at: null, available_decisions: ['apply', 'save_as_variation', 'discard'],
+  preview_url: '/studio/preview-candidates/candidate%20visual/image?owner=designer',
+  decision_url: '/studio/preview-candidates/candidate%20visual/decision',
+  scope: 'appearance',
+};
+
 describe('pre-spec visual preview client', () => {
   test('fails closed when candidate QA and verdict disagree or acceptance invents a spec version', () => {
     expect(decodeVisualPreviewResult({
@@ -169,6 +183,41 @@ describe('pre-spec visual preview client', () => {
     expect(fetcher).toHaveBeenCalledWith(
       'https://facetta.test/studio/projects/project%20visual/continuation-prompts',
       expect.objectContaining({ headers: { Accept: 'application/json' } }),
+    );
+  });
+
+  test('uses the unified typed candidate seam for resume and decisions', async () => {
+    const fetcher = jest.fn(async (input: RequestInfo | URL) => ({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify(String(input).endsWith('/decision') ? {
+        status: 'discarded', candidate_id: 'candidate visual', kind: 'visual',
+        source_project_id: 'project visual', result_project_id: 'project visual',
+        terminal_asset_id: null, studio_job_id: 'job visual',
+      } : { candidates: [normalizedPreviewPayload] }),
+    } as Response));
+    const client = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+    const listed = await client.listStudioPreviewCandidates('project visual');
+    expect(listed.error).toBeNull();
+    expect(listed.data?.candidates[0]).toMatchObject({
+      kind: 'visual', status: 'reviewing', scope: 'appearance',
+      preview_url: 'https://facetta.test/studio/preview-candidates/candidate%20visual/image?owner=designer',
+    });
+    const decided = await client.decideStudioPreviewCandidate('candidate visual', {
+      created_by: 'designer', decision: 'discard',
+      expected_active_asset_id: 'asset source',
+    });
+    expect(decided.data?.status).toBe('discarded');
+    expect(fetcher).toHaveBeenNthCalledWith(
+      1,
+      'https://facetta.test/studio/projects/project%20visual/preview-candidates',
+      expect.objectContaining({ headers: { Accept: 'application/json' } }),
+    );
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      'https://facetta.test/studio/preview-candidates/candidate%20visual/decision',
+      expect.objectContaining({ method: 'POST' }),
     );
   });
 

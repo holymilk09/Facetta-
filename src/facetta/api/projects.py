@@ -1695,17 +1695,23 @@ def _creative_candidate_generation_run(
             return True
         if run.operation != ImageOperation.REFERENCE_RENDER.value:
             return False
-        # Uploaded-source directions are primary REFERENCE_RENDER runs. A
-        # comparison view also uses REFERENCE_RENDER, but its source is an
-        # already-generated CREATIVE_RENDER candidate and must never be used
-        # as the candidate's Create provenance.
+        # Uploaded-source directions are primary REFERENCE_RENDER runs. Their
+        # exact source can be the original upload, a server-owned crop, or a
+        # canonical role-labeled reference board. A comparison view also uses
+        # REFERENCE_RENDER, but its source is an already-generated
+        # CREATIVE_RENDER candidate and must never be used as the candidate's
+        # Create provenance.
         if run.source_asset_id is None:
             return False
         source = db.get(ImageAsset, run.source_asset_id)
         return bool(
             source is not None
             and source.root_id == project.root_id
-            and source.capability == "CREATIVE_SOURCE"
+            and source.capability in {
+                "CREATIVE_SOURCE",
+                "CREATIVE_SOURCE_REGION",
+                "CREATIVE_REFERENCE_BOARD",
+            }
             and run.source_hash
             == hashlib.sha256(bytes(source.image)).hexdigest()
         )

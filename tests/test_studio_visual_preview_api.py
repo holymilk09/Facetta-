@@ -2104,8 +2104,14 @@ def test_described_six_leaf_ruby_pattern_authorizes_exact_requested_delta(
     assert SIX_LEAF_RUBY_PATTERN_CONTRACT in plan.intent
     assert "three leaves use white-diamond treatment" in plan.intent
     assert "three leaves use tsavorite treatment" in plan.intent
-    assert "all unmentioned topology, component count" in plan.frozen
-    assert "exact topology, component count" not in plan.frozen
+    assert any(
+        "all unmentioned topology, component count" in item
+        for item in plan.frozen
+    )
+    assert all(
+        "exact topology, component count" not in item
+        for item in plan.frozen
+    )
 
 
 def test_sequential_chain_edit_reaches_plan_with_prior_leaf_pattern_locked(

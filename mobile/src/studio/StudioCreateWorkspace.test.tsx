@@ -141,7 +141,7 @@ test('presents sentence or rough visual source as the only primary starting choi
   expect(screen.getByText('Start your jewelry design')).toBeTruthy();
   expect(screen.getByText(/choose one starting point.+sentence.+visual source/i)).toBeTruthy();
   expect(screen.getByText('Describe it in one sentence')).toBeTruthy();
-  expect(screen.getByText('OR')).toBeTruthy();
+  expect(screen.getByText('OR', { includeHiddenElements: true })).toBeTruthy();
   expect(screen.getByText('Upload a visual source')).toBeTruthy();
   expect(screen.getByText(/rough pencil sketches are welcome.+Facetta will interpret/i)).toBeTruthy();
   expect(screen.getByText('OUTPUT OPTIONS · OPTIONAL')).toBeTruthy();

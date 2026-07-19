@@ -38,11 +38,10 @@ acceptance bar.
 | Layer | Choice |
 |---|---|
 | Backend | Python 3.11+ / FastAPI |
-| Geometry | CadQuery (3D templates), svgwrite or raw SVG (2D sheets) |
-| LLM | Claude API — natural language → spec object only |
-| DB | PostgreSQL, JSONB for spec objects |
+| Deterministic output | SVG/DXF schematic communication layers; never production authority by themselves |
+| AI providers | Grok-primary image/vision orchestration with task-safe configured fallbacks; Claude remains on legacy prose/spec paths |
+| DB | SQLAlchemy; local SQLite and production PostgreSQL/Supabase |
 | Frontend | React Native (Expo) |
-| 3D viewer | three.js (web) / GLB export; USDZ for iOS AR later |
 
 ## Architecture in one line
 `mixed-source brief → temporary candidates → accepted immutable revision → [Library | Client | Marketing | optional Factory review]`
@@ -60,10 +59,11 @@ Temporary candidates cannot mutate canonical history before explicit acceptance.
 6. ONE 3D template (round solitaire, 4-prong) in CadQuery → GLB
 7. three.js viewer: rotate/zoom, lighting environments, dimension overlay
 
-These milestones explain the trusted foundation already present in the repository. The
-current Studio execution order is defined by `TASKS.md` and
-`docs/ai-first-studio-architecture.md`: protect immutable design truth first, simplify
-the designer journey second, and expose Factory only when an exact revision is eligible.
+These milestones explain the trusted foundation already present in the repository; they
+are not a description of the current runtime stack. Current Studio behavior is defined by
+`docs/ai-first-studio-architecture.md` and the executable code/tests. `TASKS.md` is a
+historical work ledger: protect immutable design truth first, simplify the designer
+journey second, and expose Factory only when an exact revision is eligible.
 
 ## Conventions
 - All dimensions in mm, all weights in ct, stored as numbers, never strings.
@@ -77,4 +77,5 @@ the designer journey second, and expose Factory only when an exact revision is e
 ## Known open items (do not silently resolve — ask)
 - Jadeite grading (translucency/texture/Type A-B-C) not yet in vocabulary
 - Manufacturer onboarding flow undefined
-- Permission model beyond share-link granularity undefined
+- Roles beyond the current authenticated owner boundary and optional Factory entitlement
+  remain undefined

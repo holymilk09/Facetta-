@@ -685,7 +685,16 @@ class TestMarkupEndpoints:
             }
 
         monkeypatch.delenv("XAI_KEY", raising=False)
+        monkeypatch.delenv("XAI_API_KEY", raising=False)
         monkeypatch.setenv("OPENAI_API_KEY", "openai-test-key")
+        monkeypatch.setattr(
+            grokedit,
+            "env_value",
+            lambda name: {
+                "XAI_KEY": None,
+                "OPENAI_API_KEY": "openai-test-key",
+            }.get(name),
+        )
         monkeypatch.setattr(
             grokedit,
             "_xai_chat_json",

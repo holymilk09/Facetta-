@@ -72,6 +72,10 @@ import type {
   StudioMarkupResumeCandidate,
   StudioContinuationPrompt,
   StudioContinuationPromptList,
+  StudioPreviewCandidate,
+  StudioPreviewCandidateList,
+  StudioPreviewDecisionRequest,
+  StudioPreviewDecisionResult,
   MarketingPackRequest,
   MarketingPackResult,
   DrawingConfirmationResult,
@@ -870,6 +874,134 @@ export const decodeStudioContinuationPromptList: Decoder<StudioContinuationPromp
   return { prompts: typed };
 };
 
+const STUDIO_PREVIEW_STATUSES = new Set([
+  'reviewing', 'applied', 'saved_as_variation', 'discarded', 'expired',
+]);
+const STUDIO_PREVIEW_DECISIONS = new Set([
+  'apply', 'save_as_variation', 'discard',
+]);
+
+export const decodeStudioPreviewCandidate: Decoder<StudioPreviewCandidate> = (value) => {
+  if (!isRecord(value)) return null;
+  const candidateId = nullableText(value.candidate_id);
+  const imageRunId = nullableText(value.image_run_id);
+  const projectRootId = nullableText(value.project_root_id);
+  const sourceAssetId = nullableText(value.source_asset_id);
+  const expectedActiveAssetId = nullableText(value.expected_active_asset_id);
+  const sourceSha256 = nullableText(value.source_sha256);
+  const outputSha256 = nullableText(value.output_sha256);
+  const requestedChange = nullableText(value.requested_change);
+  const createdAt = nullableText(value.created_at);
+  const expiresAt = nullableText(value.expires_at);
+  const previewUrl = nullableText(value.preview_url);
+  const decisionUrl = nullableText(value.decision_url);
+  const qa = decodeJsonObject(value.qa);
+  const expectedDesignVersion = value.expected_design_version === null
+    ? null : number(value.expected_design_version);
+  const studioJobId = value.studio_job_id === null ? null : nullableText(value.studio_job_id);
+  const terminalAssetId = value.terminal_asset_id === null
+    ? null : nullableText(value.terminal_asset_id);
+  const resolvedAt = value.resolved_at === null ? null : nullableText(value.resolved_at);
+  const decisions = stringList(value.available_decisions);
+  if (
+    candidateId === null || imageRunId === null || projectRootId === null
+    || sourceAssetId === null || expectedActiveAssetId === null
+    || sourceSha256 === null || outputSha256 === null || requestedChange === null
+    || !/^[a-f0-9]{64}$/i.test(sourceSha256) || !/^[a-f0-9]{64}$/i.test(outputSha256)
+    || createdAt === null || expiresAt === null || Number.isNaN(Date.parse(createdAt))
+    || Number.isNaN(Date.parse(expiresAt)) || previewUrl === null || decisionUrl === null
+    || qa === null || expectedDesignVersion === null && value.expected_design_version !== null
+    || studioJobId === null && value.studio_job_id !== null
+    || terminalAssetId === null && value.terminal_asset_id !== null
+    || resolvedAt === null && value.resolved_at !== null
+    || resolvedAt !== null && Number.isNaN(Date.parse(resolvedAt))
+    || !STUDIO_PREVIEW_STATUSES.has(text(value.status))
+    || decisions.length !== (Array.isArray(value.available_decisions)
+      ? value.available_decisions.length : -1)
+    || decisions.some((decision) => !STUDIO_PREVIEW_DECISIONS.has(decision))
+    || (value.verdict !== null && value.verdict !== 'pass' && value.verdict !== 'warn')
+  ) return null;
+  const common = {
+    candidate_id: candidateId,
+    status: value.status as StudioPreviewCandidate['status'],
+    image_run_id: imageRunId,
+    project_root_id: projectRootId,
+    source_asset_id: sourceAssetId,
+    expected_active_asset_id: expectedActiveAssetId,
+    expected_design_version: expectedDesignVersion,
+    source_sha256: sourceSha256,
+    output_sha256: outputSha256,
+    requested_change: requestedChange,
+    verdict: value.verdict as 'pass' | 'warn' | null,
+    qa,
+    studio_job_id: studioJobId,
+    terminal_asset_id: terminalAssetId,
+    created_at: createdAt,
+    expires_at: expiresAt,
+    resolved_at: resolvedAt,
+    available_decisions: decisions as StudioPreviewCandidate['available_decisions'],
+    preview_url: previewUrl,
+    decision_url: decisionUrl,
+  };
+  if (value.kind === 'visual' && (
+    value.scope === 'appearance' || value.scope === 'marked_region'
+  )) return { ...common, kind: 'visual', scope: value.scope };
+  if (value.kind === 'catalog_revision') {
+    const componentPath = nullableText(value.component_path);
+    const optionId = nullableText(value.option_id);
+    const specChange = Array.isArray(value.spec_change)
+      ? value.spec_change.map(decodeJsonObject) : [];
+    if (componentPath === null || optionId === null || !Array.isArray(value.spec_change)
+      || specChange.some((entry) => entry === null)) return null;
+    return {
+      ...common, kind: 'catalog_revision', component_path: componentPath,
+      option_id: optionId, spec_change: specChange as JsonObject[],
+    };
+  }
+  if (value.kind === 'markup') {
+    const operation = nullableText(value.operation);
+    const regionDescription = nullableText(value.region_description);
+    const annotations = Array.isArray(value.annotations)
+      ? value.annotations.map(decodeJsonObject) : [];
+    if (operation === null || regionDescription === null || !Array.isArray(value.annotations)
+      || annotations.some((entry) => entry === null)) return null;
+    return {
+      ...common, kind: 'markup', operation, region_description: regionDescription,
+      annotations: annotations as JsonObject[],
+    };
+  }
+  return null;
+};
+
+export const decodeStudioPreviewCandidateList: Decoder<StudioPreviewCandidateList> = (value) => {
+  if (!isRecord(value) || !Array.isArray(value.candidates)) return null;
+  const candidates = value.candidates.map(decodeStudioPreviewCandidate);
+  return candidates.some((candidate) => candidate === null)
+    ? null : { candidates: candidates as StudioPreviewCandidate[] };
+};
+
+export const decodeStudioPreviewDecisionResult: Decoder<StudioPreviewDecisionResult> = (value) => {
+  if (!isRecord(value)) return null;
+  const status = value.status;
+  const kind = value.kind;
+  const candidateId = nullableText(value.candidate_id);
+  const sourceProjectId = nullableText(value.source_project_id);
+  const resultProjectId = nullableText(value.result_project_id);
+  const terminalAssetId = value.terminal_asset_id === null
+    ? null : nullableText(value.terminal_asset_id);
+  const studioJobId = value.studio_job_id === null ? null : nullableText(value.studio_job_id);
+  if ((status !== 'applied' && status !== 'saved_as_variation' && status !== 'discarded')
+    || (kind !== 'visual' && kind !== 'catalog_revision' && kind !== 'markup')
+    || candidateId === null || sourceProjectId === null || resultProjectId === null
+    || terminalAssetId === null && value.terminal_asset_id !== null
+    || studioJobId === null && value.studio_job_id !== null) return null;
+  return {
+    status, kind, candidate_id: candidateId, source_project_id: sourceProjectId,
+    result_project_id: resultProjectId, terminal_asset_id: terminalAssetId,
+    studio_job_id: studioJobId,
+  };
+};
+
 export const decodeVisualPreviewResult: Decoder<VisualPreviewResult> = (value) => {
   if (!isRecord(value) || !isRecord(value.candidate)) return null;
   const projectId = nullableText(value.project_id);
@@ -888,7 +1020,7 @@ export const decodeVisualPreviewResult: Decoder<VisualPreviewResult> = (value) =
   ) return null;
   const continuationPrompt = value.continuation_prompt === undefined
     ? undefined : decodeStudioContinuationPrompt(value.continuation_prompt);
-  if (value.continuation_prompt !== undefined && continuationPrompt === null) return null;
+  if (continuationPrompt === null) return null;
   return {
     project_id: projectId,
     source_asset_id: sourceAssetId,
@@ -3606,6 +3738,36 @@ function normalizedVisualPreviewCapability(
   }
 }
 
+function normalizedStudioPreviewCandidate(
+  candidate: StudioPreviewCandidate,
+  baseUrl: string,
+): StudioPreviewCandidate | null {
+  try {
+    const base = new URL(baseUrl);
+    const root = `/studio/preview-candidates/${encodeURIComponent(candidate.candidate_id)}`;
+    const preview = new URL(candidate.preview_url, `${baseUrl}/`);
+    const decision = new URL(candidate.decision_url, `${baseUrl}/`);
+    const previewKeys = [...preview.searchParams.keys()];
+    if (
+      (preview.protocol !== 'http:' && preview.protocol !== 'https:')
+      || preview.origin !== base.origin || decision.origin !== base.origin
+      || preview.username.length > 0 || preview.password.length > 0
+      || decision.username.length > 0 || decision.password.length > 0
+      || preview.pathname !== `${root}/image` || decision.pathname !== `${root}/decision`
+      || preview.hash.length > 0 || decision.search.length > 0 || decision.hash.length > 0
+      || previewKeys.length !== 1 || previewKeys[0] !== 'owner'
+      || (preview.searchParams.get('owner') ?? '').trim().length === 0
+    ) return null;
+    return {
+      ...candidate,
+      preview_url: preview.toString(),
+      decision_url: decision.toString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
 function projectWithUrls(project: ProjectDetail, baseUrl: string): ProjectDetail {
   const addUrl = (asset: AssetSummary): AssetSummary => {
     const rawUrl = asset.image_url;
@@ -4216,6 +4378,76 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
       return call(
         `/studio/projects/${encodeURIComponent(projectId)}/continuation-prompts`,
         decodeStudioContinuationPromptList,
+      );
+    },
+
+    async listStudioPreviewCandidates(
+      projectId: string,
+      includeResolved = false,
+    ): Promise<ApiResult<StudioPreviewCandidateList>> {
+      const query = includeResolved ? '?include_resolved=true' : '';
+      const result = await call(
+        `/studio/projects/${encodeURIComponent(projectId)}/preview-candidates${query}`,
+        decodeStudioPreviewCandidateList,
+      );
+      if (result.error !== null) return result;
+      const candidates = result.data.candidates.map((candidate) => (
+        normalizedStudioPreviewCandidate(candidate, baseUrl)
+      ));
+      return candidates.some((candidate) => candidate === null) ? {
+        data: null,
+        error: {
+          code: 'INVALID_RESPONSE',
+          message: 'The Studio preview candidate returned invalid capabilities.',
+          category: 'decode', status: result.status, retryable: false,
+        },
+        status: result.status,
+      } : {
+        ...result,
+        data: { candidates: candidates as StudioPreviewCandidate[] },
+      };
+    },
+
+    async getStudioPreviewCandidate(
+      candidateId: string,
+      owner?: string,
+    ): Promise<ApiResult<StudioPreviewCandidate>> {
+      const query = owner === undefined
+        ? '' : `?owner=${encodeURIComponent(owner.trim())}`;
+      const result = await call(
+        `/studio/preview-candidates/${encodeURIComponent(candidateId)}${query}`,
+        decodeStudioPreviewCandidate,
+      );
+      if (result.error !== null) return result;
+      const candidate = normalizedStudioPreviewCandidate(result.data, baseUrl);
+      return candidate === null ? {
+        data: null,
+        error: {
+          code: 'INVALID_RESPONSE',
+          message: 'The Studio preview candidate returned invalid capabilities.',
+          category: 'decode', status: result.status, retryable: false,
+        },
+        status: result.status,
+      } : { ...result, data: candidate };
+    },
+
+    decideStudioPreviewCandidate(
+      candidateId: string,
+      request: StudioPreviewDecisionRequest,
+    ): Promise<ApiResult<StudioPreviewDecisionResult>> {
+      return jsonCall(
+        `/studio/preview-candidates/${encodeURIComponent(candidateId)}/decision`,
+        'POST',
+        {
+          created_by: request.created_by,
+          decision: request.decision,
+          expected_active_asset_id: request.expected_active_asset_id,
+          ...(request.expected_design_version === undefined
+            ? {} : { expected_design_version: request.expected_design_version }),
+          ...(request.variation_label === undefined
+            ? {} : { variation_label: request.variation_label.trim() }),
+        },
+        decodeStudioPreviewDecisionResult,
       );
     },
 

@@ -654,6 +654,81 @@ export interface StudioContinuationPromptList {
   prompts: StudioContinuationPrompt[];
 }
 
+export type StudioPreviewKind = 'visual' | 'catalog_revision' | 'markup';
+export type StudioPreviewStatus =
+  | 'reviewing' | 'applied' | 'saved_as_variation' | 'discarded' | 'expired';
+export type StudioPreviewDecision = 'apply' | 'save_as_variation' | 'discard';
+
+interface StudioPreviewCandidateBase {
+  candidate_id: string;
+  kind: StudioPreviewKind;
+  status: StudioPreviewStatus;
+  image_run_id: string;
+  project_root_id: string;
+  source_asset_id: string;
+  expected_active_asset_id: string;
+  expected_design_version: number | null;
+  source_sha256: string;
+  output_sha256: string;
+  requested_change: string;
+  verdict: 'pass' | 'warn' | null;
+  qa: JsonObject;
+  studio_job_id: string | null;
+  terminal_asset_id: string | null;
+  created_at: string;
+  expires_at: string;
+  resolved_at: string | null;
+  available_decisions: StudioPreviewDecision[];
+  preview_url: string;
+  decision_url: string;
+}
+
+export interface StudioVisualPreviewCandidate extends StudioPreviewCandidateBase {
+  kind: 'visual';
+  scope: 'appearance' | 'marked_region';
+}
+
+export interface StudioCatalogPreviewCandidate extends StudioPreviewCandidateBase {
+  kind: 'catalog_revision';
+  component_path: string;
+  option_id: string;
+  spec_change: JsonObject[];
+}
+
+export interface StudioMarkupPreviewCandidate extends StudioPreviewCandidateBase {
+  kind: 'markup';
+  operation: string;
+  region_description: string;
+  annotations: JsonObject[];
+}
+
+export type StudioPreviewCandidate =
+  | StudioVisualPreviewCandidate
+  | StudioCatalogPreviewCandidate
+  | StudioMarkupPreviewCandidate;
+
+export interface StudioPreviewCandidateList {
+  candidates: StudioPreviewCandidate[];
+}
+
+export interface StudioPreviewDecisionRequest {
+  created_by: string;
+  decision: StudioPreviewDecision;
+  expected_active_asset_id: string;
+  expected_design_version?: number | null;
+  variation_label?: string;
+}
+
+export interface StudioPreviewDecisionResult {
+  status: 'applied' | 'saved_as_variation' | 'discarded';
+  candidate_id: string;
+  kind: StudioPreviewKind;
+  source_project_id: string;
+  result_project_id: string;
+  terminal_asset_id: string | null;
+  studio_job_id: string | null;
+}
+
 export type CreateVisualPreviewRequest = CreateVisualPreviewRequestBase & (
   | { scope: 'appearance'; mask_base64?: never; markup_asset_id?: never }
   | { scope: 'marked_region'; mask_base64: string; markup_asset_id?: never }

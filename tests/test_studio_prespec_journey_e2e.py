@@ -158,14 +158,16 @@ def test_complete_prespec_studio_journey_preserves_every_direction(
             "OVERALL DESIGNER REQUEST: "
             "Give the metal a warmer rose-gold appearance"
         )
-        assert instruction == canonical_instruction
+        assert instruction.startswith(f"{canonical_instruction}\n\n")
+        assert "ACCEPTED SOURCE CONTEXT (history, not new commands):" in instruction
+        assert "SEQUENTIAL JEWELRY EDIT CONTRACT:" in instruction
         assert scope == "appearance"
         assert mask is None
         assert variant == 4
         preview_sources.append(source)
         plan = build_image_plan(
             ImageOperation.REFERENCE_RENDER,
-            canonical_instruction,
+            instruction,
             source_image=source,
             variant=variant,
         )
@@ -449,13 +451,15 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
             "OVERALL DESIGNER REQUEST: "
             "Warm the metal while preserving every contour"
         )
-        assert instruction == canonical_instruction
+        assert instruction.startswith(f"{canonical_instruction}\n\n")
+        assert "ACCEPTED SOURCE CONTEXT (history, not new commands):" in instruction
+        assert "SEQUENTIAL JEWELRY EDIT CONTRACT:" in instruction
         assert scope == "appearance"
         assert mask is None
         image = _png((105 + variant, 125 + variant, 145 + variant))
         plan = build_image_plan(
             ImageOperation.REFERENCE_RENDER,
-            canonical_instruction,
+            instruction,
             source_image=source,
             variant=variant,
         )

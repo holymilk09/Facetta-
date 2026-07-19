@@ -33,8 +33,11 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "test": "jest",
+    "test:ci": "jest --runInBand",
     "test:studio": "tsx --test src/studio/*.test.ts",
-    "test:studio-client-api": "PYTHONPATH=../src uv run python ../scripts/run_studio_client_api_acceptance.py"
+    "test:studio-client-api": "PYTHONPATH=../src uv run python ../scripts/run_studio_client_api_acceptance.py",
+    "typecheck": "tsc --noEmit",
+    "export:web": "expo export --platform web"
   },
   "jest": {
     "preset": "jest-expo",

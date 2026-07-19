@@ -4760,6 +4760,22 @@ def test_from_drawing_role_board_is_canonical_persisted_and_reopenable(
             for run in runs
         )
 
+    selected_id = body["creative_candidates"][-1]["asset_id"]
+    job_id = _reviewing_create_job(
+        client, project_id=body["root_id"], requested_outputs=4,
+    )
+    committed = client.post(
+        f"/projects/{body['root_id']}/creative-directions/commit",
+        json={
+            "selected_candidate_id": selected_id,
+            "retained": [],
+            "created_by": "usr_designer",
+            "studio_job_id": job_id,
+        },
+    )
+    assert committed.status_code == 200, committed.text
+    assert committed.json()["project"]["active_asset_id"] == selected_id
+
 
 @pytest.mark.parametrize("variation_count", [1, 4])
 def test_role_labeled_references_preserve_candidate_count_boundaries(

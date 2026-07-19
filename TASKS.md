@@ -1,5 +1,12 @@
 # First Sessions — Ordered Tasks
 
+> **Historical work ledger.** This file records completed foundations, acceptance work,
+> and remaining gates across many sessions. It is not the current sprint plan and its
+> checkboxes are not proof that the present checkout, configured providers, or live
+> 8000 → 8081 path is green. Start with `README.md` and
+> `docs/REPOSITORY_MAP.md`; use the nearest tests and a real product walkthrough for
+> current verification.
+
 ## Session 1 — Skeleton + spec truth
 - [x] Scaffold FastAPI project (poetry or uv), /health route, pytest wired
 - [x] Pydantic models for Spec Schema v1 (docs/SPEC_SCHEMA.md)

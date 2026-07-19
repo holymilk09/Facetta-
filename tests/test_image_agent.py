@@ -2248,8 +2248,17 @@ class TestClosedLoopRouting:
         self, monkeypatch,
     ):
         monkeypatch.delenv("XAI_KEY", raising=False)
+        monkeypatch.delenv("XAI_API_KEY", raising=False)
         monkeypatch.delenv("FAL_KEY", raising=False)
         monkeypatch.setenv("OPENAI_API_KEY", "test-only")
+        monkeypatch.setattr(
+            "facetta.image_agent.providers.env_value",
+            lambda key, default=None: {
+                "XAI_KEY": None,
+                "FAL_KEY": None,
+                "OPENAI_API_KEY": "test-only",
+            }.get(key, default),
+        )
         provider = FakeProvider()
         evaluator = SequenceEvaluator(
             report(QualityVerdict.FAIL),

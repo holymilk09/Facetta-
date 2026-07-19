@@ -82,7 +82,7 @@ const project = {
 } as ProjectDetail;
 
 describe('StudioPromptHistory', () => {
-  it('uses the raw continuation ledger instead of compiled saved instructions', () => {
+  it('uses the raw continuation ledger instead of compiled saved instructions', async () => {
     const rawPrompt: StudioContinuationPrompt = {
       prompt_id: 'scp_1', sequence: 1,
       prompt: 'Make both necklace sides use the same alternating diamond pattern.',
@@ -107,25 +107,25 @@ describe('StudioPromptHistory', () => {
       'Ruby on a gold necklace',
       'Make both necklace sides use the same alternating diamond pattern.',
     ]);
-    render(<StudioPromptHistory project={compiledProject} continuationPrompts={[rawPrompt]} />);
+    await render(<StudioPromptHistory project={compiledProject} continuationPrompts={[rawPrompt]} />);
     expect(screen.getByText('Saved in Revision 2')).toBeTruthy();
     expect(screen.queryByText('Internal preservation suffix that must never be shown.')).toBeNull();
   });
 
-  it('shows accepted designer prompts in immutable revision order', () => {
+  it('shows accepted designer prompts in immutable revision order', async () => {
     expect(studioPromptHistory(project).map((entry) => entry.prompt)).toEqual([
       'Ruby on a gold necklace',
       'Add three small diamond and tsavorite leaves on each side of the ruby.',
     ]);
 
-    render(<StudioPromptHistory project={project} />);
+    await render(<StudioPromptHistory project={project} />);
     expect(screen.getByText('Ruby on a gold necklace')).toBeTruthy();
     expect(screen.getByText('Add three small diamond and tsavorite leaves on each side of the ruby.')).toBeTruthy();
     expect(screen.queryByText('Restored from revision asset asset_1')).toBeNull();
   });
 
-  it('keeps a pending prompt visibly temporary until Apply', () => {
-    render(
+  it('keeps a pending prompt visibly temporary until Apply', async () => {
+    await render(
       <StudioPromptHistory
         project={project}
         previewPrompt="Make the chain white gold and braided."
@@ -137,9 +137,9 @@ describe('StudioPromptHistory', () => {
     expect(screen.getByText('Apply to save this as the next revision.')).toBeTruthy();
   });
 
-  it('offers a separate path without deleting the saved conversation', () => {
+  it('offers a separate path without deleting the saved conversation', async () => {
     const onStartNewDesign = jest.fn();
-    render(<StudioPromptHistory project={project} onStartNewDesign={onStartNewDesign} />);
+    await render(<StudioPromptHistory project={project} onStartNewDesign={onStartNewDesign} />);
 
     fireEvent.press(screen.getByLabelText('Start a separate design'));
     expect(onStartNewDesign).toHaveBeenCalledTimes(1);
