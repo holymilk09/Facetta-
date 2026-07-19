@@ -90,6 +90,11 @@ def _openai_text_format(response_schema: dict | None) -> dict:
         if not isinstance(node, dict):
             return
         node.pop("default", None)
+        # Structured Outputs does not accept these JSON Schema string bounds.
+        # Pydantic still enforces them after transport, so removing them here
+        # broadens provider compatibility without weakening local validation.
+        node.pop("minLength", None)
+        node.pop("maxLength", None)
         properties = node.get("properties")
         if isinstance(properties, dict):
             node["required"] = list(properties)
@@ -151,7 +156,10 @@ def openai_vision_json(system: str, image_bytes: bytes,
                     },
                 ],
                 "text": {"format": _openai_text_format(response_schema)},
-                "max_output_tokens": 1400,
+                # Motif-level necklace audits can legitimately contain several
+                # paired components and six-leaf inventories. The former cap
+                # could truncate otherwise valid JSON before Pydantic saw it.
+                "max_output_tokens": 4000,
             },
         )
         response.raise_for_status()

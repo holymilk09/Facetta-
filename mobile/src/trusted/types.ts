@@ -2048,6 +2048,7 @@ export type ApiErrorCategory =
   | 'capability'
   | 'stale_version'
   | 'quality'
+  | 'evaluation'
   | 'provider'
   | 'conflict'
   | 'not_found'

@@ -519,8 +519,34 @@ def compile_correction_prompt(
         raise ValueError("a corrective prompt requires at least one failed QA check")
     correction_lines = []
     for check in failures:
-        evidence = (f" Evidence: {json.dumps(check.evidence, sort_keys=True)}"
-                    if check.evidence else "")
+        correction_evidence = check.evidence
+        if (
+            check.code in {
+                "six_leaf_ruby_pattern",
+                "necklace_sequence_symmetry",
+            }
+            and isinstance(check.evidence, dict)
+        ):
+            # Full structured inventories can be thousands of characters and
+            # are historical audit evidence, not image-generation instructions.
+            # Keep them in the run ledger; send only a bounded failure summary.
+            reasons = check.evidence.get("reasons", [])
+            if not isinstance(reasons, list):
+                reasons = []
+            correction_evidence = {
+                "failure_count": len(reasons),
+                "representative_reasons": reasons[:5],
+            }
+        serialized_evidence = (
+            json.dumps(correction_evidence, sort_keys=True)
+            if correction_evidence else ""
+        )
+        if len(serialized_evidence) > 600:
+            serialized_evidence = serialized_evidence[:599] + "…"
+        evidence = (
+            f" Evidence: {serialized_evidence}"
+            if serialized_evidence else ""
+        )
         correction_lines.append(f"- {check.code}: {check.message}.{evidence}")
     correction = "\n".join(correction_lines)
     unchanged_notice = ""

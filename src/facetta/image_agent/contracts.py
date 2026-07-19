@@ -304,6 +304,13 @@ class SixLeafRubyPatternAudit(_Contract):
     observation: str = Field(min_length=1, max_length=1000)
 
 
+class SixLeafRubyPatternInspection(_Contract):
+    """Focused inventory that cannot be diluted by the broader necklace audit."""
+
+    audits: tuple[SixLeafRubyPatternAudit, ...] = ()
+    notes: tuple[str, ...] = ()
+
+
 class CreativeRenderInspection(_Contract):
     """Comparative evidence for a pre-spec drawing/image beauty render.
 

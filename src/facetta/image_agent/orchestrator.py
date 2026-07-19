@@ -482,8 +482,10 @@ class JewelryImageAgent:
                     attempts,
                     accepted=False,
                 )
-            if fast_fallback_attempt:
-                break
+            # A fallback provider call that produced a real but rejected image
+            # still earns the remaining bounded QA-correction attempt. Provider
+            # recovery must not consume the only opportunity to repair a
+            # jewelry-specific defect such as broken mirrored motif phase.
 
         # Once a candidate has failed QA, a later unavailable fallback does not
         # rewrite the outcome as a provider-only failure. Keep the terminal

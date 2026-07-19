@@ -50,6 +50,7 @@ export type StudioGatewayErrorCategory =
   | 'validation'
   | 'conflict'
   | 'quality'
+  | 'evaluation'
   | 'provider'
   | 'unavailable'
   | 'invalid_response';
@@ -478,6 +479,8 @@ function mapError(error: ApiError): StudioGatewayError {
         ? 'conflict'
         : error.category === 'quality'
           ? 'quality'
+          : error.category === 'evaluation'
+            ? 'evaluation'
           : error.category === 'provider'
             ? 'provider'
           : error.category === 'decode'
@@ -1060,7 +1063,9 @@ export function createStudioGateway(
         // running for Activity reconciliation instead of fabricating failure.
         return unconfirmed();
       }
-      await failJob(job, result.error.code);
+      // Create endpoints commit success or terminal failure together with the
+      // durable Activity job. A second client-authored failure transition can
+      // only race that authoritative transaction and create a misleading 409.
       return { data: null, error: mapError(result.error), status: result.status };
     } catch {
       const recovered = await reconcileCommittedCreate(job, requestedOutputs);

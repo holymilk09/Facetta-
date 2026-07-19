@@ -3584,6 +3584,8 @@ function apiError(status: number, value: unknown, fallback: string): ApiError {
   const rawCategory = text(pick(nested, 'category', 'error_category')).toLowerCase();
   const categoryValue = rawCategory.includes('stale')
     ? 'stale_version'
+    : rawCategory.includes('evaluation')
+      ? 'evaluation'
     : rawCategory.includes('quality')
       ? 'quality'
       : rawCategory.includes('provider')
@@ -3596,6 +3598,7 @@ function apiError(status: number, value: unknown, fallback: string): ApiError {
   const category = categoryValue === 'network' || categoryValue === 'validation'
     || categoryValue === 'capability'
     || categoryValue === 'stale_version' || categoryValue === 'quality'
+    || categoryValue === 'evaluation'
     || categoryValue === 'provider' || categoryValue === 'conflict'
     || categoryValue === 'not_found' || categoryValue === 'decode'
     || categoryValue === 'authentication' || categoryValue === 'authorization'

@@ -2350,6 +2350,48 @@ class TestClosedLoopRouting:
         assert result.run.attempts[0].error.code == "xai_quota_exhausted"
         assert result.run.attempts[1].fallback_reason == "grok_provider_failed"
 
+    def test_openai_fallback_keeps_one_bounded_quality_correction(
+        self,
+        monkeypatch,
+    ):
+        monkeypatch.setenv("XAI_KEY", "test-only")
+        monkeypatch.delenv("FAL_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "test-only")
+        quota_failure = _provider_call_error(
+            ImageRoute.GROK_GENERATE,
+            render_failure(403, "monthly spending limit reached"),
+        )
+        provider = FakeProvider(failures={1: quota_failure})
+        evaluator = SequenceEvaluator(
+            report(
+                QualityVerdict.FAIL,
+                "six_leaf_ruby_pattern",
+                "ruby motif pair 1 is missing a left or right audit",
+            ),
+            report(QualityVerdict.PASS),
+        )
+        plan = build_image_plan(
+            ImageOperation.CREATIVE_GENERATE,
+            "a symmetric six-leaf ruby necklace",
+        )
+
+        result = JewelryImageAgent(
+            provider,
+            evaluator,
+            use_available_fallback=True,
+        ).run(plan)
+
+        assert [call["route"] for call in provider.calls] == [
+            ImageRoute.GROK_GENERATE,
+            ImageRoute.OPENAI_GENERATE,
+            ImageRoute.OPENAI_GENERATE,
+        ]
+        assert result.accepted is True
+        assert result.run.attempts[2].corrective_instruction is not None
+        assert "six_leaf_ruby_pattern" in (
+            result.run.attempts[2].corrective_instruction or ""
+        )
+
     @pytest.mark.parametrize("status", [429, 500, 503])
     def test_transient_xai_failures_keep_same_provider_retry(
         self,

@@ -24,10 +24,12 @@ from facetta.image_agent.contracts import (
     ImageAgentPlan,
     ImageOperation,
     ImageQualityReport,
+    NecklaceSymmetryAudit,
     QualityCheck,
     QualityVerdict,
     RenderCrossInspection,
     RenderInspection,
+    SixLeafRubyPatternInspection,
 )
 from facetta.image_agent.drift import (
     inside_mask_effect,
@@ -50,7 +52,12 @@ from facetta.image_agent.vision import (
 )
 
 
-def _qa_vision_json(system: str, image: bytes, user_text: str) -> dict:
+def _qa_vision_json(
+    system: str,
+    image: bytes,
+    user_text: str,
+    response_schema: dict | None = None,
+) -> dict:
     """Keep Grok primary, retrying only provider-unavailable QA with OpenAI."""
 
     try:
@@ -58,7 +65,12 @@ def _qa_vision_json(system: str, image: bytes, user_text: str) -> dict:
     except VisionProviderUnavailable:
         if not env_value("OPENAI_API_KEY"):
             raise
-        return openai_vision_json(system, image, user_text)
+        return openai_vision_json(
+            system,
+            image,
+            user_text,
+            response_schema=response_schema,
+        )
 
 
 def _qa_vision_json_pair(
@@ -128,6 +140,15 @@ class PromptCreativeRenderInspector(Protocol):
     ) -> CreativeRenderInspection: ...
 
 
+class SixLeafRubyPatternInspector(Protocol):
+    def inspect_render(
+        self,
+        plan: ImageAgentPlan,
+        candidate: bytes,
+        necklace_audits: tuple[NecklaceSymmetryAudit, ...],
+    ) -> SixLeafRubyPatternInspection: ...
+
+
 _RENDER_QA_SYSTEM = """\
 You are the visual QA guard for a fine-jewelry manufacturing workflow. Inspect
 the candidate ring against the expected facts supplied by the user. Do not
@@ -182,7 +203,7 @@ Return JSON only:
  "requested_presentation_applied": true|false|null,
  "symmetry_expectation_matches": true|false|null,
  "symmetry_observations": ["specific left/right or radial evidence"],
- "six_leaf_ruby_pattern_audits": [{"side":"center|left|right","position_from_center":0,"ruby_component":"specific ruby motif","complete_motif_assessable":true|false|null,"leaf_count":0,"diamond_leaf_count":0,"tsavorite_leaf_count":0,"material_sequence":["diamond|tsavorite|other"],"whole_leaf_treatments":true|false|null,"observation":"specific sequence evidence"}],
+ "six_leaf_ruby_pattern_audits": [{"side":"left","position_from_center":1,"ruby_component":"specific ruby motif","complete_motif_assessable":true|false|null,"leaf_count":6,"diamond_leaf_count":3,"tsavorite_leaf_count":3,"material_sequence":["diamond","tsavorite","diamond","tsavorite","diamond","tsavorite"],"whole_leaf_treatments":true|false|null,"observation":"specific sequence evidence"}],
  "necklace_symmetry_audits": [{"expectation":"bilateral|explicit_asymmetry|source_asymmetry","centerline_anchor":"visible center element","complete_piece_assessable":true|false|null,"left_count":0,"right_count":0,"pair_audits":[{"position_from_center":1,"left_component":"specific element","right_component":"specific element","motif_order_matches":true|false|null,"orientation_matches":true|false|null,"spacing_matches":true|false|null,"scale_matches":true|false|null,"metal_treatment_matches":true|false|null,"pave_coverage_matches":true|false|null,"gemstone_treatment_matches":true|false|null,"connection_type_matches":true|false|null,"authorized_differences":[],"observation":"specific comparison"}],"unpaired_left":[],"unpaired_right":[],"unpaired_elements_authorized":false,"requested_asymmetry_preserved":null,"unrequested_differences_absent":true|false|null}],
  "text_or_branding_detected": true|false|null,
  "major_unintended_changes": ["specific visible difference"],
@@ -256,7 +277,7 @@ Return JSON only:
  "requested_presentation_applied": true|false|null,
  "symmetry_expectation_matches": true|false|null,
  "symmetry_observations": ["specific left/right or radial evidence"],
- "six_leaf_ruby_pattern_audits": [{"side":"center|left|right","position_from_center":0,"ruby_component":"specific ruby motif","complete_motif_assessable":true|false|null,"leaf_count":0,"diamond_leaf_count":0,"tsavorite_leaf_count":0,"material_sequence":["diamond|tsavorite|other"],"whole_leaf_treatments":true|false|null,"observation":"specific sequence evidence"}],
+ "six_leaf_ruby_pattern_audits": [{"side":"left","position_from_center":1,"ruby_component":"specific ruby motif","complete_motif_assessable":true|false|null,"leaf_count":6,"diamond_leaf_count":3,"tsavorite_leaf_count":3,"material_sequence":["diamond","tsavorite","diamond","tsavorite","diamond","tsavorite"],"whole_leaf_treatments":true|false|null,"observation":"specific sequence evidence"}],
  "necklace_symmetry_audits": [{"expectation":"bilateral|explicit_asymmetry|source_asymmetry","centerline_anchor":"visible center element","complete_piece_assessable":true|false|null,"left_count":0,"right_count":0,"pair_audits":[{"position_from_center":1,"left_component":"specific element","right_component":"specific element","motif_order_matches":true|false|null,"orientation_matches":true|false|null,"spacing_matches":true|false|null,"scale_matches":true|false|null,"metal_treatment_matches":true|false|null,"pave_coverage_matches":true|false|null,"gemstone_treatment_matches":true|false|null,"connection_type_matches":true|false|null,"authorized_differences":[],"observation":"specific comparison"}],"unpaired_left":[],"unpaired_right":[],"unpaired_elements_authorized":false,"requested_asymmetry_preserved":null,"unrequested_differences_absent":true|false|null}],
  "text_or_branding_detected": true|false|null,
  "major_unintended_changes": ["specific source-to-candidate difference"],
@@ -420,6 +441,28 @@ alternation from the necklace's overall balance: record every leaf in order.
 If any motif is cropped or ambiguous, set complete_motif_assessable false."""
 
 
+_FOCUSED_SIX_LEAF_RUBY_QA_SYSTEM = """\
+You perform one narrow forensic inventory of ruby-and-leaf motifs in a single
+jewelry image. Return only the focused audit contract. Do not judge beauty,
+factory readiness, or overall necklace quality.
+
+Inventory EVERY visible ruby motif surrounded by leaves. Never return a
+representative sample. The broad necklace inventory supplied by the user is a
+coverage checklist: for every pair whose component description names a ruby
+flower, floral ruby, ruby leaf, or ruby leaves, return both a left and a right
+audit with that exact position_from_center. Return center motifs separately
+with side center and position 0. If a required motif is cropped, ambiguous, or
+not actually leaf-surrounded, still return its row and mark
+complete_motif_assessable false instead of omitting it.
+
+Count six whole leaves individually. Count diamond and tsavorite leaves
+separately. material_sequence must contain one entry per visible leaf. For a
+center motif begin at the top and proceed clockwise. For a left or right motif
+begin at the leaf nearest the necklace centerline and proceed toward the top in
+mirrored reading directions. Do not infer a sequence from overall color
+balance. Record only what the pixels establish."""
+
+
 def _creative_review_system(
     system: str,
     plan: ImageAgentPlan,
@@ -464,7 +507,7 @@ Return JSON only:
  "explicit_stone_facts_match": true|false,
  "symmetry_expectation_matches": true|false|null,
  "symmetry_observations": ["specific left/right or radial evidence"],
- "six_leaf_ruby_pattern_audits": [{"side":"center|left|right","position_from_center":0,"ruby_component":"specific ruby motif","complete_motif_assessable":true|false|null,"leaf_count":0,"diamond_leaf_count":0,"tsavorite_leaf_count":0,"material_sequence":["diamond|tsavorite|other"],"whole_leaf_treatments":true|false|null,"observation":"specific sequence evidence"}],
+ "six_leaf_ruby_pattern_audits": [{"side":"left","position_from_center":1,"ruby_component":"specific ruby motif","complete_motif_assessable":true|false|null,"leaf_count":6,"diamond_leaf_count":3,"tsavorite_leaf_count":3,"material_sequence":["diamond","tsavorite","diamond","tsavorite","diamond","tsavorite"],"whole_leaf_treatments":true|false|null,"observation":"specific sequence evidence"}],
  "necklace_symmetry_audits": [{"expectation":"bilateral|explicit_asymmetry|source_asymmetry","centerline_anchor":"visible center element","complete_piece_assessable":true|false|null,"left_count":0,"right_count":0,"pair_audits":[{"position_from_center":1,"left_component":"specific element","right_component":"specific element","motif_order_matches":true|false|null,"orientation_matches":true|false|null,"spacing_matches":true|false|null,"scale_matches":true|false|null,"metal_treatment_matches":true|false|null,"pave_coverage_matches":true|false|null,"gemstone_treatment_matches":true|false|null,"connection_type_matches":true|false|null,"authorized_differences":[],"observation":"specific comparison"}],"unpaired_left":[],"unpaired_right":[],"unpaired_elements_authorized":false,"requested_asymmetry_preserved":null,"unrequested_differences_absent":true|false|null}],
  "text_or_branding_detected": true|false|null,
  "major_unintended_changes": ["specific contradiction of the direction"],
@@ -1027,6 +1070,7 @@ class GrokPromptCreativeRenderInspector:
             + "\n\n" + _SIX_LEAF_RUBY_QA_GUIDANCE,
             candidate,
             ask,
+            CreativeRenderInspection.model_json_schema(),
         ))
 
 
@@ -1048,7 +1092,33 @@ class OpenAIPromptCreativeRenderInspector:
             + "\n\n" + _SIX_LEAF_RUBY_QA_GUIDANCE,
             candidate,
             ask,
+            response_schema=CreativeRenderInspection.model_json_schema(),
         ))
+
+
+class FocusedSixLeafRubyPatternInspector:
+    """Independent exhaustive motif inventory for governed ruby necklaces."""
+
+    def inspect_render(
+        self,
+        plan: ImageAgentPlan,
+        candidate: bytes,
+        necklace_audits: tuple[NecklaceSymmetryAudit, ...],
+    ) -> SixLeafRubyPatternInspection:
+        ask = (
+            f"Designer direction: {plan.intent}\n"
+            "Broad necklace coverage checklist: "
+            + json.dumps([
+                audit.model_dump(mode="json") for audit in necklace_audits
+            ], sort_keys=True)
+        )
+        payload = _qa_vision_json(
+            _FOCUSED_SIX_LEAF_RUBY_QA_SYSTEM,
+            candidate,
+            ask,
+            SixLeafRubyPatternInspection.model_json_schema(),
+        )
+        return SixLeafRubyPatternInspection.model_validate(payload)
 
 
 def _default_prompt_creative_inspector() -> PromptCreativeRenderInspector:
@@ -1674,7 +1744,8 @@ class RingQualityEvaluator:
                  creative_inspector: CreativeRenderInspector | None = None,
                  creative_cross_inspector: CreativeRenderInspector | None = None,
                  require_creative_cross_inspection: bool | None = None,
-                 prompt_creative_inspector: PromptCreativeRenderInspector | None = None) -> None:
+                 prompt_creative_inspector: PromptCreativeRenderInspector | None = None,
+                 six_leaf_pattern_inspector: SixLeafRubyPatternInspector | None = None) -> None:
         primary_is_default = inspector is None
         if inspector is not None:
             self.inspector = inspector
@@ -1722,6 +1793,14 @@ class RingQualityEvaluator:
             )
         self._prompt_creative_inspector = (
             prompt_creative_inspector or _default_prompt_creative_inspector())
+        self._six_leaf_pattern_inspector = six_leaf_pattern_inspector
+        if (
+            self._six_leaf_pattern_inspector is None
+            and prompt_creative_inspector is None
+        ):
+            self._six_leaf_pattern_inspector = (
+                FocusedSixLeafRubyPatternInspector()
+            )
 
     def evaluate_source_precondition(
         self,
@@ -1805,6 +1884,19 @@ class RingQualityEvaluator:
         if plan.operation is ImageOperation.CREATIVE_GENERATE:
             inspection = self._prompt_creative_inspector.inspect_render(
                 plan, candidate)
+            if (
+                SIX_LEAF_RUBY_PATTERN_CONTRACT in plan.intent
+                and self._six_leaf_pattern_inspector is not None
+            ):
+                focused = self._six_leaf_pattern_inspector.inspect_render(
+                    plan,
+                    candidate,
+                    inspection.necklace_symmetry_audits,
+                )
+                inspection = inspection.model_copy(update={
+                    "six_leaf_ruby_pattern_audits": focused.audits,
+                    "notes": (*inspection.notes, *focused.notes),
+                })
             return self._creative_render_report(
                 plan,
                 inspection,

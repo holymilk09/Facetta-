@@ -7,10 +7,11 @@ import io
 
 import pytest
 from PIL import Image
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from facetta.image_agent import (
     GrokPromptCreativeRenderInspector,
+    FocusedSixLeafRubyPatternInspector,
     ImageOperation,
     ImageRoute,
     OpenAIPromptCreativeRenderInspector,
@@ -78,8 +79,19 @@ def test_openai_prompt_inspector_sends_direction_and_returns_typed_result(
 ):
     captured: dict[str, object] = {}
 
-    def inspect(system: str, candidate: bytes, ask: str) -> dict:
-        captured.update(system=system, candidate=candidate, ask=ask)
+    def inspect(
+        system: str,
+        candidate: bytes,
+        ask: str,
+        *,
+        response_schema: dict | None = None,
+    ) -> dict:
+        captured.update(
+            system=system,
+            candidate=candidate,
+            ask=ask,
+            response_schema=response_schema,
+        )
         return _inspection_payload()
 
     monkeypatch.setattr(quality_module, "openai_vision_json", inspect)
@@ -96,6 +108,42 @@ def test_openai_prompt_inspector_sends_direction_and_returns_typed_result(
     assert captured["candidate"] == b"candidate-image"
     assert "exactly three round diamonds" in str(captured["ask"])
     assert '"complete_piece_visible"' in str(captured["system"])
+    assert captured["response_schema"] == (
+        quality_module.CreativeRenderInspection.model_json_schema()
+    )
+    assert '"diamond|tsavorite|other"' not in str(captured["system"])
+
+
+def test_focused_six_leaf_inspector_requests_an_exhaustive_strict_inventory(
+    monkeypatch,
+):
+    captured: dict[str, object] = {}
+
+    def inspect(system, candidate, ask, response_schema):
+        captured.update(
+            system=system,
+            candidate=candidate,
+            ask=ask,
+            response_schema=response_schema,
+        )
+        return {"audits": [], "notes": ["no ruby motifs visible"]}
+
+    monkeypatch.setattr(quality_module, "_qa_vision_json", inspect)
+    plan = build_image_plan(
+        ImageOperation.CREATIVE_GENERATE,
+        "Every ruby flower has six alternating diamond and tsavorite leaves.",
+    )
+
+    result = FocusedSixLeafRubyPatternInspector().inspect_render(
+        plan, b"candidate-image", (),
+    )
+
+    assert result.audits == ()
+    assert "Inventory EVERY visible ruby motif" in str(captured["system"])
+    assert "Broad necklace coverage checklist" in str(captured["ask"])
+    assert captured["response_schema"] == (
+        quality_module.SixLeafRubyPatternInspection.model_json_schema()
+    )
 
 
 @pytest.mark.parametrize(
@@ -188,8 +236,11 @@ def test_grok_single_qa_retries_openai_only_when_provider_is_unavailable(
         calls.append("grok")
         raise vision_module.VisionProviderUnavailable("xAI timed out")
 
-    def inspect_openai(*_args):
+    def inspect_openai(*_args, **kwargs):
         calls.append("openai")
+        assert kwargs["response_schema"] == (
+            quality_module.CreativeRenderInspection.model_json_schema()
+        )
         return _inspection_payload()
 
     monkeypatch.setattr(quality_module, "vision_json", unavailable)
@@ -364,6 +415,7 @@ def test_openai_vision_transport_uses_image_data_url_and_json_mode(monkeypatch):
     assert result["score"] == 96
     assert captured["url"] == "https://api.openai.com/v1/responses"
     assert request["text"]["format"] == {"type": "json_object"}
+    assert request["max_output_tokens"] == 4000
     image = request["input"][1]["content"][0]
     assert image["type"] == "input_image"
     assert image["image_url"].startswith("data:image/png;base64,")
@@ -375,7 +427,9 @@ def test_openai_vision_transport_uses_strict_pydantic_schema(monkeypatch):
         model_config = ConfigDict(extra="forbid")
 
         visible_count: int = 1
-        optional_note: str | None = None
+        optional_note: str | None = Field(
+            default=None, min_length=1, max_length=80,
+        )
 
     captured: dict[str, object] = {}
 
@@ -413,9 +467,13 @@ def test_openai_vision_transport_uses_strict_pydantic_schema(monkeypatch):
         {"type": "string"},
         {"type": "null"},
     ]
+    assert "minLength" not in schema["properties"]["optional_note"]["anyOf"][0]
+    assert "maxLength" not in schema["properties"]["optional_note"]["anyOf"][0]
     # Sanitizing a request must not mutate a reusable Pydantic schema.
     assert pydantic_schema["properties"]["visible_count"]["default"] == 1
     assert pydantic_schema["properties"]["optional_note"]["default"] is None
+    assert pydantic_schema["properties"]["optional_note"]["anyOf"][0]["minLength"] == 1
+    assert pydantic_schema["properties"]["optional_note"]["anyOf"][0]["maxLength"] == 80
 
 
 def test_openai_vision_transport_fails_closed_on_malformed_output(monkeypatch):

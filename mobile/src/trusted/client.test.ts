@@ -775,6 +775,29 @@ describe('trusted API decoders', () => {
     });
   });
 
+  test('keeps backend evaluation failures distinct from provider failures', async () => {
+    const fetcher = jest.fn(async () => ({
+      ok: false,
+      status: 502,
+      text: async () => JSON.stringify({
+        code: 'image_evaluation_failed',
+        category: 'evaluation',
+        detail: 'The visual audit did not return a valid contract.',
+        retryable: true,
+      }),
+    } as unknown as Response));
+    const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+    const result = await api.createProjectFromPrompt({
+      prompt: 'A symmetric ruby necklace.',
+      owner: 'usr_designer',
+      title: 'Ruby necklace',
+    });
+
+    expect(result.error?.category).toBe('evaluation');
+    expect(result.error?.code).toBe('image_evaluation_failed');
+  });
+
   test('commits the selected Original and retained Create directions in one request', async () => {
     const responseProject = {
       id: 'project original', root_id: 'project original', title: 'Lariat',

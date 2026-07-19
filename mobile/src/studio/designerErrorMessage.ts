@@ -59,6 +59,9 @@ export function designerErrorMessage(
   if (category === 'network' || category === 'unavailable' || error.status === 0) {
     return 'Facetta could not connect. Check your connection and try again.';
   }
+  if (category === 'evaluation') {
+    return 'Facetta could not verify the generated result, so nothing was saved or charged. Try again.';
+  }
   if (category === 'quality') {
     return 'Facetta could not preserve the design well enough. Nothing was saved or charged.';
   }

@@ -18,6 +18,10 @@ test('designer errors never echo backend diagnostics or identifiers', () => {
 test('designer errors give specific safe recovery guidance', () => {
   assert.match(designerErrorMessage({ code: 'stale_asset_revision', status: 409 }, 'refine'), /Reopen/);
   assert.match(designerErrorMessage({ category: 'quality', status: 422 }, 'views'), /Nothing was saved or charged/);
+  assert.equal(
+    designerErrorMessage({ category: 'evaluation', status: 502 }, 'create'),
+    'Facetta could not verify the generated result, so nothing was saved or charged. Try again.',
+  );
   assert.match(designerErrorMessage({ category: 'network', status: 0 }, 'activity'), /connection/);
   assert.match(designerErrorMessage({ category: 'validation', status: 422 }, 'create'), /reference/);
   assert.match(designerErrorMessage({ category: 'authentication', status: 401 }, 'confirm'), /Sign in again/);

@@ -23,6 +23,7 @@ from facetta.image_agent import (
     QualityVerdict,
     RingQualityEvaluator,
     SixLeafRubyPatternAudit,
+    SixLeafRubyPatternInspection,
     build_image_plan,
 )
 from facetta.image_agent.prompts import compile_correction_prompt
@@ -94,6 +95,18 @@ class _SourceInspector:
         assert source
         assert candidate
         assert source != candidate
+        return self.inspection
+
+
+class _SixLeafInspector:
+    def __init__(self, inspection: SixLeafRubyPatternInspection) -> None:
+        self.inspection = inspection
+        self.coverage: tuple[NecklaceSymmetryAudit, ...] = ()
+
+    def inspect_render(self, plan, candidate, necklace_audits):
+        assert SIX_LEAF_RUBY_PATTERN_CONTRACT in plan.intent
+        assert candidate
+        self.coverage = necklace_audits
         return self.inspection
 
 
@@ -291,6 +304,121 @@ def test_six_leaf_prompt_requires_motif_level_alternation_evidence() -> None:
     assert report.verdict is QualityVerdict.FAIL
     assert by_code["six_leaf_ruby_pattern"].passed is False
     assert by_code["six_leaf_ruby_pattern"].evidence["audit_count"] == 0
+
+
+def test_six_leaf_prompt_uses_a_focused_complete_motif_inventory() -> None:
+    instruction = with_jewelry_symmetry_contract(
+        "Each ruby motif on this necklace has 6 leaves: half white diamonds "
+        "and half tsavorite, in an alternating pattern."
+    )
+    plan = build_image_plan(ImageOperation.CREATIVE_GENERATE, instruction)
+    necklace_audit = NecklaceSymmetryAudit(
+        expectation="bilateral",
+        centerline_anchor="center drop",
+        complete_piece_assessable=True,
+        left_count=1,
+        right_count=1,
+        pair_audits=(NecklaceSymmetryPairAudit(
+            position_from_center=1,
+            left_component="left ruby flower with leaves",
+            right_component="right ruby flower with leaves",
+            motif_order_matches=True,
+            orientation_matches=True,
+            spacing_matches=True,
+            scale_matches=True,
+            metal_treatment_matches=True,
+            pave_coverage_matches=True,
+            gemstone_treatment_matches=True,
+            connection_type_matches=True,
+            observation="first ruby flowers match",
+        ),),
+        unpaired_elements_authorized=False,
+        unrequested_differences_absent=True,
+    )
+    broad = _inspection(
+        True,
+        necklace_audits=(necklace_audit,),
+        observed_jewelry_type="necklace",
+    )
+    alternating = (
+        "diamond", "tsavorite", "diamond",
+        "tsavorite", "diamond", "tsavorite",
+    )
+    focused = _SixLeafInspector(SixLeafRubyPatternInspection(audits=tuple(
+        SixLeafRubyPatternAudit(
+            side=side,
+            position_from_center=1,
+            ruby_component=f"{side} ruby flower",
+            complete_motif_assessable=True,
+            leaf_count=6,
+            diamond_leaf_count=3,
+            tsavorite_leaf_count=3,
+            material_sequence=alternating,
+            whole_leaf_treatments=True,
+            observation="all six leaves inventoried in mirrored order",
+        )
+        for side in ("left", "right")
+    )))
+
+    report = RingQualityEvaluator(
+        prompt_creative_inspector=_Inspector(broad),
+        six_leaf_pattern_inspector=focused,
+        require_cross_inspection=False,
+        require_render_cross_inspection=False,
+    ).evaluate(plan, _png(), source_image=None, mask_bytes=None)
+
+    by_code = {check.code: check for check in report.checks}
+    assert by_code["six_leaf_ruby_pattern"].passed is True
+    assert by_code["six_leaf_ruby_pattern"].evidence["audit_count"] == 2
+    assert focused.coverage == (necklace_audit,)
+
+
+def test_six_leaf_correction_uses_reasons_not_the_full_audit_ledger() -> None:
+    instruction = with_jewelry_symmetry_contract(
+        "Every ruby has 6 leaves: three diamonds and three tsavorites in a pattern."
+    )
+    plan = build_image_plan(ImageOperation.CREATIVE_GENERATE, instruction)
+    inspection = _inspection(
+        True,
+        observed_jewelry_type="necklace",
+        necklace_audits=(NecklaceSymmetryAudit(
+            expectation="bilateral",
+            centerline_anchor="center ruby",
+            complete_piece_assessable=True,
+            left_count=1,
+            right_count=1,
+            pair_audits=(NecklaceSymmetryPairAudit(
+                position_from_center=1,
+                left_component="left ruby flower with leaves",
+                right_component="right ruby flower with leaves",
+                motif_order_matches=True,
+                orientation_matches=True,
+                spacing_matches=True,
+                scale_matches=True,
+                metal_treatment_matches=True,
+                pave_coverage_matches=True,
+                gemstone_treatment_matches=True,
+                connection_type_matches=True,
+                observation="pair inventoried",
+            ),),
+            unpaired_elements_authorized=False,
+            unrequested_differences_absent=True,
+        ),),
+        six_leaf_audits=(),
+    )
+    report = RingQualityEvaluator(
+        prompt_creative_inspector=_Inspector(inspection),
+        require_cross_inspection=False,
+        require_render_cross_inspection=False,
+    ).evaluate(plan, _png(), source_image=None, mask_bytes=None)
+
+    _prompt, correction = compile_correction_prompt(plan, plan.intent, report)
+
+    assert "structured six-leaf ruby motif audit is missing" in correction
+    assert '"failure_count": 1' in correction
+    assert '"representative_reasons"' in correction
+    assert '"audits"' not in correction
+    assert len(correction) < 1200
 
 
 def test_unrelated_leaf_prompt_does_not_gain_six_leaf_material_rules() -> None:

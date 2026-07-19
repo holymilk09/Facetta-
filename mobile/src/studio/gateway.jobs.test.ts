@@ -567,7 +567,7 @@ test('atomic Create review forwards the same-session durable job exactly once', 
   assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running']);
 });
 
-test('tracked generation failures close the job without charging output', async () => {
+test('tracked Create failures rely on the backend atomic job settlement', async () => {
   const jobs = tracking();
   const gateway = createStudioGateway({
     ...jobs.client,
@@ -585,9 +585,7 @@ test('tracked generation failures close the job without charging output', async 
     prompt: 'Orbit', owner: 'designer_1', title: 'Orbit',
   });
   assert.equal(result.error?.code, 'GENERATION_REJECTED');
-  assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running', 'failed']);
-  assert.equal(jobs.transitions[1]?.request.progress, 1);
-  assert.equal(jobs.transitions[1]?.request.completed_outputs, undefined);
+  assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running']);
 });
 
 test('tracked markup refuses compatibility-only candidates before review', async () => {
