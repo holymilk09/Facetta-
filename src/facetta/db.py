@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import sqlite3
 from datetime import datetime, timezone
 from functools import lru_cache
 from threading import Lock
@@ -25,12 +26,29 @@ from sqlalchemy import (
     select, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from facetta.config import env_value
 
 DEFAULT_DATABASE_URL = "sqlite:///./facetta.db"
+
+STUDIO_JOB_INTEGRITY_REVISION = "2026_07_19_studio_job_integrity_v1"
+STUDIO_JOB_ADDITIVE_CHECKS = {
+    "ck_studio_job_reservation_kind": (
+        "reservation_kind IS NULL OR reservation_kind = 'studio_visual'"
+    ),
+    "ck_studio_job_evidence_scope": (
+        "accepted_output_sha256 IS NULL OR "
+        "(action_id = 'factory' AND status = 'succeeded')"
+    ),
+    "ck_studio_job_factory_success_evidence": (
+        "action_id != 'factory' OR status != 'succeeded' OR "
+        "(requested_outputs = 1 AND completed_outputs = 1 AND "
+        "charged_outputs = 1 AND accepted_output_sha256 IS NOT NULL AND "
+        "length(accepted_output_sha256) = 64)"
+    ),
+}
 
 _engine_initialization_lock = Lock()
 
@@ -89,6 +107,52 @@ def legacy_collection_id(owner: str, name_key: str) -> str:
 
 class Base(DeclarativeBase):
     pass
+
+
+@event.listens_for(Engine, "connect")
+def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
+    """Enable relational integrity on every SQLite DB-API connection.
+
+    SQLite defaults foreign-key enforcement off per connection. Registering at
+    the Engine level covers the application engine, pooled reconnects, and the
+    short-lived SQLite engines used by maintenance and tests.
+    """
+
+    if not isinstance(dbapi_connection, sqlite3.Connection):
+        return
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA foreign_keys=ON")
+    finally:
+        cursor.close()
+
+
+@event.listens_for(Engine, "begin")
+def _defer_sqlite_foreign_keys_until_commit(connection) -> None:
+    """Validate an atomic SQLite unit of work after all rows are staged.
+
+    The ORM models intentionally keep immutable ledgers free of mutable object
+    relationships, so independent parent and child rows may flush in either
+    order. SQLite resets this pragma after every commit/rollback; setting it on
+    each transaction preserves full enforcement without making flush order a
+    hidden application contract.
+    """
+
+    if connection.dialect.name == "sqlite":
+        connection.exec_driver_sql("PRAGMA defer_foreign_keys=ON")
+
+
+class SchemaMigrationRecord(Base):
+    """Durable evidence for additive runtime schema upgrades."""
+
+    __tablename__ = "facetta_schema_migrations"
+
+    revision: Mapped[str] = mapped_column(String(64), primary_key=True)
+    dialect: Mapped[str] = mapped_column(String(16), nullable=False)
+    integrity_mode: Mapped[str] = mapped_column(String(40), nullable=False)
+    applied_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False,
+    )
 
 
 class User(Base):
@@ -496,7 +560,7 @@ class StudioJobRecord(Base):
             name="ck_studio_job_charge_within_completed",
         ),
         CheckConstraint(
-            "reservation_kind IS NULL OR reservation_kind = 'studio_visual'",
+            STUDIO_JOB_ADDITIVE_CHECKS["ck_studio_job_reservation_kind"],
             name="ck_studio_job_reservation_kind",
         ),
         CheckConstraint(
@@ -504,15 +568,13 @@ class StudioJobRecord(Base):
             name="ck_studio_job_charge_requires_success",
         ),
         CheckConstraint(
-            "accepted_output_sha256 IS NULL OR "
-            "(action_id = 'factory' AND status = 'succeeded')",
+            STUDIO_JOB_ADDITIVE_CHECKS["ck_studio_job_evidence_scope"],
             name="ck_studio_job_evidence_scope",
         ),
         CheckConstraint(
-            "action_id != 'factory' OR status != 'succeeded' OR "
-            "(requested_outputs = 1 AND completed_outputs = 1 AND "
-            "charged_outputs = 1 AND accepted_output_sha256 IS NOT NULL AND "
-            "length(accepted_output_sha256) = 64)",
+            STUDIO_JOB_ADDITIVE_CHECKS[
+                "ck_studio_job_factory_success_evidence"
+            ],
             name="ck_studio_job_factory_success_evidence",
         ),
     )
@@ -1652,6 +1714,181 @@ class ApprovalResponse(Base):
         DateTime(timezone=True), default=utcnow)
 
 
+_STUDIO_JOB_INTEGRITY_VIOLATION = """
+    (reservation_kind IS NOT NULL AND reservation_kind <> 'studio_visual')
+    OR (
+        accepted_output_sha256 IS NOT NULL
+        AND NOT (
+            COALESCE(action_id, '') = 'factory'
+            AND COALESCE(status, '') = 'succeeded'
+        )
+    )
+    OR (
+        COALESCE(action_id, '') = 'factory'
+        AND COALESCE(status, '') = 'succeeded'
+        AND (
+            COALESCE(requested_outputs, -1) <> 1
+            OR COALESCE(completed_outputs, -1) <> 1
+            OR COALESCE(charged_outputs, -1) <> 1
+            OR accepted_output_sha256 IS NULL
+            OR length(accepted_output_sha256) <> 64
+        )
+    )
+"""
+
+
+def _record_schema_migration(connection, *, dialect: str, mode: str) -> None:
+    existing = connection.execute(
+        select(SchemaMigrationRecord.revision).where(
+            SchemaMigrationRecord.revision == STUDIO_JOB_INTEGRITY_REVISION
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return
+    connection.execute(
+        SchemaMigrationRecord.__table__.insert().values(
+            revision=STUDIO_JOB_INTEGRITY_REVISION,
+            dialect=dialect,
+            integrity_mode=mode,
+            applied_at=utcnow(),
+        )
+    )
+
+
+def _assert_studio_job_integrity_ready(connection) -> None:
+    invalid = connection.execute(text(
+        "SELECT id FROM studio_jobs WHERE "
+        f"({_STUDIO_JOB_INTEGRITY_VIOLATION}) LIMIT 1"
+    )).scalar_one_or_none()
+    if invalid is not None:
+        raise RuntimeError(
+            "studio job integrity migration stopped: historical job "
+            f"{invalid!r} violates the new reservation/factory evidence "
+            "contract; no data was changed"
+        )
+
+
+def _ensure_sqlite_studio_job_integrity(engine) -> None:
+    check_names = {
+        item.get("name")
+        for item in inspect(engine).get_check_constraints("studio_jobs")
+    }
+    if STUDIO_JOB_ADDITIVE_CHECKS.keys() <= check_names:
+        with engine.begin() as connection:
+            _assert_studio_job_integrity_ready(connection)
+            _record_schema_migration(
+                connection,
+                dialect="sqlite",
+                mode="native_check_constraints",
+            )
+        return
+
+    trigger_names = {
+        "facetta_studio_job_integrity_v1_insert": "INSERT",
+        "facetta_studio_job_integrity_v1_update": "UPDATE",
+    }
+    trigger_violation = _STUDIO_JOB_INTEGRITY_VIOLATION
+    for column in (
+        "reservation_kind",
+        "accepted_output_sha256",
+        "action_id",
+        "status",
+        "requested_outputs",
+        "completed_outputs",
+        "charged_outputs",
+    ):
+        trigger_violation = trigger_violation.replace(column, f"NEW.{column}")
+    with engine.begin() as connection:
+        _assert_studio_job_integrity_ready(connection)
+        for trigger_name, operation in trigger_names.items():
+            connection.execute(text(f"""
+                CREATE TRIGGER IF NOT EXISTS {trigger_name}
+                BEFORE {operation} ON studio_jobs
+                FOR EACH ROW
+                WHEN {trigger_violation}
+                BEGIN
+                    SELECT RAISE(
+                        ABORT,
+                        'studio job reservation/factory evidence invariant'
+                    );
+                END
+            """))
+        installed = {
+            row[0] for row in connection.execute(text(
+                "SELECT name FROM sqlite_master "
+                "WHERE type = 'trigger' AND name IN "
+                "('facetta_studio_job_integrity_v1_insert', "
+                "'facetta_studio_job_integrity_v1_update')"
+            ))
+        }
+        if installed != set(trigger_names):
+            raise RuntimeError(
+                "SQLite studio job integrity triggers were not installed"
+            )
+        _record_schema_migration(
+            connection,
+            dialect="sqlite",
+            mode="additive_integrity_triggers",
+        )
+
+
+def _ensure_postgresql_studio_job_integrity(engine) -> None:
+    # Serialize runtime upgrades across application replicas. The lock lives
+    # only for this transaction and does not survive a crash or failed DDL.
+    with engine.begin() as connection:
+        connection.execute(text(
+            "SELECT pg_advisory_xact_lock(7046132541660386644)"
+        ))
+        _assert_studio_job_integrity_ready(connection)
+        existing = {
+            row[0] for row in connection.execute(text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conrelid = 'studio_jobs'::regclass AND contype = 'c'"
+            ))
+        }
+        for constraint_name, expression in STUDIO_JOB_ADDITIVE_CHECKS.items():
+            if constraint_name not in existing:
+                connection.execute(text(
+                    f"ALTER TABLE studio_jobs ADD CONSTRAINT "
+                    f"{constraint_name} CHECK ({expression}) NOT VALID"
+                ))
+            connection.execute(text(
+                f"ALTER TABLE studio_jobs VALIDATE CONSTRAINT "
+                f"{constraint_name}"
+            ))
+        validated = {
+            row[0] for row in connection.execute(text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conrelid = 'studio_jobs'::regclass "
+                "AND contype = 'c' AND convalidated"
+            ))
+        }
+        missing = STUDIO_JOB_ADDITIVE_CHECKS.keys() - validated
+        if missing:
+            raise RuntimeError(
+                "PostgreSQL studio job constraints were not validated: "
+                + ", ".join(sorted(missing))
+            )
+        _record_schema_migration(
+            connection,
+            dialect="postgresql",
+            mode="validated_check_constraints",
+        )
+
+
+def _ensure_studio_job_integrity(engine) -> None:
+    if engine.dialect.name == "sqlite":
+        _ensure_sqlite_studio_job_integrity(engine)
+        return
+    if engine.dialect.name == "postgresql":
+        _ensure_postgresql_studio_job_integrity(engine)
+        return
+    raise RuntimeError(
+        "Facetta supports additive schema integrity upgrades only on SQLite "
+        "and PostgreSQL"
+    )
+
+
 def _apply_additive_migrations(engine) -> None:
     """Add columns that newer schema versions introduced (additive only)."""
     from sqlalchemy import inspect, text
@@ -2060,6 +2297,7 @@ def _apply_additive_migrations(engine) -> None:
                     "CREATE INDEX ix_studio_jobs_reservation_kind "
                     "ON studio_jobs (reservation_kind)"
                 ))
+        _ensure_studio_job_integrity(engine)
 
 
 def normalize_database_url(url: str) -> str:

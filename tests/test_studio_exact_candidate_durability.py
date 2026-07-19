@@ -1065,7 +1065,34 @@ def test_view_job_unique_index_migration_is_additive_and_fail_closed():
             "spec_hash": "3" * 16,
             "job": "job_old_duplicate",
         }
+        connection.execute(text(
+            "INSERT INTO image_assets ("
+            "id,root_id,capability,image,media_type,created_by,created_at) "
+            "VALUES (:source,:source,'SPEC_RENDER',X'01','image/png',"
+            ":owner,CURRENT_TIMESTAMP)"
+        ), row)
+        connection.execute(text(
+            "INSERT INTO projects ("
+            "root_id,owner,title,tags,created_at,updated_at) VALUES ("
+            ":project,:owner,'Old project','[]',CURRENT_TIMESTAMP,"
+            "CURRENT_TIMESTAMP)"
+        ), row)
+        connection.execute(text(
+            "INSERT INTO studio_jobs ("
+            "id,owner,action_id,lane,status,progress,active_design_id,"
+            "source_revision_id,requested_outputs,credits_per_output,"
+            "completed_outputs,charged_outputs,created_at,updated_at) "
+            "VALUES (:job,:owner,'views','fast_visual','running',0.2,"
+            ":project,:source,1,15,0,0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"
+        ), row)
         for ordinal in (1, 2):
+            connection.execute(text(
+                "INSERT INTO image_runs ("
+                "id,operation,normalized_intent,prompt_version,variant,"
+                "status,created_by,created_at) VALUES ("
+                ":run,'VIEW_GENERATE','{}','legacy.v1',0,'review_required',"
+                ":owner,CURRENT_TIMESTAMP)"
+            ), {**row, "run": f"run_old_{ordinal}"})
             connection.execute(text(
                 "INSERT INTO studio_view_candidates ("
                 "id,image_run_id,owner,project_root_id,source_asset_id,"

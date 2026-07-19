@@ -10,7 +10,9 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier, Lock
 from time import sleep
 
-from sqlalchemy import select
+import pytest
+from sqlalchemy import create_engine, inspect, select, text
+from sqlalchemy.exc import IntegrityError
 
 import facetta.db as db
 
@@ -79,6 +81,108 @@ class TestEngineConfig:
         # the non-libpq flag would make psycopg's connect() raise, so it's removed
         assert "pgbouncer" not in url
         assert kwargs["connect_args"] == {"prepare_threshold": None}
+
+
+def test_every_sqlite_connection_enforces_foreign_keys():
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        assert connection.execute(text("PRAGMA foreign_keys")).scalar_one() == 1
+        connection.execute(text("CREATE TABLE parent (id INTEGER PRIMARY KEY)"))
+        connection.execute(text(
+            "CREATE TABLE child ("
+            "id INTEGER PRIMARY KEY, parent_id INTEGER NOT NULL "
+            "REFERENCES parent(id))"
+        ))
+
+    # Atomic units of work may stage a child before its parent; validation is
+    # deferred to commit so ORM flush ordering is not a correctness contract.
+    with engine.begin() as connection:
+        connection.execute(text(
+            "INSERT INTO child (id, parent_id) VALUES (1, 1)"
+        ))
+        connection.execute(text("INSERT INTO parent (id) VALUES (1)"))
+
+    with pytest.raises(IntegrityError):
+        with engine.begin() as connection:
+            connection.execute(text(
+                "INSERT INTO child (id, parent_id) VALUES (2, 999)"
+            ))
+
+
+def test_legacy_studio_job_integrity_upgrade_is_additive_and_idempotent():
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.execute(text(
+            "CREATE TABLE studio_jobs ("
+            "id VARCHAR(32) PRIMARY KEY, owner VARCHAR(32) NOT NULL, "
+            "action_id VARCHAR(24) NOT NULL, lane VARCHAR(24) NOT NULL, "
+            "status VARCHAR(16) NOT NULL, progress FLOAT NOT NULL, "
+            "active_design_id VARCHAR(32), source_revision_id VARCHAR(32), "
+            "requested_outputs INTEGER NOT NULL, "
+            "credits_per_output INTEGER NOT NULL, "
+            "completed_outputs INTEGER NOT NULL, "
+            "charged_outputs INTEGER NOT NULL, error_code VARCHAR(64), "
+            "created_at DATETIME, updated_at DATETIME)"
+        ))
+        connection.execute(text(
+            "INSERT INTO studio_jobs ("
+            "id, owner, action_id, lane, status, progress, "
+            "requested_outputs, credits_per_output, completed_outputs, "
+            "charged_outputs, created_at, updated_at) VALUES ("
+            "'job_legacy', 'usr_legacy', 'create', 'instant', 'queued', 0, "
+            "1, 1, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        ))
+
+    db.Base.metadata.create_all(engine)
+    db._apply_additive_migrations(engine)
+    db._apply_additive_migrations(engine)
+
+    columns = {
+        column["name"] for column in inspect(engine).get_columns("studio_jobs")
+    }
+    assert {"reservation_kind", "accepted_output_sha256"} <= columns
+    with engine.connect() as connection:
+        assert connection.execute(text(
+            "SELECT action_id, status, reservation_kind, "
+            "accepted_output_sha256 FROM studio_jobs WHERE id = 'job_legacy'"
+        )).one() == ("create", "queued", None, None)
+        triggers = {
+            row[0] for row in connection.execute(text(
+                "SELECT name FROM sqlite_master WHERE type = 'trigger' "
+                "AND name LIKE 'facetta_studio_job_integrity_v1_%'"
+            ))
+        }
+        assert triggers == {
+            "facetta_studio_job_integrity_v1_insert",
+            "facetta_studio_job_integrity_v1_update",
+        }
+        evidence = connection.execute(text(
+            "SELECT dialect, integrity_mode FROM facetta_schema_migrations "
+            "WHERE revision = :revision"
+        ), {"revision": db.STUDIO_JOB_INTEGRITY_REVISION}).one()
+        assert evidence == ("sqlite", "additive_integrity_triggers")
+
+    invalid_updates = (
+        "UPDATE studio_jobs SET reservation_kind = 'provider' "
+        "WHERE id = 'job_legacy'",
+        "UPDATE studio_jobs SET accepted_output_sha256 = '" + ("a" * 64)
+        + "' WHERE id = 'job_legacy'",
+        "UPDATE studio_jobs SET action_id = 'factory', status = 'succeeded', "
+        "completed_outputs = 1, charged_outputs = 1 "
+        "WHERE id = 'job_legacy'",
+    )
+    for statement in invalid_updates:
+        with pytest.raises(IntegrityError):
+            with engine.begin() as connection:
+                connection.execute(text(statement))
+
+    with engine.begin() as connection:
+        connection.execute(text(
+            "UPDATE studio_jobs SET action_id = 'factory', "
+            "status = 'succeeded', completed_outputs = 1, "
+            "charged_outputs = 1, accepted_output_sha256 = :digest "
+            "WHERE id = 'job_legacy'"
+        ), {"digest": "b" * 64})
 
 
 def test_concurrent_first_sessions_initialize_sqlite_once(monkeypatch, tmp_path):

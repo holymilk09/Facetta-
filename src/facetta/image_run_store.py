@@ -87,7 +87,13 @@ def persist_image_agent_result(
     )
     attempts = [_attempt_row(run_id, attempt)
                 for attempt in result.run.attempts]
-    db.add_all([run, *attempts])
+    db.add(run)
+    # ImageRun/ImageAttempt intentionally expose no mutable ORM relationship,
+    # so SQLAlchemy has no object-graph edge from which to infer insert order.
+    # Flush the immutable parent first; the surrounding transaction still
+    # commits or rolls back the run and all attempts atomically.
+    db.flush()
+    db.add_all(attempts)
     if commit:
         db.commit()
     else:
@@ -125,6 +131,7 @@ def persist_image_agent_failure(
         error_category=error.category.value,
         created_by=created_by,
     ))
+    db.flush()
     db.add_all([_attempt_row(run_id, attempt) for attempt in error.attempts])
     if commit:
         db.commit()

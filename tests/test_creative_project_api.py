@@ -1843,7 +1843,9 @@ def test_creative_direction_commit_rejects_ambiguous_affine_derivative_proof(
             usage=dict(attempt.usage),
             created_at=utcnow(),
         )
-        db.add_all([duplicate_run, duplicate_attempt])
+        db.add(duplicate_run)
+        db.flush()
+        db.add(duplicate_attempt)
         db.commit()
 
     job_id = _reviewing_create_job(
@@ -1970,8 +1972,9 @@ def test_creative_direction_commit_rejects_secondary_view_as_provenance(
             created_by="usr_designer",
             created_at=utcnow(),
         )
-        db.add_all([
-            secondary_run,
+        db.add(secondary_run)
+        db.flush()
+        db.add(
             ImageAttempt(
                 id="iat_secondary_comparison_view",
                 run_id=secondary_run.id,
@@ -1984,8 +1987,8 @@ def test_creative_direction_commit_rejects_secondary_view_as_provenance(
                 output_hash=candidate_sha256,
                 usage={},
                 created_at=utcnow(),
-            ),
-        ])
+            )
+        )
         db.commit()
 
     job_id = _reviewing_create_job(
@@ -4168,8 +4171,9 @@ def test_creative_direction_commit_fails_closed_without_exact_generation_evidenc
                 created_by=selected_run.created_by,
                 created_at=utcnow(),
             )
-            db.add_all([
-                duplicate_run,
+            db.add(duplicate_run)
+            db.flush()
+            db.add(
                 ImageAttempt(
                     id="iat_ambiguous_candidate",
                     run_id=duplicate_run.id,
@@ -4182,8 +4186,8 @@ def test_creative_direction_commit_fails_closed_without_exact_generation_evidenc
                     output_hash=selected_sha256,
                     usage={},
                     created_at=utcnow(),
-                ),
-            ])
+                )
+            )
         db.commit()
 
     job_id = _reviewing_create_job(

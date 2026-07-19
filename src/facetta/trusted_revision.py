@@ -214,7 +214,12 @@ def _accept_derived_warning_candidate(
         ),
     )
     project.updated_at = utcnow()
-    db.add_all([child, review, artifact])
+    db.add_all([child, review])
+    # Derived metadata references both immutable rows by scalar ID. Flush its
+    # parents first because no mutable ORM relationship exists to communicate
+    # that dependency to the unit-of-work sorter.
+    db.flush()
+    db.add(artifact)
     try:
         db.commit()
     except Exception:

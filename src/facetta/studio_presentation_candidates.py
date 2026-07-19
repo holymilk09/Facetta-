@@ -712,6 +712,10 @@ def store_studio_presentation_candidate(
                 "exact Present job outputs require a deterministic ordinal",
                 status_code=422,
             )
+        # The append-only link stores scalar IDs rather than a mutable ORM
+        # relationship. Persist its candidate parent first so SQLite and
+        # PostgreSQL enforce the same ordering under immediate foreign keys.
+        db.flush()
         db.add(StudioPresentationCandidateJobLink(
             candidate_id=record.id,
             studio_job_id=studio_job_id,
