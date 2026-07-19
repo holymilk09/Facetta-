@@ -371,6 +371,35 @@ test('post-generation validation failure cannot generically fail a candidate-own
   assert.equal(transitions.includes('failed'), false);
 });
 
+test('visual generation failures rely on the backend atomic job settlement', async () => {
+  const transitions: string[] = [];
+  const client = {
+    ...baseClient(),
+    createStudioJob: async () => ok(studioJob('queued'), 201),
+    transitionStudioJob: async (_jobId: string, request: any) => {
+      transitions.push(request.status);
+      return ok(studioJob(request.status));
+    },
+    createVisualPreview: async () => ({
+      data: null,
+      error: {
+        code: 'GENERATION_REJECTED', message: 'The preview failed fidelity checks.',
+        category: 'quality' as const, status: 422, retryable: false,
+      },
+      status: 422,
+    }),
+  };
+  const gateway = createStudioGateway(client as any);
+
+  const result = await gateway.previewVisualRefine({
+    projectId: 'project_visual', sourceAssetId: 'asset_source',
+    createdBy: 'designer_1', instruction: 'match both sides', scope: 'appearance',
+  });
+
+  assert.equal(result.error?.code, 'GENERATION_REJECTED');
+  assert.deepEqual(transitions, ['running']);
+});
+
 test('failed-fidelity visual candidates cannot become canonical', async () => {
   let acceptCalls = 0;
   const client = {

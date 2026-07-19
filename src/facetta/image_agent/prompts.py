@@ -30,10 +30,11 @@ PROMPT_VERSIONS = {
     ImageOperation.MOUNTING_VIEW_GENERATE: "mounting-view.v1",
 }
 
-# Current xAI Imagine requests reject prompts above 8,000 characters. The
-# orchestrator enforces this before any paid call; prompt projection below
-# keeps authoritative nonvisual evidence out of the image model entirely.
-MAX_PROVIDER_PROMPT_CHARS = 8_000
+# Keep one conservative orchestration boundary below OpenAI's provider-level
+# 32,000-character guard while leaving room for a bounded preservation
+# correction. The prior 8,000-character ceiling admitted the initial Refine
+# contract but mechanically rejected its first QA correction before execution.
+MAX_PROVIDER_PROMPT_CHARS = 16_000
 
 # These warnings concern the exact requested visual operation and can improve
 # through a targeted retry. Other warnings (for example raster dimensional or

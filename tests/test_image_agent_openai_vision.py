@@ -108,6 +108,8 @@ def test_openai_prompt_inspector_sends_direction_and_returns_typed_result(
     assert captured["candidate"] == b"candidate-image"
     assert "exactly three round diamonds" in str(captured["ask"])
     assert '"complete_piece_visible"' in str(captured["system"])
+    assert '"left_count":0,"right_count":0' not in str(captured["system"])
+    assert '"left_count":1,"right_count":1' in str(captured["system"])
     assert captured["response_schema"] == (
         quality_module.CreativeRenderInspection.model_json_schema()
     )
@@ -140,6 +142,7 @@ def test_focused_six_leaf_inspector_requests_an_exhaustive_strict_inventory(
 
     assert result.audits == ()
     assert "Inventory EVERY visible ruby motif" in str(captured["system"])
+    assert "incidental ruby accent" in str(captured["system"])
     assert "Broad necklace coverage checklist" in str(captured["ask"])
     assert captured["response_schema"] == (
         quality_module.SixLeafRubyPatternInspection.model_json_schema()

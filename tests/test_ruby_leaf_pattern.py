@@ -8,7 +8,10 @@ from facetta.image_agent import (
     NecklaceSymmetryPairAudit,
     SixLeafRubyPatternAudit,
 )
-from facetta.ruby_leaf_pattern import evaluate_six_leaf_ruby_pattern_audits
+from facetta.ruby_leaf_pattern import (
+    canonical_six_leaf_coverage_audits,
+    evaluate_six_leaf_ruby_pattern_audits,
+)
 
 
 PATTERN_INTENT = with_jewelry_symmetry_contract(
@@ -116,6 +119,76 @@ def test_corresponding_motifs_require_the_same_mirrored_material_phase():
 def test_complete_alternating_pair_passes():
     result = _evaluate(_motif(), _motif(side="right"))
 
+    assert result.passed is True
+    assert result.reasons == ()
+
+
+def test_incidental_ruby_accent_beside_leaf_links_is_not_a_six_leaf_motif():
+    incidental = _pair_audit().model_copy(update={
+        "pair_audits": (_pair_audit().pair_audits[0].model_copy(update={
+            "position_from_center": 1,
+            "left_component": "small ruby accent followed by two leaf links",
+            "right_component": "small ruby accent followed by two leaf links",
+        }),),
+    })
+    result = evaluate_six_leaf_ruby_pattern_audits(
+        PATTERN_INTENT,
+        (
+            _motif(position_from_center=3),
+            _motif(side="right", position_from_center=3),
+        ),
+        necklace_audits=(incidental,),
+    )
+
+    assert result.passed is True
+    assert result.reasons == ()
+
+
+def test_invalid_incidental_rows_do_not_override_governed_floral_pairs():
+    invalid_incidental = _motif(
+        position_from_center=2,
+        ruby_component="small ruby accent beside two ordinary leaf links",
+        leaf_count=2,
+        diamond_leaf_count=1,
+        tsavorite_leaf_count=1,
+        material_sequence=("diamond", "tsavorite"),
+    )
+    result = _evaluate(
+        _motif(),
+        _motif(side="right"),
+        invalid_incidental,
+        invalid_incidental.model_copy(update={"side": "right"}),
+    )
+
+    assert result.passed is True
+    assert result.audit_count == 2
+    assert result.reasons == ()
+
+
+def test_independent_necklace_audits_do_not_union_local_motif_positions():
+    primary = _pair_audit()
+    skeptical_pair = primary.pair_audits[0].model_copy(update={
+        "position_from_center": 2,
+        "left_component": "second ruby floral motif",
+        "right_component": "second ruby floral motif",
+    })
+    skeptical = primary.model_copy(update={
+        "left_count": 2,
+        "right_count": 2,
+        "pair_audits": (
+            primary.pair_audits[0],
+            skeptical_pair,
+        ),
+    })
+
+    selected = canonical_six_leaf_coverage_audits((primary, skeptical))
+    result = evaluate_six_leaf_ruby_pattern_audits(
+        PATTERN_INTENT,
+        (_motif(), _motif(side="right")),
+        necklace_audits=(primary, skeptical),
+    )
+
+    assert selected == (primary,)
     assert result.passed is True
     assert result.reasons == ()
 

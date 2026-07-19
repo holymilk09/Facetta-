@@ -24,13 +24,39 @@ class SixLeafRubyPatternGateResult:
 
 def _names_leaf_ruby_motif(component: str) -> bool:
     lowered = component.casefold()
-    return "ruby" in lowered and any(
-        cue in lowered for cue in ("leaf", "leaves", "floral", "flower")
+    return "ruby" in lowered and (
+        any(cue in lowered for cue in ("floral", "flower"))
+        or (
+            any(cue in lowered for cue in ("six", "6"))
+            and any(cue in lowered for cue in ("leaf", "leaves"))
+        )
     )
 
 
 def _audit_key(audit: SixLeafRubyPatternAudit) -> str:
     return f"{audit.side} motif {audit.position_from_center}"
+
+
+def canonical_six_leaf_coverage_audits(
+    necklace_audits: tuple[NecklaceSymmetryAudit, ...],
+) -> tuple[NecklaceSymmetryAudit, ...]:
+    """Choose one positional ledger for the focused motif inventory.
+
+    Independent primary and skeptical necklace audits each number components
+    from their own centerline anchor. Their positions are local coordinates,
+    so unioning them can invent required motif positions that neither audit
+    intended. Keep the first complete ledger that names a governed motif; the
+    other audits still participate independently in the necklace-symmetry veto.
+    """
+
+    for audit in necklace_audits:
+        if any(
+            _names_leaf_ruby_motif(pair.left_component)
+            or _names_leaf_ruby_motif(pair.right_component)
+            for pair in audit.pair_audits
+        ):
+            return (audit,)
+    return necklace_audits[:1]
 
 
 def _validate_motif(audit: SixLeafRubyPatternAudit) -> list[str]:
@@ -81,9 +107,41 @@ def evaluate_six_leaf_ruby_pattern_audits(
             0,
         )
 
+    coverage_audits = canonical_six_leaf_coverage_audits(necklace_audits)
+    required_pair_positions = {
+        pair.position_from_center
+        for necklace in coverage_audits
+        for pair in necklace.pair_audits
+        if (
+            _names_leaf_ruby_motif(pair.left_component)
+            or _names_leaf_ruby_motif(pair.right_component)
+        )
+    }
+    governed_audits = tuple(
+        audit for audit in audits
+        if (
+            not required_pair_positions
+            or (
+                audit.side == "center"
+                and audit.position_from_center == 0
+            )
+            or (
+                audit.side in {"left", "right"}
+                and audit.position_from_center in required_pair_positions
+            )
+        )
+    )
+    if not governed_audits:
+        return SixLeafRubyPatternGateResult(
+            True,
+            False,
+            ("structured audits for the governed six-leaf motifs are missing",),
+            0,
+        )
+
     reasons: list[str] = []
     by_location: dict[tuple[str, int], SixLeafRubyPatternAudit] = {}
-    for audit in audits:
+    for audit in governed_audits:
         location = (audit.side, audit.position_from_center)
         if location in by_location:
             reasons.append(f"duplicate {_audit_key(audit)} audit")
@@ -91,15 +149,6 @@ def evaluate_six_leaf_ruby_pattern_audits(
         by_location[location] = audit
         reasons.extend(_validate_motif(audit))
 
-    required_pair_positions = {
-        pair.position_from_center
-        for necklace in necklace_audits
-        for pair in necklace.pair_audits
-        if (
-            _names_leaf_ruby_motif(pair.left_component)
-            or _names_leaf_ruby_motif(pair.right_component)
-        )
-    }
     observed_pair_positions = {
         position
         for side, position in by_location
@@ -122,5 +171,5 @@ def evaluate_six_leaf_ruby_pattern_audits(
         True,
         not reasons,
         tuple(reasons),
-        len(audits),
+        len(governed_audits),
     )

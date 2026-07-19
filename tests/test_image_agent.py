@@ -40,6 +40,7 @@ from facetta.image_agent import (
     RingQualityEvaluator,
     build_image_plan,
 )
+from facetta.image_agent import orchestrator as orchestrator_module
 from facetta.ring_evals import (
     CANONICAL_RING_EDITS,
     RING_GOLDEN_CASES,
@@ -1716,6 +1717,39 @@ class TestRingQualityGates:
 
 
 class TestClosedLoopRouting:
+    def test_bounded_refine_correction_can_exceed_legacy_eight_thousand_chars(
+        self,
+        monkeypatch,
+    ):
+        original = "I" * 7_585
+        corrected = original + ("C" * 935)
+        monkeypatch.setattr(
+            orchestrator_module, "compile_initial_prompt", lambda plan: original
+        )
+        monkeypatch.setattr(
+            orchestrator_module,
+            "compile_correction_prompt",
+            lambda plan, initial, prior: (corrected, "bounded correction"),
+        )
+        provider = FakeProvider()
+        evaluator = SequenceEvaluator(
+            report(QualityVerdict.FAIL),
+            report(QualityVerdict.PASS),
+        )
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            "Match corresponding left and right necklace motifs.",
+            source_image=b"source",
+        )
+
+        result = JewelryImageAgent(provider, evaluator).run(
+            plan, source_image=b"source"
+        )
+
+        assert result.accepted is True
+        assert len(provider.calls) == 2
+        assert len(provider.calls[1]["prompt"]) == 8_520
+
     def test_exact_topology_warning_uses_targeted_retry_before_review(self):
         warning = ImageQualityReport(
             verdict=QualityVerdict.WARN,

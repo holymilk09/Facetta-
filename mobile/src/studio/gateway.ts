@@ -979,6 +979,24 @@ export function createStudioGateway(
     }
   };
 
+  const callBackendSettledGeneration = async <T>(
+    operation: () => Promise<ApiResult<T>>,
+  ): Promise<StudioGatewayResult<T>> => {
+    try {
+      const result = await operation();
+      if (result.error !== null) return {
+        data: null, error: mapError(result.error), status: result.status,
+      };
+      return result;
+    } catch (error) {
+      return gatewayError(
+        'UNEXPECTED_GENERATION_FAILURE',
+        error instanceof Error ? error.message : 'The Studio request failed unexpectedly.',
+        'unavailable', 0, true,
+      );
+    }
+  };
+
   const creativeOutputCount = (project: ProjectDetail, requested: number): number => {
     // New Studio projects keep generated directions outside the immutable
     // revision chain until the designer explicitly selects one. Count that
@@ -2193,8 +2211,7 @@ export function createStudioGateway(
             markup_asset_id: request.markupAssetId,
             ...(request.variant === undefined ? {} : { variant: request.variant }),
           };
-      const result = await callTracked(
-        started.data,
+      const result = await callBackendSettledGeneration(
         () => client.createVisualPreview(request.projectId, trustedRequest),
       );
       if (result.error !== null) return result;
@@ -2661,9 +2678,8 @@ export function createStudioGateway(
       const started = await startJob('refine', request.createdBy, 1, lineage);
       if (started.error !== null) return started;
       const studioJob = started.data;
-      const result = await callTracked(studioJob, () => client.applyMarkup(
-        request.sourceAssetId,
-        {
+      const result = await callBackendSettledGeneration(
+        () => client.applyMarkup(request.sourceAssetId, {
           annotation: request.annotation,
           annotations,
           markup_asset_id: request.markupAssetId ?? null,
@@ -2672,8 +2688,10 @@ export function createStudioGateway(
           ...(request.variant === undefined ? {} : { variant: request.variant }),
           preview_only: true,
           ...(studioJob === null ? {} : { studio_job_id: studioJob.jobId }),
-        },
-      ));
+        }),
+      );
+      // The preview endpoint atomically settles provider and QA failures with
+      // the bound Studio job. Never issue a second client-side terminal PATCH.
       if (result.error !== null) return result;
       markBackendCandidateReviewing(studioJob);
       const warning = result.data.warning_candidate;

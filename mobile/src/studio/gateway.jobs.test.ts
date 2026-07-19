@@ -588,6 +588,35 @@ test('tracked Create failures rely on the backend atomic job settlement', async 
   assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running']);
 });
 
+test('tracked markup failures rely on the backend atomic job settlement', async () => {
+  const jobs = tracking();
+  const gateway = createStudioGateway({
+    ...jobs.client,
+    applyMarkup: async () => ({
+      data: null,
+      error: {
+        code: 'GENERATION_REJECTED', message: 'Refinement was rejected.',
+        category: 'quality' as const, status: 422, retryable: false,
+      },
+      status: 422,
+    }),
+  } as any);
+
+  const result = await gateway.previewMarkupRefine({
+    projectId: 'project_1', sourceAssetId: 'candidate_1', sourceDesignVersion: 1,
+    createdBy: 'designer_1', annotation: {
+      region_description: 'bilateral motifs',
+      change_instruction: 'Match corresponding left and right motifs',
+      impact: 'visual_only', target_section: null, target_ref: null, index: null,
+      target_component_id: null, target_element_id: null,
+      form_view: 'front', mask_base64: null,
+    },
+  });
+
+  assert.equal(result.error?.code, 'GENERATION_REJECTED');
+  assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running']);
+});
+
 test('tracked markup refuses compatibility-only candidates before review', async () => {
   const jobs = tracking();
   let genericDecisions = 0;

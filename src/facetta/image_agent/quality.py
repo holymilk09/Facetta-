@@ -41,7 +41,10 @@ from facetta.image_agent.localization import (
     crop_chromatic_center_assembly,
 )
 from facetta.necklace_symmetry import evaluate_necklace_symmetry_audits
-from facetta.ruby_leaf_pattern import evaluate_six_leaf_ruby_pattern_audits
+from facetta.ruby_leaf_pattern import (
+    canonical_six_leaf_coverage_audits,
+    evaluate_six_leaf_ruby_pattern_audits,
+)
 from facetta.image_agent.vision import (
     VisionProviderUnavailable,
     check_design_consistency,
@@ -204,7 +207,7 @@ Return JSON only:
  "symmetry_expectation_matches": true|false|null,
  "symmetry_observations": ["specific left/right or radial evidence"],
  "six_leaf_ruby_pattern_audits": [{"side":"left","position_from_center":1,"ruby_component":"specific ruby motif","complete_motif_assessable":true|false|null,"leaf_count":6,"diamond_leaf_count":3,"tsavorite_leaf_count":3,"material_sequence":["diamond","tsavorite","diamond","tsavorite","diamond","tsavorite"],"whole_leaf_treatments":true|false|null,"observation":"specific sequence evidence"}],
- "necklace_symmetry_audits": [{"expectation":"bilateral|explicit_asymmetry|source_asymmetry","centerline_anchor":"visible center element","complete_piece_assessable":true|false|null,"left_count":0,"right_count":0,"pair_audits":[{"position_from_center":1,"left_component":"specific element","right_component":"specific element","motif_order_matches":true|false|null,"orientation_matches":true|false|null,"spacing_matches":true|false|null,"scale_matches":true|false|null,"metal_treatment_matches":true|false|null,"pave_coverage_matches":true|false|null,"gemstone_treatment_matches":true|false|null,"connection_type_matches":true|false|null,"authorized_differences":[],"observation":"specific comparison"}],"unpaired_left":[],"unpaired_right":[],"unpaired_elements_authorized":false,"requested_asymmetry_preserved":null,"unrequested_differences_absent":true|false|null}],
+ "necklace_symmetry_audits": [{"expectation":"bilateral|explicit_asymmetry|source_asymmetry","centerline_anchor":"visible center element","complete_piece_assessable":true|false|null,"left_count":1,"right_count":1,"pair_audits":[{"position_from_center":1,"left_component":"specific element","right_component":"specific element","motif_order_matches":true|false|null,"orientation_matches":true|false|null,"spacing_matches":true|false|null,"scale_matches":true|false|null,"metal_treatment_matches":true|false|null,"pave_coverage_matches":true|false|null,"gemstone_treatment_matches":true|false|null,"connection_type_matches":true|false|null,"authorized_differences":[],"observation":"specific comparison"}],"unpaired_left":[],"unpaired_right":[],"unpaired_elements_authorized":false,"requested_asymmetry_preserved":null,"unrequested_differences_absent":true|false|null}],
  "text_or_branding_detected": true|false|null,
  "major_unintended_changes": ["specific visible difference"],
  "score": 0-100,
@@ -241,7 +244,9 @@ For a necklace, pendant, choker, collar, lariat, torque, or neckpiece, return
 exactly one necklace_symmetry_audits entry. Inventory both strands completely
 from the named centerline anchor outward. One pair_audits row is required for
 every corresponding position. A bilateral row must assess every match field;
-do not summarize several unlike links as one row. authorized_differences stays
+left_count and right_count are strand inventory counts, and each must exactly
+equal the number of pair_audits rows when there are no unpaired elements.
+Do not summarize several unlike links as one row. authorized_differences stays
 empty unless the designer explicitly requested that exact difference or the
 identity source visibly establishes it.
 
@@ -278,7 +283,7 @@ Return JSON only:
  "symmetry_expectation_matches": true|false|null,
  "symmetry_observations": ["specific left/right or radial evidence"],
  "six_leaf_ruby_pattern_audits": [{"side":"left","position_from_center":1,"ruby_component":"specific ruby motif","complete_motif_assessable":true|false|null,"leaf_count":6,"diamond_leaf_count":3,"tsavorite_leaf_count":3,"material_sequence":["diamond","tsavorite","diamond","tsavorite","diamond","tsavorite"],"whole_leaf_treatments":true|false|null,"observation":"specific sequence evidence"}],
- "necklace_symmetry_audits": [{"expectation":"bilateral|explicit_asymmetry|source_asymmetry","centerline_anchor":"visible center element","complete_piece_assessable":true|false|null,"left_count":0,"right_count":0,"pair_audits":[{"position_from_center":1,"left_component":"specific element","right_component":"specific element","motif_order_matches":true|false|null,"orientation_matches":true|false|null,"spacing_matches":true|false|null,"scale_matches":true|false|null,"metal_treatment_matches":true|false|null,"pave_coverage_matches":true|false|null,"gemstone_treatment_matches":true|false|null,"connection_type_matches":true|false|null,"authorized_differences":[],"observation":"specific comparison"}],"unpaired_left":[],"unpaired_right":[],"unpaired_elements_authorized":false,"requested_asymmetry_preserved":null,"unrequested_differences_absent":true|false|null}],
+ "necklace_symmetry_audits": [{"expectation":"bilateral|explicit_asymmetry|source_asymmetry","centerline_anchor":"visible center element","complete_piece_assessable":true|false|null,"left_count":1,"right_count":1,"pair_audits":[{"position_from_center":1,"left_component":"specific element","right_component":"specific element","motif_order_matches":true|false|null,"orientation_matches":true|false|null,"spacing_matches":true|false|null,"scale_matches":true|false|null,"metal_treatment_matches":true|false|null,"pave_coverage_matches":true|false|null,"gemstone_treatment_matches":true|false|null,"connection_type_matches":true|false|null,"authorized_differences":[],"observation":"specific comparison"}],"unpaired_left":[],"unpaired_right":[],"unpaired_elements_authorized":false,"requested_asymmetry_preserved":null,"unrequested_differences_absent":true|false|null}],
  "text_or_branding_detected": true|false|null,
  "major_unintended_changes": ["specific source-to-candidate difference"],
  "score": 0-100,
@@ -300,6 +305,8 @@ Record the compared elements in symmetry_observations.
 For every necklace-family piece, also return exactly one structured
 necklace_symmetry_audits entry and inventory every corresponding position from
 the visible centerline outward. Assess every pair field independently. Never
+set left_count or right_count to a representative value: each must exactly
+equal the number of pair_audits rows when there are no unpaired elements. Never
 authorize a difference merely because the generated candidate contains it.
 
 text_or_branding_detected inspects the SECOND candidate image only. Ignore
@@ -449,10 +456,12 @@ factory readiness, or overall necklace quality.
 Inventory EVERY visible ruby motif surrounded by leaves. Never return a
 representative sample. The broad necklace inventory supplied by the user is a
 coverage checklist: for every pair whose component description names a ruby
-flower, floral ruby, ruby leaf, or ruby leaves, return both a left and a right
-audit with that exact position_from_center. Return center motifs separately
-with side center and position 0. If a required motif is cropped, ambiguous, or
-not actually leaf-surrounded, still return its row and mark
+flower, floral ruby, or an explicit six-leaf ruby surround, return both a left
+and a right audit with that exact position_from_center. Do not treat an
+incidental ruby accent beside one or two ordinary leaf links as a governed
+six-leaf motif. Return a center row only when the center ruby visibly has the
+governed six-leaf surround. If a required motif is cropped or ambiguous, still
+return its row and mark
 complete_motif_assessable false instead of omitting it.
 
 Count six whole leaves individually. Count diamond and tsavorite leaves
@@ -508,7 +517,7 @@ Return JSON only:
  "symmetry_expectation_matches": true|false|null,
  "symmetry_observations": ["specific left/right or radial evidence"],
  "six_leaf_ruby_pattern_audits": [{"side":"left","position_from_center":1,"ruby_component":"specific ruby motif","complete_motif_assessable":true|false|null,"leaf_count":6,"diamond_leaf_count":3,"tsavorite_leaf_count":3,"material_sequence":["diamond","tsavorite","diamond","tsavorite","diamond","tsavorite"],"whole_leaf_treatments":true|false|null,"observation":"specific sequence evidence"}],
- "necklace_symmetry_audits": [{"expectation":"bilateral|explicit_asymmetry|source_asymmetry","centerline_anchor":"visible center element","complete_piece_assessable":true|false|null,"left_count":0,"right_count":0,"pair_audits":[{"position_from_center":1,"left_component":"specific element","right_component":"specific element","motif_order_matches":true|false|null,"orientation_matches":true|false|null,"spacing_matches":true|false|null,"scale_matches":true|false|null,"metal_treatment_matches":true|false|null,"pave_coverage_matches":true|false|null,"gemstone_treatment_matches":true|false|null,"connection_type_matches":true|false|null,"authorized_differences":[],"observation":"specific comparison"}],"unpaired_left":[],"unpaired_right":[],"unpaired_elements_authorized":false,"requested_asymmetry_preserved":null,"unrequested_differences_absent":true|false|null}],
+ "necklace_symmetry_audits": [{"expectation":"bilateral|explicit_asymmetry|source_asymmetry","centerline_anchor":"visible center element","complete_piece_assessable":true|false|null,"left_count":1,"right_count":1,"pair_audits":[{"position_from_center":1,"left_component":"specific element","right_component":"specific element","motif_order_matches":true|false|null,"orientation_matches":true|false|null,"spacing_matches":true|false|null,"scale_matches":true|false|null,"metal_treatment_matches":true|false|null,"pave_coverage_matches":true|false|null,"gemstone_treatment_matches":true|false|null,"connection_type_matches":true|false|null,"authorized_differences":[],"observation":"specific comparison"}],"unpaired_left":[],"unpaired_right":[],"unpaired_elements_authorized":false,"requested_asymmetry_preserved":null,"unrequested_differences_absent":true|false|null}],
  "text_or_branding_detected": true|false|null,
  "major_unintended_changes": ["specific contradiction of the direction"],
  "score": 0-100,
@@ -549,7 +558,9 @@ Use null only when the complete-piece view cannot establish the relationship,
 and record the exact evidence in symmetry_observations.
 For every necklace-family piece, return exactly one structured
 necklace_symmetry_audits entry. Inventory every corresponding element from the
-visible centerline outward and assess each match field; use an empty audit only
+visible centerline outward and assess each match field. left_count and
+right_count must each exactly equal the number of pair_audits rows when there
+are no unpaired elements; use an empty audit only
 when the complete piece is genuinely not assessable.
 Use null only when the candidate truly cannot establish a requested visual fact."""
 
@@ -1050,6 +1061,47 @@ def _merge_creative_inspections(
         *(f"skeptical audit: {note}" for note in skeptical.notes),
     )
     return primary.model_copy(update=update)
+
+
+def _normalize_redundant_necklace_counts(
+    inspection: CreativeRenderInspection,
+) -> CreativeRenderInspection:
+    """Prefer a complete detailed pair ledger over an undercounted summary.
+
+    Vision models sometimes emit the example value ``1`` for left_count and
+    right_count while returning several ordered pair rows. Only the safe
+    undercount case is normalized: bilateral counts must agree, the pair rows
+    must form a complete center-outward sequence, and no unpaired elements may
+    exist. Overcounts remain a fail-closed signal for missing pair evidence.
+    """
+
+    normalized: list[NecklaceSymmetryAudit] = []
+    changed = False
+    for audit in inspection.necklace_symmetry_audits:
+        pair_count = len(audit.pair_audits)
+        positions = tuple(
+            pair.position_from_center for pair in audit.pair_audits
+        )
+        can_use_pair_ledger = (
+            audit.expectation == "bilateral"
+            and audit.left_count == audit.right_count
+            and audit.left_count < pair_count
+            and not audit.unpaired_left
+            and not audit.unpaired_right
+            and positions == tuple(range(1, pair_count + 1))
+        )
+        if can_use_pair_ledger:
+            audit = audit.model_copy(update={
+                "left_count": pair_count,
+                "right_count": pair_count,
+            })
+            changed = True
+        normalized.append(audit)
+    if not changed:
+        return inspection
+    return inspection.model_copy(update={
+        "necklace_symmetry_audits": tuple(normalized),
+    })
 
 
 class GrokPromptCreativeRenderInspector:
@@ -1797,6 +1849,7 @@ class RingQualityEvaluator:
         if (
             self._six_leaf_pattern_inspector is None
             and prompt_creative_inspector is None
+            and creative_inspector is None
         ):
             self._six_leaf_pattern_inspector = (
                 FocusedSixLeafRubyPatternInspector()
@@ -1884,6 +1937,7 @@ class RingQualityEvaluator:
         if plan.operation is ImageOperation.CREATIVE_GENERATE:
             inspection = self._prompt_creative_inspector.inspect_render(
                 plan, candidate)
+            inspection = _normalize_redundant_necklace_counts(inspection)
             if (
                 SIX_LEAF_RUBY_PATTERN_CONTRACT in plan.intent
                 and self._six_leaf_pattern_inspector is not None
@@ -1891,7 +1945,9 @@ class RingQualityEvaluator:
                 focused = self._six_leaf_pattern_inspector.inspect_render(
                     plan,
                     candidate,
-                    inspection.necklace_symmetry_audits,
+                    canonical_six_leaf_coverage_audits(
+                        inspection.necklace_symmetry_audits
+                    ),
                 )
                 inspection = inspection.model_copy(update={
                     "six_leaf_ruby_pattern_audits": focused.audits,
@@ -1920,6 +1976,22 @@ class RingQualityEvaluator:
                     )
                 inspection = _merge_creative_inspections(
                     inspection, skeptical)
+            inspection = _normalize_redundant_necklace_counts(inspection)
+            if (
+                SIX_LEAF_RUBY_PATTERN_CONTRACT in plan.intent
+                and self._six_leaf_pattern_inspector is not None
+            ):
+                focused = self._six_leaf_pattern_inspector.inspect_render(
+                    plan,
+                    candidate,
+                    canonical_six_leaf_coverage_audits(
+                        inspection.necklace_symmetry_audits
+                    ),
+                )
+                inspection = inspection.model_copy(update={
+                    "six_leaf_ruby_pattern_audits": focused.audits,
+                    "notes": (*inspection.notes, *focused.notes),
+                })
             return self._creative_render_report(
                 plan,
                 inspection,

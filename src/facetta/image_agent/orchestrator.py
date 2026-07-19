@@ -209,8 +209,8 @@ class JewelryImageAgent:
         original_prompt = compile_initial_prompt(plan)
         if len(original_prompt) > MAX_PROVIDER_PROMPT_CHARS:
             raise ImagePlanValidationError(
-                "compiled image prompt exceeds the provider's 8000-character "
-                "limit; reduce visual contract complexity before execution",
+                "compiled image prompt exceeds the provider safety limit; "
+                "reduce visual contract complexity before execution",
                 plan=plan,
             )
         attempts: list[ImageAttemptSummary] = []
@@ -274,8 +274,8 @@ class JewelryImageAgent:
 
             if len(prompt) > MAX_PROVIDER_PROMPT_CHARS:
                 raise ImagePlanValidationError(
-                    "compiled corrective image prompt exceeds the provider's "
-                    "8000-character limit",
+                    "compiled corrective image prompt exceeds the provider "
+                    "safety limit",
                     attempts=attempts,
                     plan=plan,
                 )
