@@ -169,7 +169,8 @@ Do not score, label, or infer whether the source is rough, professional,
 complete, skilled, or attractive. Judge only the generated candidate.
 
 Return JSON only:
-{"coherent_jewelry_render": true|false|null,
+{"observed_jewelry_type": "ring|necklace|earrings|bracelet|brooch|other|unclear",
+ "coherent_jewelry_render": true|false|null,
  "complete_piece_visible": true|false|null,
  "source_design_preserved": true|false|null,
  "visible_components_preserved": true|false|null,
@@ -241,7 +242,8 @@ surround panel, repeated motif count/shape/order/spacing, left shoulder, right
 shoulder, gallery openings/supports, and the visible shank profile/pattern.
 
 Return JSON only:
-{"coherent_jewelry_render": true|false|null,
+{"observed_jewelry_type": "ring|necklace|earrings|bracelet|brooch|other|unclear",
+ "coherent_jewelry_render": true|false|null,
  "complete_piece_visible": true|false|null,
  "source_design_preserved": true|false|null,
  "visible_components_preserved": true|false|null,
@@ -434,7 +436,8 @@ ring, necklace, pendant, chain, bracelet, earring, brooch, or another wearable
 fine-jewelry piece.
 
 Return JSON only:
-{"coherent_jewelry_render": true|false|null,
+{"observed_jewelry_type": "ring|necklace|earrings|bracelet|brooch|other|unclear",
+ "coherent_jewelry_render": true|false|null,
  "complete_piece_visible": true|false|null,
  "source_design_preserved": null,
  "visible_components_preserved": null,
@@ -938,6 +941,18 @@ def _merge_creative_inspections(
             True if values == (True, True) else
             None
         )
+    observed_types = {
+        value for value in (
+            primary.observed_jewelry_type,
+            skeptical.observed_jewelry_type,
+        )
+        if value is not None
+    }
+    update["observed_jewelry_type"] = (
+        "necklace" if "necklace" in observed_types else
+        next(iter(observed_types)) if len(observed_types) == 1 else
+        "unclear" if observed_types else None
+    )
     branding = (
         primary.text_or_branding_detected,
         skeptical.text_or_branding_detected,
@@ -2002,6 +2017,7 @@ class RingQualityEvaluator:
                 plan.intent,
                 item.necklace_symmetry_audits,
                 source_present=source_image is not None,
+                observed_jewelry_type=item.observed_jewelry_type,
             )
             if necklace_gate.applicable:
                 checks.insert(-2, QualityCheck(
@@ -2017,7 +2033,12 @@ class RingQualityEvaluator:
                     ),
                     evidence={
                         "audit_count": necklace_gate.audit_count,
+                        "observed_jewelry_type": item.observed_jewelry_type,
                         "reasons": list(necklace_gate.reasons),
+                        "audits": [
+                            audit.model_dump(mode="json")
+                            for audit in item.necklace_symmetry_audits
+                        ],
                         "provider_free_deterministic_validation": True,
                         "pixel_measurement_claimed": False,
                     },

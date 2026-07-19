@@ -298,6 +298,9 @@ class CreativeRenderInspection(_Contract):
 
     model_config = ConfigDict(extra="ignore")
 
+    observed_jewelry_type: Literal[
+        "ring", "necklace", "earrings", "bracelet", "brooch", "other", "unclear"
+    ] | None = None
     coherent_jewelry_render: bool | None = None
     complete_piece_visible: bool | None = None
     source_design_preserved: bool | None = None

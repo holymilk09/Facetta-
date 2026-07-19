@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
+import sys
 
 from facetta.creative_symmetry import with_jewelry_symmetry_contract
 from facetta.image_agent import NecklaceSymmetryAudit, NecklaceSymmetryPairAudit
@@ -69,6 +71,42 @@ def test_bilateral_necklace_requires_structured_center_outward_evidence():
     assert result.reasons == (
         "structured center-outward necklace audit is missing",
     )
+
+
+def test_visual_necklace_classification_requires_audit_without_text_cue():
+    result = evaluate_necklace_symmetry_audits(
+        with_jewelry_symmetry_contract(
+            "Make the left and right sides match link by link."
+        ),
+        (),
+        source_present=True,
+        observed_jewelry_type="necklace",
+    )
+
+    assert result.applicable is True
+    assert result.passed is False
+    assert result.reasons == (
+        "structured center-outward necklace audit is missing",
+    )
+
+
+def test_necklace_symmetry_module_imports_without_image_agent_cycle():
+    source_root = Path(__file__).resolve().parents[1] / "src"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                f"import sys; sys.path.insert(0, {str(source_root)!r}); "
+                "import facetta.necklace_symmetry"
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_bilateral_necklace_rejects_full_gold_vs_half_pave_mismatch():

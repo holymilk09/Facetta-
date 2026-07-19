@@ -56,6 +56,7 @@ from facetta.db import (
 from facetta.image_agent import (
     ImageAgentError,
     ImageAgentResult,
+    ImagePlanValidationError,
     ImageOperation,
     JewelryImageAgent,
     build_image_plan,
@@ -399,6 +400,20 @@ class CreateVisualPreviewRequest(BaseModel):
             raise ValueError(
                 "region-specific annotations require marked_region scope"
             )
+        marked_instructions = " ".join(
+            (
+                self.instruction,
+                *(annotation.change_instruction for annotation in self.annotations),
+            )
+        )
+        if (
+            self.scope == "marked_region"
+            and requests_jewelry_symmetry_repair(marked_instructions)
+        ):
+            raise ValueError(
+                "bilateral symmetry repair cannot use a marked-region boundary; "
+                "use the Symmetry tool so both corresponding sides are authorized"
+            )
         return self
 
 
@@ -678,6 +693,12 @@ def generate_studio_visual_preview(
     """Run a source-faithful, review-only pre-spec visual edit."""
 
     symmetry_repair = requests_jewelry_symmetry_repair(instruction)
+    if scope == "marked_region" and symmetry_repair:
+        raise ImagePlanValidationError(
+            "bilateral symmetry repair cannot use a marked-region boundary; "
+            "use the Symmetry tool so both corresponding sides are authorized",
+            code="marked_symmetry_scope_conflict",
+        )
     scope_instruction = (
         "PRE-SPEC SYMMETRY REPAIR. Correct only the bilateral mismatch the "
         "designer identified. The selected source remains authoritative for "

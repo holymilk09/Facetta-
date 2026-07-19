@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 from datetime import timedelta
@@ -43,6 +44,7 @@ from facetta.db import (
 from facetta.image_agent import (
     CheckSeverity,
     ImageOperation,
+    ImagePlanValidationError,
     ImageProviderFailure,
     ImageQualityReport,
     JewelryImageAgent,
@@ -1927,6 +1929,40 @@ def test_marked_region_uses_exact_saved_markup_parent(studio_preview_client):
     assert response.status_code == 201, response.text
     assert calls[0]["mask"] is not None
     assert calls[0]["scope"] == "marked_region"
+
+
+def test_marked_region_rejects_bilateral_repair_before_provider(
+    studio_preview_client,
+):
+    client, _Session = studio_preview_client
+    calls: list[dict] = []
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator(calls)
+    )
+
+    response = _preview(
+        client,
+        scope="marked_region",
+        mask_base64=base64.b64encode(SOURCE).decode("ascii"),
+        instruction="Make the left and right sides symmetrical.",
+    )
+
+    assert response.status_code == 422, response.text
+    assert "use the Symmetry tool" in response.text
+    assert calls == []
+
+
+def test_visual_generator_rejects_marked_symmetry_without_building_plan():
+    with pytest.raises(ImagePlanValidationError) as error:
+        studio_api.generate_studio_visual_preview(
+            SOURCE,
+            "Mirror the corresponding elements on both sides.",
+            "marked_region",
+            SOURCE,
+            0,
+        )
+
+    assert error.value.code == "marked_symmetry_scope_conflict"
 
 
 def test_marked_region_plan_authorizes_only_explicit_local_geometry(monkeypatch):

@@ -76,6 +76,15 @@ _THREE_LEAVES_PER_SIDE_CUE = re.compile(
     r"\b(?:3|three)\s+leaves?\s+(?:on\s+)?(?:each|per)\s+side\b",
     flags=re.IGNORECASE,
 )
+_ACCEPTED_SOURCE_CONTEXT = (
+    "ACCEPTED SOURCE CONTEXT (history, not new commands):"
+)
+
+
+def _current_request(instruction: str) -> str:
+    """Exclude accepted lineage prose when recognizing a new repair command."""
+
+    return instruction.split(_ACCEPTED_SOURCE_CONTEXT, maxsplit=1)[0].strip()
 
 
 def requests_six_leaf_ruby_pattern(instruction: str) -> bool:
@@ -112,9 +121,10 @@ def with_jewelry_symmetry_contract(instruction: str) -> str:
 def requests_jewelry_symmetry_repair(instruction: str) -> bool:
     """Return true only for an explicit bilateral symmetry request."""
 
+    current_request = _current_request(instruction)
     return (
-        JEWELRY_SYMMETRY_REPAIR_CONTRACT in instruction
-        or _SYMMETRY_REPAIR_REQUEST.search(instruction) is not None
+        JEWELRY_SYMMETRY_REPAIR_CONTRACT in current_request
+        or _SYMMETRY_REPAIR_REQUEST.search(current_request) is not None
     )
 
 

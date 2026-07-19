@@ -187,8 +187,13 @@ describe('StudioRefineWorkspace', () => {
           /intentional bilateral symmetry repair[\s\S]*center element/i,
         ),
       }));
+      expect(view.getByText('Apply change').parent?.props.accessibilityState).toEqual({ disabled: true });
+      expect(view.getByText(/Wait until both the source and preview images are ready/i)).toBeTruthy();
       await fireEvent(view.getByLabelText('Selected source design'), 'load');
+      expect(view.getByText('Apply change').parent?.props.accessibilityState).toEqual({ disabled: true });
       await fireEvent(view.getByLabelText('Temporary edited design preview'), 'load');
+      expect(view.getByText('Apply change').parent?.props.accessibilityState).toEqual({ disabled: false });
+      expect(view.queryByText(/Wait until both the source and preview images are ready/i)).toBeNull();
       await fireEvent.press(view.getByText('Save as variation'));
       expect(view.getByText(/selected source revision and its history stay unchanged/i)).toBeTruthy();
       await fireEvent.changeText(view.getByPlaceholderText('e.g. Rose gold halo'), 'Matched necklace');

@@ -44,6 +44,8 @@ export interface StudioCanvasEditPanelProps {
   working?: StudioCanvasEditWorkingState;
   disabled?: boolean;
   disabledReason?: string | null;
+  applyDisabled?: boolean;
+  applyDisabledReason?: string | null;
   error?: string | null;
   creditEstimate?: number | null;
   instructionValue?: string;
@@ -114,6 +116,8 @@ export function StudioCanvasEditPanel({
   working = null,
   disabled = false,
   disabledReason = null,
+  applyDisabled = false,
+  applyDisabledReason = null,
   error = null,
   creditEstimate = null,
   instructionValue,
@@ -352,13 +356,18 @@ export function StudioCanvasEditPanel({
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              accessibilityState={{ disabled: busy }}
-              disabled={busy}
+              accessibilityState={{ disabled: busy || applyDisabled }}
+              disabled={busy || applyDisabled}
               onPress={onApplyPreview}
-              style={[styles.applyButton, busy && styles.buttonDisabled]}>
+              style={[styles.applyButton, (busy || applyDisabled) && styles.buttonDisabled]}>
               <Text style={styles.primaryButtonText}>{working === 'apply' ? 'Applying…' : 'Apply change'}</Text>
             </Pressable>
           </View>
+          {applyDisabled && applyDisabledReason !== null && (
+            <Text accessibilityRole="alert" style={styles.applyDisabledReason}>
+              {applyDisabledReason}
+            </Text>
+          )}
           <Text style={styles.previewTruth}>
             Apply saves a new revision. Save as variation starts a sibling direction. Discard leaves the selected design unchanged.
           </Text>
@@ -457,6 +466,7 @@ const styles = StyleSheet.create({
   soft_shadowSwatch: { backgroundColor: '#d7d5d0' },
   angleMark: { color: theme.ink, fontFamily: theme.serif, fontSize: 24 },
   disabledReason: { color: '#745513', backgroundColor: '#fff9e9', borderRadius: radius.sm, padding: 10, fontSize: 11, lineHeight: 16, marginTop: 14 },
+  applyDisabledReason: { color: '#745513', fontSize: 11, lineHeight: 16, marginTop: 10 },
   error: { color: theme.danger, fontSize: 11, lineHeight: 16, marginTop: 14 },
   creditEstimate: { color: theme.faint, fontSize: 10, lineHeight: 15, marginTop: 16 },
   primaryButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: '#6f52d9', paddingHorizontal: 16, paddingVertical: 12, marginTop: 12 },

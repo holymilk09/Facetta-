@@ -171,6 +171,28 @@ test('a temporary preview exposes Apply, Save as variation, and Discard as separ
   expect(callbacks.onApplyPreview).toHaveBeenCalledTimes(1);
 });
 
+test('an unavailable Apply explains why while Discard remains available', async () => {
+  const callbacks = handlers();
+  await render(
+    <StudioCanvasEditPanel
+      {...callbacks}
+      preview={{ summary: 'The candidate is still temporary.' }}
+      applyDisabled
+      applyDisabledReason="Wait until both comparison images are ready before applying."
+    />,
+  );
+
+  const reason = screen.getByText(/both comparison images are ready/i);
+  expect(reason.props.accessibilityRole).toBe('alert');
+  expect(screen.getByText('Apply change').parent?.props.accessibilityState).toEqual({ disabled: true });
+  expect(screen.getByText('Discard').parent?.props.accessibilityState).toEqual({ disabled: false });
+
+  await fireEvent.press(screen.getByText('Apply change'));
+  await fireEvent.press(screen.getByText('Discard'));
+  expect(callbacks.onApplyPreview).not.toHaveBeenCalled();
+  expect(callbacks.onDiscardPreview).toHaveBeenCalledTimes(1);
+});
+
 test('working and error states fail closed', async () => {
   const callbacks = handlers();
   await render(

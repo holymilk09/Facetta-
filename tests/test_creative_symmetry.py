@@ -25,6 +25,8 @@ from facetta.image_agent import (
     build_image_plan,
 )
 from facetta.image_agent.prompts import compile_correction_prompt
+from facetta.jewelry_intent import with_sequential_jewelry_edit_contract
+from facetta.necklace_symmetry import ObservedJewelryType
 
 
 def _png() -> bytes:
@@ -63,6 +65,15 @@ def test_requested_refine_repair_overrides_only_the_source_mismatch():
     ) == "Keep the intentional asymmetry."
 
 
+def test_accepted_symmetry_history_is_not_a_new_repair_command():
+    compiled = with_sequential_jewelry_edit_contract(
+        "Warm only the marked left leaf.",
+        accepted_instructions=("Make both sides symmetrical.",),
+    )
+
+    assert requests_jewelry_symmetry_repair(compiled) is False
+
+
 class _Inspector:
     def __init__(self, inspection: CreativeRenderInspection) -> None:
         self.inspection = inspection
@@ -89,8 +100,10 @@ def _inspection(
     symmetry: bool | None,
     *observations: str,
     necklace_audits: tuple[NecklaceSymmetryAudit, ...] = (),
+    observed_jewelry_type: ObservedJewelryType | None = None,
 ) -> CreativeRenderInspection:
     return CreativeRenderInspection(
+        observed_jewelry_type=observed_jewelry_type,
         coherent_jewelry_render=True,
         complete_piece_visible=True,
         source_design_preserved=True,
@@ -322,6 +335,35 @@ def test_necklace_pair_evidence_vetoes_a_coarse_symmetry_pass() -> None:
         "mismatched pave_coverage" in reason
         for reason in by_code["necklace_sequence_symmetry"].evidence["reasons"]
     )
+    assert by_code["necklace_sequence_symmetry"].evidence["audits"][0][
+        "pair_audits"
+    ][0]["pave_coverage_matches"] is False
+
+
+def test_observed_necklace_cannot_bypass_pair_audit_with_generic_repair_words() -> None:
+    instruction = with_requested_jewelry_symmetry_repair(
+        "Make the left and right sides symmetrical around the centerline."
+    )
+    plan = build_image_plan(ImageOperation.CREATIVE_GENERATE, instruction)
+    inspection = _inspection(
+        True,
+        "the visible piece is a necklace with balanced strands",
+        observed_jewelry_type="necklace",
+    )
+
+    report = RingQualityEvaluator(
+        prompt_creative_inspector=_Inspector(inspection),
+        require_cross_inspection=False,
+        require_render_cross_inspection=False,
+    ).evaluate(plan, _png(), source_image=None, mask_bytes=None)
+
+    by_code = {check.code: check for check in report.checks}
+    assert report.verdict is QualityVerdict.FAIL
+    assert by_code["jewelry_symmetry"].passed is True
+    assert by_code["necklace_sequence_symmetry"].passed is False
+    assert by_code["necklace_sequence_symmetry"].evidence[
+        "observed_jewelry_type"
+    ] == "necklace"
 
 
 def test_missing_symmetry_evidence_fails_closed() -> None:

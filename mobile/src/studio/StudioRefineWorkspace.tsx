@@ -1101,6 +1101,16 @@ export function StudioRefineWorkspace({
   if (workspaceMode === 'refine' && isWideCanvas) {
     const sourceUnavailable = sourceImageUrl === null;
     const editDisabled = !reviewSourceIsActive || sourceUnavailable;
+    const applyDisabled = preview !== null && (
+      preview.candidate.verdict === 'reject' || !reviewSourceIsActive || !comparisonReady
+    );
+    const applyDisabledReason = preview?.candidate.verdict === 'reject'
+      ? 'This preview did not pass Facetta review. Discard it and adjust the request.'
+      : !reviewSourceIsActive
+        ? 'This preview came from an older revision and cannot be applied to the current design.'
+        : preview !== null && !comparisonReady
+          ? 'Wait until both the source and preview images are ready before applying.'
+          : null;
     const variationSupported = preview !== null && (preview.kind === 'catalog'
       ? gateway.saveCatalogPreviewAsVariation !== undefined
       : preview.kind === 'markup'
@@ -1220,6 +1230,8 @@ export function StudioRefineWorkspace({
             disabledReason={!reviewSourceIsActive
               ? 'This preview came from an older revision. Reopen the current design before making another change.'
               : sourceUnavailable ? 'The selected source image is unavailable.' : null}
+            applyDisabled={applyDisabled}
+            applyDisabledReason={applyDisabledReason}
             error={error}
             creditEstimate={REFINE_CREDITS_PER_OUTPUT}
             instructionValue={instruction}

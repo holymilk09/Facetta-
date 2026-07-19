@@ -11,15 +11,22 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal
 
 from facetta.creative_symmetry import (
     JEWELRY_SYMMETRY_CONTRACT,
     JEWELRY_SYMMETRY_REPAIR_CONTRACT,
 )
-from facetta.image_agent.contracts import (
-    NecklaceSymmetryAudit,
-    NecklaceSymmetryPairAudit,
-)
+if TYPE_CHECKING:
+    from facetta.image_agent.contracts import (
+        NecklaceSymmetryAudit,
+        NecklaceSymmetryPairAudit,
+    )
+
+
+ObservedJewelryType = Literal[
+    "ring", "necklace", "earrings", "bracelet", "brooch", "other", "unclear"
+]
 
 
 _NECKLACE_CUE = re.compile(
@@ -67,10 +74,17 @@ def _designer_instruction(intent: str) -> str:
     )
 
 
-def requires_necklace_symmetry_audit(intent: str) -> bool:
-    """Whether this designer instruction names a necklace-family piece."""
+def requires_necklace_symmetry_audit(
+    intent: str,
+    *,
+    observed_jewelry_type: ObservedJewelryType | None = None,
+) -> bool:
+    """Whether text or visual inspection identifies a necklace-family piece."""
 
-    return _NECKLACE_CUE.search(_designer_instruction(intent)) is not None
+    return (
+        observed_jewelry_type == "necklace"
+        or _NECKLACE_CUE.search(_designer_instruction(intent)) is not None
+    )
 
 
 def explicitly_requests_necklace_asymmetry(intent: str) -> bool:
@@ -185,10 +199,14 @@ def evaluate_necklace_symmetry_audits(
     audits: tuple[NecklaceSymmetryAudit, ...],
     *,
     source_present: bool,
+    observed_jewelry_type: ObservedJewelryType | None = None,
 ) -> NecklaceSymmetryGateResult:
     """Fail closed when a necklace audit is missing or internally incomplete."""
 
-    if not requires_necklace_symmetry_audit(intent):
+    if not requires_necklace_symmetry_audit(
+        intent,
+        observed_jewelry_type=observed_jewelry_type,
+    ):
         return NecklaceSymmetryGateResult(False, True, (), len(audits))
     if not audits:
         return NecklaceSymmetryGateResult(
