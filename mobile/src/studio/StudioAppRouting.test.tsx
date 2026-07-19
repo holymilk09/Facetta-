@@ -79,7 +79,7 @@ jest.mock('./StudioCreateWorkspace', () => {
   const ReactLocal = require('react');
   const { Pressable, Text, TextInput, View } = require('react-native');
   const { DEFAULT_API_URL } = require('../config');
-  const EMPTY_STUDIO_CREATE_DRAFT = { sentence: '', references: [], candidateCount: 1 };
+  const EMPTY_STUDIO_CREATE_DRAFT = { sentence: '', references: [], candidateCount: 2 };
   return {
     EMPTY_STUDIO_CREATE_DRAFT,
     draftAfterGeneration: (current: any, submitted: any) => (
@@ -191,15 +191,17 @@ jest.mock('./StudioCreateWorkspace', () => {
 
 jest.mock('./StudioRefineWorkspace', () => {
   const ReactLocal = require('react');
-  const { Pressable, Text, View } = require('react-native');
+  const { Pressable, Text, TextInput, View } = require('react-native');
   return {
     StudioRefineWorkspace: ({
-      workspaceMode, lineage, onReviewStartingDesign, onSelectDestination,
+      workspaceMode, lineage, onReviewStartingDesign, onSelectDestination, draft, onDraftChange,
     }: {
       workspaceMode?: 'refine' | 'specifications';
       lineage?: { sourceDesignVersion?: number } | null;
       onReviewStartingDesign?: () => void;
       onSelectDestination?: (destinationId: 'library' | 'client') => void;
+      draft?: any;
+      onDraftChange?: (draft: any) => void;
     }) => ReactLocal.createElement(
       View,
       null,
@@ -216,6 +218,19 @@ jest.mock('./StudioRefineWorkspace', () => {
           ReactLocal.createElement(Text, null, 'Review starting design'),
         )
         : null,
+      ReactLocal.createElement(TextInput, {
+        accessibilityLabel: 'Mock refine instruction',
+        value: draft?.instruction ?? '',
+        onChangeText: (instruction: string) => onDraftChange?.({
+          instruction,
+          canvasMode: draft?.canvasMode ?? 'describe',
+          variationName: draft?.variationName ?? '',
+          snapshot: draft?.snapshot ?? {
+            schema_version: 1, coordinate_space: 'normalized_image',
+            source_uri: '', annotations: [],
+          },
+        }),
+      }),
       onSelectDestination === undefined ? null : ReactLocal.createElement(
         Pressable,
         { accessibilityRole: 'button', onPress: () => onSelectDestination('library') },
@@ -688,7 +703,7 @@ test('a direct authenticated account switch clears the previous designer Create 
   expect(await view.findByText('Start from an idea or reference')).toBeTruthy();
   await fireEvent.press(view.getByText('Start from an idea or reference'));
   expect(view.getByLabelText('Mock draft sentence').props.value).toBe('');
-  expect(view.getByText('Mock draft count: 1')).toBeTruthy();
+  expect(view.getByText('Mock draft count: 2')).toBeTruthy();
   expect(view.getByText('Mock master source: none')).toBeTruthy();
   expect(mockTrustedClientOptions).toHaveLength(2);
   expect(mockTrustedClientOptions[1].getAccessToken()).toBe('server-issued-b-token');
@@ -838,8 +853,8 @@ test('every visible active-design rail CTA reaches its named destination', async
   const view = await render(<App />);
 
   await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
-  fireEvent.press(view.getByText('Start from an idea or reference'));
-  fireEvent.press(await view.findByText('Save mocked direction'));
+  await fireEvent.press(view.getByText('Start from an idea or reference'));
+  await fireEvent.press(await view.findByText('Save mocked direction'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
 
   for (const [label, destination] of [
@@ -866,6 +881,27 @@ test('every visible active-design rail CTA reaches its named destination', async
   fireEvent.press(view.getByLabelText('Create a design'));
   expect(await view.findByText('Save mocked direction')).toBeTruthy();
   expect(view.queryByTestId('active-design-context')).toBeNull();
+});
+
+test('an unsaved Refine instruction survives global navigation for its exact source lineage', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getByText('Start from an idea or reference'));
+  fireEvent.press(await view.findByText('Save mocked direction'));
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+
+  await fireEvent.changeText(
+    view.getByLabelText('Mock refine instruction'),
+    'Keep the center fixed and match both shoulders.',
+  );
+  await fireEvent.press(view.getByRole('tab', { name: 'Activity' }));
+  await fireEvent.press(view.getByRole('tab', { name: 'Studio' }));
+  await fireEvent.press(await view.findByText('Saved direction'));
+
+  expect((await view.findByLabelText('Mock refine instruction')).props.value)
+    .toBe('Keep the center fixed and match both shoulders.');
 });
 
 test('More opens Starting design facts in the confirmation workspace', async () => {

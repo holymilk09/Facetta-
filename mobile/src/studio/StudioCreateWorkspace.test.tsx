@@ -148,10 +148,10 @@ test('presents sentence or rough visual source as the only primary starting choi
   expect(screen.getByText('How many variations?')).toBeTruthy();
   expect(screen.getByText(/keep 1 for a single result.+up to 4 design alternatives/i)).toBeTruthy();
   const quantity = screen.getByLabelText('Number of variations');
-  expect(within(quantity).getByLabelText('1 variation').props.accessibilityState).toEqual({
+  expect(within(quantity).getByLabelText('2 variations').props.accessibilityState).toEqual({
     checked: true,
   });
-  expect(screen.getByText('15 credits per variation · 1 variation = 15 credits')).toBeTruthy();
+  expect(screen.getByText('15 credits per variation · 2 variations = 30 credits')).toBeTruthy();
   expect(screen.getByText('Generate')).toBeTruthy();
   expect(screen.queryByText('Create 1 direction')).toBeNull();
   expect(onRequestReference).not.toHaveBeenCalled();
@@ -229,7 +229,7 @@ test('keeps the submitted two-variation quantity and estimate visible with its r
   }
 });
 
-test('resets the variation quantity to one only after clearing review for a new request', async () => {
+test('resets the variation quantity to two only after clearing review for a new request', async () => {
   const originalPlatform = Platform.OS;
   const originalWindow = Dimensions.get('window');
   const originalScreen = Dimensions.get('screen');
@@ -261,8 +261,8 @@ test('resets the variation quantity to one only after clearing review for a new 
     await fireEvent.press(screen.getAllByText('Clear canvas').at(-1)!);
 
     expect(await screen.findByText('Your designs will appear here.')).toBeTruthy();
-    expect(screen.getByLabelText('1 variation').props.accessibilityState).toEqual({ checked: true });
-    expect(screen.getByText('15 credits per variation · 1 variation = 15 credits')).toBeTruthy();
+    expect(screen.getByLabelText('2 variations').props.accessibilityState).toEqual({ checked: true });
+    expect(screen.getByText('15 credits per variation · 2 variations = 30 credits')).toBeTruthy();
     expect(screen.queryByLabelText('Direction 2')).toBeNull();
   } finally {
     Object.defineProperty(Platform, 'OS', { configurable: true, value: originalPlatform });
@@ -272,7 +272,7 @@ test('resets the variation quantity to one only after clearing review for a new 
   }
 });
 
-test('submits one variation by default', async () => {
+test('submits two variations by default so a rough idea yields a real choice', async () => {
   const createFromPrompt = jest.fn(async () => ({
     data: creativeProject(1), error: null, status: 201,
   }));
@@ -290,7 +290,7 @@ test('submits one variation by default', async () => {
 
   await waitFor(() => expect(createFromPrompt).toHaveBeenCalledWith({
     prompt: composeCreateBalanceInstruction('A simple gold ring.', 'symmetrical', false),
-    variation_count: 1,
+    variation_count: 2,
     comparison_views: ['three_quarter'],
     owner: 'designer_1',
     title: 'A simple gold ring.',
@@ -371,7 +371,7 @@ test('uses concise loading copy for the default generation request', async () =>
     });
 
     expect(view.getByText('Generating…')).toBeTruthy();
-    expect(view.getByText('Generating your design.')).toBeTruthy();
+    expect(view.getByText('Generating 2 variations.')).toBeTruthy();
     expect(view.getByText('Facetta is preparing the requested result.')).toBeTruthy();
     expect(view.queryByText(/taking shape/i)).toBeNull();
 
@@ -1230,7 +1230,7 @@ test('sends every enabled role with the master geometry input', async () => {
       image_base64: 'bWF0ZXJpYWw=',
       media_type: 'image/jpeg',
     }],
-    variation_count: 1,
+    variation_count: 2,
     comparison_views: ['three_quarter'],
     owner: 'designer_1',
     title: 'Preserve the silhouette and make it feel lighter.',
@@ -1286,7 +1286,7 @@ test('accepts role-labeled advisory guidance after a sentence without requiring 
       image_base64: 'bWF0ZXJpYWw=',
       media_type: 'image/jpeg',
     }],
-    variation_count: 1,
+    variation_count: 2,
     comparison_views: ['three_quarter'],
     owner: 'designer_1',
     title: 'A broad sculptural gold cuff with one clean opening.',
@@ -1366,7 +1366,7 @@ test('starts from a master image without forcing a sentence', async () => {
       uploadOnlyInstruction('photograph'), 'symmetrical', true,
     ),
     references: [],
-    variation_count: 1,
+    variation_count: 2,
     comparison_views: ['three_quarter'],
     owner: 'designer_1',
     title: 'Pendant photograph',
@@ -1693,7 +1693,7 @@ test('maps material, detail, and brand choices into advisory-only provider guida
   );
   await waitFor(() => expect(createFromPrompt).toHaveBeenCalledWith({
     prompt: submittedPrompt,
-    variation_count: 1,
+    variation_count: 2,
     comparison_views: ['three_quarter'],
     owner: 'designer_1',
     title: 'A simple three-stone ring.',

@@ -3307,6 +3307,66 @@ def test_from_prompt_all_failed_directions_remain_zero_charge_evidence(
         assert db.scalar(select(func.count()).select_from(ImageRun)) == 2
 
 
+def test_from_prompt_unexpected_provider_error_fails_job_without_project(
+    creative_client,
+):
+    client, Session = creative_client
+    job_id = _running_create_job(client, requested_outputs=2)
+
+    def crash(_instruction: str, _variant: int):
+        raise RuntimeError("adapter bug")
+
+    app.dependency_overrides[get_creative_prompt_generator] = lambda: crash
+    response = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=2),
+        "studio_job_id": job_id,
+    })
+    assert response.status_code == 500, response.text
+    assert response.json()["code"] == "unexpected_generation_failure"
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None and job.status == "failed"
+        assert job.error_code == "unexpected_generation_failure"
+        assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 0
+
+
+def test_from_prompt_unexpected_comparison_error_settles_completed_evidence(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: lambda _instruction, variant: _prompt_creative_result(variant)
+    )
+
+    def crash_comparison(*_args, **_kwargs):
+        raise RuntimeError("comparison adapter bug")
+
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: crash_comparison
+    )
+    job_id = _running_create_job(client, requested_outputs=1)
+    response = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=1),
+        "comparison_views": ["three_quarter"],
+        "studio_job_id": job_id,
+    })
+    assert response.status_code == 500, response.text
+    assert response.json()["code"] == "unexpected_generation_failure"
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None and job.status == "failed"
+        assert job.error_code == "unexpected_generation_failure"
+        assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        runs = list(db.scalars(select(ImageRun)))
+        assert len(runs) == 1
+        assert runs[0].operation == "CREATIVE_GENERATE"
+
+
 def test_from_prompt_advisory_references_are_bound_and_persisted_by_role(
     creative_client,
 ):
@@ -3614,12 +3674,12 @@ def test_creative_selection_job_cas_rejects_stale_project_and_prior_selection(
     assert "not bound to the selected project" in wrong_project.json()["detail"]
 
     first_candidates = [item["asset_id"] for item in first["creative_candidates"]]
-    legacy_selection = client.post(
+    server_bound_selection = client.post(
         f"/projects/{first['root_id']}/creative-candidates/"
         f"{first_candidates[0]}/select",
         json={"created_by": "usr_designer"},
     )
-    assert legacy_selection.status_code == 200, legacy_selection.text
+    assert server_bound_selection.status_code == 200, server_bound_selection.text
     stale_selection = client.post(
         f"/projects/{first['root_id']}/creative-candidates/"
         f"{first_candidates[1]}/select",
@@ -3637,10 +3697,10 @@ def test_creative_selection_job_cas_rejects_stale_project_and_prior_selection(
         assert second_project is not None
         assert second_project.selected_candidate_asset_id is None
         assert job is not None
-        assert job.status == "reviewing"
-        assert job.source_revision_id is None
-        assert job.completed_outputs == 0
-        assert job.charged_outputs == 0
+        assert job.status == "succeeded"
+        assert job.source_revision_id == first_candidates[0]
+        assert job.completed_outputs == 2
+        assert job.charged_outputs == 2
 
 
 def test_creative_selection_rejects_wrong_job_source_without_partial_writes(
@@ -3755,7 +3815,6 @@ def test_creative_direction_commit_is_atomic_billed_once_and_retry_safe(
             {"candidate_id": candidates[3], "label": "Open silhouette"},
         ],
         "created_by": "usr_designer",
-        "studio_job_id": job_id,
     }
 
     # A database/clock with equal timestamp resolution for the selected
@@ -3930,6 +3989,48 @@ def test_creative_direction_commit_is_atomic_billed_once_and_retry_safe(
         assert db.scalar(
             select(func.count()).select_from(ProjectRevisionRecord)
         ) == 3
+
+
+def test_creative_direction_commit_rejects_job_other_than_server_bound_review(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: (lambda _instruction, variant: _prompt_creative_result(variant))
+    )
+    first = client.post(
+        "/projects/from-prompt", json=_prompt_request(variation_count=1)
+    ).json()
+    second_request = _prompt_request(variation_count=1)
+    second_request["title"] = "Other Create review"
+    second_request["starting_variant"] = 20
+    second = client.post("/projects/from-prompt", json=second_request).json()
+    first_job_id = _reviewing_create_job(
+        client, project_id=first["root_id"], requested_outputs=1,
+    )
+    second_job_id = _reviewing_create_job(
+        client, project_id=second["root_id"], requested_outputs=1,
+    )
+
+    rejected = client.post(
+        f"/projects/{first['root_id']}/creative-directions/commit",
+        json={
+            "selected_candidate_id": first["creative_candidates"][0]["asset_id"],
+            "retained": [],
+            "created_by": "usr_designer",
+            "studio_job_id": second_job_id,
+        },
+    )
+    assert rejected.status_code == 409, rejected.text
+    assert "does not own this Create review" in rejected.json()["detail"]
+    with Session() as db:
+        project = db.get(Project, first["root_id"])
+        first_job = db.get(StudioJobRecord, first_job_id)
+        second_job = db.get(StudioJobRecord, second_job_id)
+        assert project is not None and project.selected_candidate_asset_id is None
+        assert first_job is not None and first_job.status == "reviewing"
+        assert second_job is not None and second_job.status == "reviewing"
+        assert first_job.charged_outputs == second_job.charged_outputs == 0
 
 
 def test_creative_direction_commit_reopens_retained_view_bundle_exactly_once(

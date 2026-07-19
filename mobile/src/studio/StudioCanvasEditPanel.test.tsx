@@ -20,7 +20,9 @@ test('starts with one plain-language edit and an explicit preservation promise',
 
   expect(screen.getByText('Make your changes.')).toBeTruthy();
   expect(screen.getByText(/keeps unmarked details fixed/i)).toBeTruthy();
-  expect(screen.getByText(/Estimated 20 credits/i)).toBeTruthy();
+  expect(screen.getByText(
+    'Preview now · 0 credits. 20 credits only if you Apply or Save as variation.',
+  )).toBeTruthy();
   expect(screen.getByText('Preview changes').parent?.props.accessibilityState).toEqual({ disabled: true });
 
   await fireEvent.changeText(screen.getByLabelText('Edit instruction'), 'Make the band slightly narrower.');
@@ -148,6 +150,17 @@ test('symmetry is an explicit one-click repair that keeps the center fixed', asy
     preserveUnrequestedDetails: true,
   });
   expect(callbacks.onPreviewChange.mock.calls[0][0].instruction).toMatch(/Keep the center element/);
+});
+
+test('restores an app-owned canvas mode and reports the next mode', async () => {
+  const callbacks = handlers({ onModeChange: jest.fn() });
+  const view = await render(
+    <StudioCanvasEditPanel {...callbacks} modeValue="symmetry" />,
+  );
+
+  expect(view.getByLabelText('Symmetry editing tool').props.accessibilityState.selected).toBe(true);
+  await fireEvent.press(view.getByLabelText('Mark up editing tool'));
+  expect(callbacks.onModeChange).toHaveBeenCalledWith('point');
 });
 
 test('a temporary preview exposes Apply, Save as variation, and Discard as separate decisions', async () => {

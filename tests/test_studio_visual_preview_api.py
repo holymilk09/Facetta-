@@ -1036,6 +1036,49 @@ def test_continuation_prompts_keep_raw_order_and_exact_apply_discard_outcomes(
         assert revision.raw_intent["continuation_prompt_id"] == records[1].id
         assert revision.raw_intent["instruction"] == second_words
         assert internal_suffix not in revision.raw_intent["instruction"]
+        compiled = (
+            f"OVERALL DESIGNER REQUEST: {second_words} {internal_suffix}"
+        )
+        assert records[1].intent["compiled_instruction"] == compiled
+        assert records[1].intent["compiled_instruction_sha256"] == (
+            hashlib.sha256(compiled.encode("utf-8")).hexdigest()
+        )
+        assert revision.interpretation["compiled_instruction_sha256"] == (
+            hashlib.sha256(compiled.encode("utf-8")).hexdigest()
+        )
+
+
+def test_raw_refine_instruction_mismatch_is_rejected_before_job_reservation(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    calls = 0
+
+    def generate(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("provider must not run for an unbound instruction")
+
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: generate
+    )
+    job_id = _running_refine_job(client)
+    rejected = _preview(
+        client,
+        studio_job_id=job_id,
+        instruction="Make the center stone blue.",
+        raw_user_instruction="Remove the necklace chain.",
+    )
+    assert rejected.status_code == 422, rejected.text
+    assert calls == 0
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None and job.status == "running"
+        assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            StudioContinuationPromptRecord
+        )) == 0
 
 
 def test_visual_reserved_job_rejects_public_terminal_transition(

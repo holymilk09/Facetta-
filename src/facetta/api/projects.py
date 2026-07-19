@@ -2198,6 +2198,48 @@ def _existing_creative_direction_commit(
     )
 
 
+def _canonical_create_selection_job_id(
+    db: Session,
+    *,
+    owner: str,
+    project_root_id: str,
+    supplied_job_id: str | None,
+) -> str | None:
+    """Resolve the durable Create review that already owns this project.
+
+    Project generation binds its exact Create job before returning candidates.
+    Selection must therefore discover that authority server-side rather than
+    allowing a client to omit it and bypass atomic settlement and charging.
+    Legacy projects with no bound job retain their compatibility path.
+    """
+
+    bound_ids = list(db.scalars(
+        select(StudioJobRecord.id)
+        .where(
+            StudioJobRecord.owner == owner,
+            StudioJobRecord.action_id == "create",
+            StudioJobRecord.active_design_id == project_root_id,
+            StudioJobRecord.status.in_(("reviewing", "succeeded")),
+        )
+        .order_by(StudioJobRecord.id)
+        .with_for_update()
+    ))
+    if len(bound_ids) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail="the project has more than one authoritative Create review",
+        )
+    if not bound_ids:
+        return supplied_job_id
+    canonical_job_id = bound_ids[0]
+    if supplied_job_id is not None and supplied_job_id != canonical_job_id:
+        raise HTTPException(
+            status_code=409,
+            detail="the supplied Studio job does not own this Create review",
+        )
+    return canonical_job_id
+
+
 @router.post(
     "/{project_id}/creative-directions/commit",
     response_model=CreativeDirectionCommitResponse,
@@ -2228,13 +2270,22 @@ def commit_project_creative_directions(
             status_code=403,
             detail="only the project owner may commit a Create review",
         )
+    selection_job_id = _canonical_create_selection_job_id(
+        db,
+        owner=request.created_by,
+        project_root_id=project.root_id,
+        supplied_job_id=request.studio_job_id,
+    )
+    effective_request = request.model_copy(update={
+        "studio_job_id": selection_job_id,
+    })
 
     existing = db.scalar(select(StudioCreateDecisionRecord).where(
         StudioCreateDecisionRecord.project_root_id == project_id,
     ).with_for_update())
     if existing is not None:
         return _creative_direction_commit_response(
-            db, project=project, decision=existing, request=request,
+            db, project=project, decision=existing, request=effective_request,
         )
 
     root = db.scalar(select(ImageAsset).where(
@@ -2326,10 +2377,10 @@ def commit_project_creative_directions(
             ImageAsset.capability == "CREATIVE_RENDER",
             ImageAsset.design_version.is_(None),
         ))))
-        if request.studio_job_id is not None:
+        if selection_job_id is not None:
             settle_create_studio_job_selection(
                 db,
-                job_id=request.studio_job_id,
+                job_id=selection_job_id,
                 owner=request.created_by,
                 project_root_id=project.root_id,
                 source_revision_id=selected.id,
@@ -2361,7 +2412,7 @@ def commit_project_creative_directions(
                 "selected_candidate_asset_id": selected.id,
                 "source_asset_id": selected_source_id,
                 "image_run_id": selected_run.id,
-                "studio_job_id": request.studio_job_id,
+                "studio_job_id": selection_job_id,
             },
             interpretation={
                 "operation": "select_original_direction",
@@ -2424,7 +2475,7 @@ def commit_project_creative_directions(
             owner=project.owner,
             selected_candidate_asset_id=selected.id,
             retained_directions=retained_records,
-            studio_job_id=request.studio_job_id,
+            studio_job_id=selection_job_id,
             created_by=request.created_by,
             committed_at=utcnow(),
         )
@@ -2434,7 +2485,7 @@ def commit_project_creative_directions(
     except (StudioHistoryError, StudioJobAccountingError, IntegrityError) as exc:
         db.rollback()
         retry = _existing_creative_direction_commit(
-            db, project_id=project_id, request=request,
+            db, project_id=project_id, request=effective_request,
         )
         if retry is not None:
             return retry
@@ -2454,7 +2505,7 @@ def commit_project_creative_directions(
 
     db.refresh(project)
     return _creative_direction_commit_response(
-        db, project=project, decision=decision, request=request,
+        db, project=project, decision=decision, request=effective_request,
     )
 
 
@@ -2486,6 +2537,12 @@ def select_project_creative_candidate(
             status_code=403,
             detail="only the project owner may review a creative candidate",
         )
+    selection_job_id = _canonical_create_selection_job_id(
+        db,
+        owner=request.created_by,
+        project_root_id=project.root_id,
+        supplied_job_id=request.studio_job_id,
+    )
     root = candidate if candidate.id == project_id else db.get(ImageAsset, project_id)
     if root is None or root.design_id is not None:
         raise HTTPException(
@@ -2515,14 +2572,14 @@ def select_project_creative_candidate(
             ),
         )
     if (
-        request.studio_job_id is not None
+        selection_job_id is not None
         and project.selected_candidate_asset_id not in (None, candidate.id)
     ):
         raise HTTPException(
             status_code=409,
             detail="the project already selected another creative candidate",
         )
-    if request.studio_job_id is not None:
+    if selection_job_id is not None:
         available_outputs = len(list(db.scalars(select(ImageAsset.id).where(
             ImageAsset.root_id == project.root_id,
             ImageAsset.capability == "CREATIVE_RENDER",
@@ -2531,7 +2588,7 @@ def select_project_creative_candidate(
         try:
             settle_create_studio_job_selection(
                 db,
-                job_id=request.studio_job_id,
+                job_id=selection_job_id,
                 owner=request.created_by,
                 project_root_id=project.root_id,
                 source_revision_id=candidate.id,
@@ -3162,6 +3219,25 @@ def create_project_from_prompt(
         except ImageAgentError as exc:
             generation_errors.append(exc)
             continue
+        except Exception:
+            observed_run_ids, _failed_run_id = _persist_create_failure_evidence(
+                db,
+                studio_job=studio_job,
+                completed_results=tuple(generated),
+                created_by=request.owner,
+                error_code="unexpected_generation_failure",
+                errors=tuple(generation_errors),
+            )
+            response = JSONResponse(status_code=500, content={
+                "error_category": "internal_failure",
+                "code": "unexpected_generation_failure",
+                "detail": "creative generation stopped unexpectedly",
+            })
+            if observed_run_ids:
+                response.headers["X-Facetta-Completed-Run-Count"] = str(
+                    len(observed_run_ids)
+                )
+            return response
         if result.plan.operation.value != "CREATIVE_GENERATE":
             observed_run_ids, _failed_run_id = (
                 _persist_create_failure_evidence(
@@ -3376,6 +3452,26 @@ def create_project_from_prompt(
                 if observed_run_ids:
                     response.headers["X-Facetta-Completed-Run-Count"] = str(
                         len(observed_run_ids))
+                return response
+            except Exception:
+                observed_run_ids, _failed_run_id = _persist_create_failure_evidence(
+                    db,
+                    studio_job=studio_job,
+                    completed_results=tuple(completed_for_evidence),
+                    created_by=request.owner,
+                    error_code="unexpected_generation_failure",
+                    errors=tuple(generation_errors),
+                    rejected_results=rejected_main_views,
+                )
+                response = JSONResponse(status_code=500, content={
+                    "error_category": "internal_failure",
+                    "code": "unexpected_generation_failure",
+                    "detail": "creative comparison generation stopped unexpectedly",
+                })
+                if observed_run_ids:
+                    response.headers["X-Facetta-Completed-Run-Count"] = str(
+                        len(observed_run_ids)
+                    )
                 return response
             contract_error = _comparison_view_contract_error(
                 comparison,

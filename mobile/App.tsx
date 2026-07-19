@@ -28,7 +28,9 @@ import {
 } from './src/studio/StudioCreateWorkspace';
 import { StudioConfirmWorkspace } from './src/studio/StudioConfirmWorkspace';
 import { pickExpoStudioCreateReference } from './src/studio/expoReferencePicker';
-import { StudioRefineWorkspace } from './src/studio/StudioRefineWorkspace';
+import {
+  StudioRefineWorkspace, type StudioRefineDraft,
+} from './src/studio/StudioRefineWorkspace';
 import { StudioViewsWorkspace } from './src/studio/StudioViewsWorkspace';
 import { StudioPresentWorkspace } from './src/studio/StudioPresentWorkspace';
 import { StudioVaryWorkspace } from './src/studio/StudioVaryWorkspace';
@@ -146,6 +148,7 @@ export default function App() {
   >(undefined);
   const [createReview, setCreateReview] = useState<CreateReviewState | null>(null);
   const [createDraft, setCreateDraft] = useState<StudioCreateDraft>(EMPTY_STUDIO_CREATE_DRAFT);
+  const [refineDrafts, setRefineDrafts] = useState<Record<string, StudioRefineDraft>>({});
   const [activityReview, setActivityReview] = useState<StudioReviewJobEnvelope | null>(null);
   const [projectHydration, setProjectHydration] = useState<{
     request: ProjectHydrationRequest;
@@ -177,6 +180,7 @@ export default function App() {
     setPresentInitialDestination(undefined);
     setCreateReview(null);
     setCreateDraft(EMPTY_STUDIO_CREATE_DRAFT);
+    setRefineDrafts({});
     setActivityReview(null);
     setFactoryEligibleRevisionKey(null);
     setSavedFamiliesState('unknown');
@@ -291,6 +295,13 @@ export default function App() {
       sourceAssetId: studioProject.active_asset_id,
     };
   }, [studioProject]);
+  const activeRefineLineage = activityReview?.job.action_id === 'refine'
+    ? activityReview.lineage : exactStudioLineage ?? visualStudioLineage;
+  const activeRefineDraftKey = activeRefineLineage === null
+    ? null
+    : `${activeRefineLineage.projectId}:${activeRefineLineage.sourceAssetId}:${
+      'sourceDesignVersion' in activeRefineLineage
+        ? activeRefineLineage.sourceDesignVersion : 'visual'}`;
   const confirmStudioLineage = useMemo<StudioVisualLineage | null>(() => {
     if (studioProject === null || studioProject.design_id !== null) return null;
     if (studioProject.confirmable_pre_spec !== true) return null;
@@ -810,8 +821,7 @@ export default function App() {
               key={activityReview === null ? selectedActionId : `${selectedActionId}:${activityReview.job.job_id}`}
               api={studioGateway}
               gateway={studioGateway}
-              lineage={activityReview?.job.action_id === 'refine'
-                ? activityReview.lineage : exactStudioLineage ?? visualStudioLineage}
+              lineage={activeRefineLineage}
               project={studioProject}
               createdBy={designer}
               sourceImageUrl={activityReview?.job.action_id === 'refine'
@@ -820,6 +830,13 @@ export default function App() {
                 ? activityReview.job.job_id : undefined}
               reviewSourceIsActive={activityReview?.job.action_id === 'refine'
                 ? activityReview.sourceIsActive : true}
+              draft={activeRefineDraftKey === null ? undefined : refineDrafts[activeRefineDraftKey]}
+              onDraftChange={(nextDraft) => {
+                if (activeRefineDraftKey === null) return;
+                setRefineDrafts((current) => ({
+                  ...current, [activeRefineDraftKey]: nextDraft,
+                }));
+              }}
               workspaceMode={selectedActionId === 'specifications'
                 ? 'specifications' : 'refine'}
               onReviewStartingDesign={confirmStudioLineage !== null

@@ -55,6 +55,13 @@ export type StudioRefineApi = Pick<StudioGateway,
 
 export type StudioRefineWorkspaceMode = 'refine' | 'specifications';
 
+export interface StudioRefineDraft {
+  instruction: string;
+  snapshot: AnnotationCanvasSnapshot;
+  canvasMode: StudioCanvasEditMode;
+  variationName: string;
+}
+
 export interface StudioRefineWorkspaceProps {
   api: StudioRefineApi;
   gateway: Pick<StudioGateway,
@@ -78,6 +85,9 @@ export interface StudioRefineWorkspaceProps {
   imageRequestHeaders?: Readonly<Record<string, string>>;
   resumeReviewJobId?: string;
   reviewSourceIsActive?: boolean;
+  /** Lineage-scoped unsaved work owned by the app shell so navigation cannot erase it. */
+  draft?: StudioRefineDraft;
+  onDraftChange?: (draft: StudioRefineDraft) => void;
 }
 
 interface AcceptedRefineOutcome {
@@ -214,6 +224,7 @@ export function StudioRefineWorkspace({
   onReviewStartingDesign, onApplied, onVariationCreated, destinationContext,
   onSelectDestination, onStartNewDesign,
   imageRequestHeaders, resumeReviewJobId, reviewSourceIsActive = true,
+  draft, onDraftChange,
 }: StudioRefineWorkspaceProps) {
   const exactLineage = hasExactSpecification(lineage) ? lineage : null;
   const exactSpecification = exactLineage !== null;
@@ -234,10 +245,10 @@ export function StudioRefineWorkspace({
     executionMode?: 'instant' | 'provider';
     estimatedCredits?: number;
   } | null>(null);
-  const [instruction, setInstruction] = useState('');
+  const [instruction, setInstruction] = useState(draft?.instruction ?? '');
   const [previewPrompt, setPreviewPrompt] = useState<string | null>(null);
   const [understoodAs, setUnderstoodAs] = useState<string | null>(null);
-  const [snapshot, setSnapshot] = useState<AnnotationCanvasSnapshot>({
+  const [snapshot, setSnapshot] = useState<AnnotationCanvasSnapshot>(draft?.snapshot ?? {
     schema_version: ANNOTATION_SNAPSHOT_SCHEMA_VERSION,
     coordinate_space: 'normalized_image',
     source_uri: sourceImageUrl ?? '',
@@ -246,8 +257,10 @@ export function StudioRefineWorkspace({
   const [loading, setLoading] = useState(false);
   const [resuming, setResuming] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [namingVariation, setNamingVariation] = useState(false);
-  const [variationName, setVariationName] = useState('');
+  const [namingVariation, setNamingVariation] = useState(
+    (draft?.variationName.trim().length ?? 0) > 0,
+  );
+  const [variationName, setVariationName] = useState(draft?.variationName ?? '');
   const [error, setError] = useState<string | null>(null);
   const [acceptedOutcome, setAcceptedOutcome] = useState<AcceptedRefineOutcome | null>(null);
   const [continuationPrompts, setContinuationPrompts] = useState<
@@ -258,11 +271,13 @@ export function StudioRefineWorkspace({
   const [factsLoading, setFactsLoading] = useState(false);
   const [activeFactGroup, setActiveFactGroup] = useState<FactGroupId>('identity');
   const [factReview, setFactReview] = useState<readonly FactChangeReview[] | null>(null);
-  const [canvasMode, setCanvasMode] = useState<StudioCanvasEditMode>('describe');
+  const [canvasMode, setCanvasMode] = useState<StudioCanvasEditMode>(draft?.canvasMode ?? 'describe');
   const [canvasWorking, setCanvasWorking] = useState<StudioCanvasEditWorkingState>(null);
   const { width } = useWindowDimensions();
   const isWideCanvas = Platform.OS === 'web' && width >= 1000;
   const decisionInFlight = useRef(false);
+  const onDraftChangeRef = useRef(onDraftChange);
+  onDraftChangeRef.current = onDraftChange;
   const everyMarkCarriesInstruction = snapshot.annotations.length > 0
     && snapshot.annotations.every((annotation) => (
       (annotation.instruction
@@ -298,6 +313,10 @@ export function StudioRefineWorkspace({
     setVariationName('');
     setSnapshot((current) => ({ ...current, annotations: [] }));
   };
+
+  useEffect(() => {
+    onDraftChangeRef.current?.({ instruction, snapshot, canvasMode, variationName });
+  }, [canvasMode, instruction, snapshot, variationName]);
   const exactStoneSpecies = useMemo(() => {
     const spec = factProject?.spec;
     if (spec === null || spec === undefined) return null;
@@ -486,9 +505,11 @@ export function StudioRefineWorkspace({
     const sourceRevisionChanged = draftLineageKey.current !== lineageKey;
     draftLineageKey.current = lineageKey;
     setSnapshot((current) => ({
-      ...current,
+      ...(sourceRevisionChanged && draft !== undefined ? draft.snapshot : current),
       source_uri: sourceImageUrl ?? '',
-      annotations: sourceRevisionChanged ? [] : current.annotations,
+      annotations: sourceRevisionChanged
+        ? draft?.snapshot.annotations ?? []
+        : current.annotations,
     }));
     if (!sourceRevisionChanged) return;
     // A designer's instruction and any pending decision belong to the exact source
@@ -496,12 +517,13 @@ export function StudioRefineWorkspace({
     decisionInFlight.current = false;
     setBusy(false);
     setOptionId(null);
-    setInstruction('');
+    setInstruction(draft?.instruction ?? '');
     setPreviewPrompt(null);
     setUnderstoodAs(null);
     setPreview(null);
-    setNamingVariation(false);
-    setVariationName('');
+    setCanvasMode(draft?.canvasMode ?? 'describe');
+    setNamingVariation((draft?.variationName.trim().length ?? 0) > 0);
+    setVariationName(draft?.variationName ?? '');
     setFactReview(null);
     setError(null);
   }, [lineageKey, sourceImageUrl]);
@@ -1235,6 +1257,7 @@ export function StudioRefineWorkspace({
             error={error}
             creditEstimate={REFINE_CREDITS_PER_OUTPUT}
             instructionValue={instruction}
+            modeValue={canvasMode}
             onInstructionChange={setInstruction}
             onModeChange={(nextMode) => {
               setCanvasMode(nextMode);

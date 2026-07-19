@@ -49,6 +49,7 @@ export interface StudioCanvasEditPanelProps {
   error?: string | null;
   creditEstimate?: number | null;
   instructionValue?: string;
+  modeValue?: StudioCanvasEditMode;
   onInstructionChange?: (instruction: string) => void;
   onRequestAnnotation: () => void;
   onClearAnnotation?: () => void;
@@ -121,6 +122,7 @@ export function StudioCanvasEditPanel({
   error = null,
   creditEstimate = null,
   instructionValue,
+  modeValue,
   onInstructionChange,
   onRequestAnnotation,
   onClearAnnotation,
@@ -130,7 +132,8 @@ export function StudioCanvasEditPanel({
   onSaveAsVariationPreview,
   onDiscardPreview,
 }: StudioCanvasEditPanelProps) {
-  const [mode, setMode] = useState<StudioCanvasEditMode>('describe');
+  const [localMode, setLocalMode] = useState<StudioCanvasEditMode>('describe');
+  const mode = modeValue ?? localMode;
   const [localInstruction, setLocalInstruction] = useState('');
   const [backgroundPreset, setBackgroundPreset] = useState<StudioCanvasBackgroundPreset | null>(null);
   const [anglePreset, setAnglePreset] = useState<StudioCanvasAnglePreset | null>(null);
@@ -159,7 +162,7 @@ export function StudioCanvasEditPanel({
 
   const chooseMode = (nextMode: StudioCanvasEditMode): void => {
     if (busy || disabled || preview !== null) return;
-    setMode(nextMode);
+    if (modeValue === undefined) setLocalMode(nextMode);
     onModeChange?.(nextMode);
   };
 
@@ -319,7 +322,9 @@ export function StudioCanvasEditPanel({
       {preview === null ? (
         <>
           {creditEstimate !== null && (
-            <Text style={styles.creditEstimate}>Estimated {creditEstimate} credits after you request this preview.</Text>
+            <Text style={styles.creditEstimate}>
+              Preview now · 0 credits. {creditEstimate} credits only if you Apply or Save as variation.
+            </Text>
           )}
           <Pressable
             accessibilityRole="button"

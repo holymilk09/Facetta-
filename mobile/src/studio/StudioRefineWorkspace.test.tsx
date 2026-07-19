@@ -99,6 +99,53 @@ function renderWithAuth(ui: React.ReactElement) {
 }
 
 describe('StudioRefineWorkspace', () => {
+  test('restores lineage-keyed drafts without carrying source A work into source B', async () => {
+    const onDraftChange = jest.fn();
+    const draft = (source: string, instruction: string, canvasMode: 'describe' | 'symmetry') => ({
+      instruction,
+      canvasMode,
+      variationName: instruction === 'Draft B' ? 'B variation' : '',
+      snapshot: {
+        schema_version: 1 as const,
+        coordinate_space: 'normalized_image' as const,
+        source_uri: source,
+        annotations: [],
+      },
+    });
+    const common = {
+      api: {
+        getComponentCatalog: jest.fn(), getStudioComponentTargeting: jest.fn(), readMarkup: jest.fn(),
+      },
+      gateway: {} as any,
+      createdBy: 'designer',
+      onApplied: jest.fn(),
+      onDraftChange,
+    };
+    const view = await renderWithAuth(
+      <StudioRefineWorkspace
+        {...common}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'asset_a' }}
+        sourceImageUrl="https://test/a.png"
+        draft={draft('https://test/a.png', 'Draft A', 'describe')}
+      />,
+    );
+    expect(screen.getByLabelText('Describe the changes').props.value).toBe('Draft A');
+
+    await view.rerender(withAuth(
+      <StudioRefineWorkspace
+        {...common}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'asset_b' }}
+        sourceImageUrl="https://test/b.png"
+        draft={draft('https://test/b.png', 'Draft B', 'symmetry')}
+      />,
+    ));
+    await waitFor(() => expect(screen.getByLabelText('Describe the changes').props.value).toBe('Draft B'));
+    await waitFor(() => expect(onDraftChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      instruction: 'Draft B', canvasMode: 'symmetry', variationName: 'B variation',
+      snapshot: expect.objectContaining({ source_uri: 'https://test/b.png' }),
+    })));
+  });
+
   test('wide web keeps the selected design beside the editing tools', async () => {
     const originalPlatform = Platform.OS;
     const originalWindow = Dimensions.get('window');

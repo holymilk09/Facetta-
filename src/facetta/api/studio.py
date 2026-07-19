@@ -400,6 +400,22 @@ class CreateVisualPreviewRequest(BaseModel):
             raise ValueError(
                 "region-specific annotations require marked_region scope"
             )
+        if self.raw_user_instruction is not None and not self.annotations:
+            # The visible/audit copy may omit preservation text added by the
+            # client, but it must still be the designer-authored portion of
+            # the exact instruction that drives provider work.  Otherwise a
+            # stale or malformed client could render change X while recording
+            # change Y in immutable revision history.
+            normalized_raw = " ".join(
+                self.raw_user_instruction.casefold().split()
+            )
+            normalized_instruction = " ".join(
+                self.instruction.casefold().split()
+            )
+            if normalized_raw not in normalized_instruction:
+                raise ValueError(
+                    "raw_user_instruction must be preserved in instruction"
+                )
         marked_instructions = " ".join(
             (
                 self.instruction,
@@ -1492,6 +1508,10 @@ def create_visual_preview(
                     hashlib.sha256(mask).hexdigest()
                     if mask is not None else None
                 ),
+                "compiled_instruction": compiled_instruction,
+                "compiled_instruction_sha256": hashlib.sha256(
+                    compiled_instruction.encode("utf-8")
+                ).hexdigest(),
             },
             studio_job_id=request.studio_job_id,
         )

@@ -79,7 +79,7 @@ export interface StudioCreateDraft {
 export const EMPTY_STUDIO_CREATE_DRAFT: StudioCreateDraft = {
   sentence: '',
   references: [],
-  candidateCount: 1,
+  candidateCount: 2,
   balance: 'symmetrical',
 };
 
@@ -307,7 +307,7 @@ export function StudioCreateWorkspace({
   const [localDraft, setLocalDraft] = useState<StudioCreateDraft>(() => ({
     sentence: initialSentence,
     references: [...initialReferences],
-    candidateCount: 1,
+    candidateCount: 2,
     balance: 'symmetrical',
   }));
   const createDraft = controlledDraft ?? localDraft;
@@ -639,7 +639,7 @@ export function StudioCreateWorkspace({
     setSetupOpen(false);
     updateDraft((current) => ({
       ...current,
-      candidateCount: 1,
+      candidateCount: 2,
     }));
     setProject(null);
     setSelectedAssetId(null);

@@ -851,6 +851,29 @@ def apply_pre_spec_visual_candidate(
         continuation_prompt.prompt
         if continuation_prompt is not None else candidate.requested_change
     )
+    compiled_instruction_sha256 = hashlib.sha256(
+        candidate.requested_change.encode("utf-8")
+    ).hexdigest()
+    if continuation_prompt is not None:
+        recorded_compiled_hash = continuation_prompt.intent.get(
+            "compiled_instruction_sha256"
+        )
+        recorded_compiled_instruction = continuation_prompt.intent.get(
+            "compiled_instruction"
+        )
+        if (
+            (recorded_compiled_hash is not None
+             or recorded_compiled_instruction is not None)
+            and (
+                recorded_compiled_hash != compiled_instruction_sha256
+                or recorded_compiled_instruction != candidate.requested_change
+            )
+        ):
+            raise StudioHistoryError(
+                "visual_preview_prompt_instruction_mismatch",
+                "the visible prompt is not bound to the exact generated instruction",
+                status_code=422,
+            )
     now = utcnow()
     child = ImageAsset(
         id=new_id("ast"),
@@ -904,6 +927,7 @@ def apply_pre_spec_visual_candidate(
             "source_hash": candidate.source_hash,
             "source_sha256": candidate.source_hash,
             "output_sha256": hashlib.sha256(candidate.image_bytes).hexdigest(),
+            "compiled_instruction_sha256": compiled_instruction_sha256,
         },
         change_summary=(
             "Applied a reviewed pre-spec visual refinement; no specification "
