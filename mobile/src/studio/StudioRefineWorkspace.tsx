@@ -262,6 +262,7 @@ export function StudioRefineWorkspace({
   );
   const [variationName, setVariationName] = useState(draft?.variationName ?? '');
   const [error, setError] = useState<string | null>(null);
+  const [showEditHelp, setShowEditHelp] = useState(false);
   const [acceptedOutcome, setAcceptedOutcome] = useState<AcceptedRefineOutcome | null>(null);
   const [continuationPrompts, setContinuationPrompts] = useState<
     readonly StudioContinuationPrompt[] | null
@@ -1630,9 +1631,19 @@ export function StudioRefineWorkspace({
       {workspaceMode === 'refine' && mode === 'instruction' && <>
         <Field label="Describe the changes" value={instruction} onChange={setInstruction} multiline
           placeholder="For example: Make the center stone oval, use finer prongs, and narrow both shoulders. Preserve everything I did not mention." />
-        <Notice kind="info" text={exactSpecification
-          ? 'Facetta will interpret the complete request and preserve unmentioned areas. Use Annotate image when a change belongs to a specific part of the jewelry.'
-          : 'Facetta will interpret the complete visual request and preserve unmentioned areas. Confirm starting design facts only when you need production-specific component or construction control.'} />
+        <View style={styles.editHelpRow}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="How Facetta protects unmentioned areas"
+            accessibilityState={{ expanded: showEditHelp }}
+            onPress={() => setShowEditHelp((visible) => !visible)}
+            style={styles.editHelpButton}>
+            <Text style={styles.editHelpIcon}>?</Text>
+          </Pressable>
+        </View>
+        {showEditHelp && <Notice kind="info" text={exactSpecification
+          ? 'Facetta interprets the complete request and preserves unmentioned areas. Use Annotate image when a change belongs to a specific part of the jewelry.'
+          : 'Facetta interprets the complete visual request and preserves unmentioned areas. Save starting design facts only when you need production-specific component or construction control.'} />}
       </>}
 
       {workspaceMode === 'refine' && mode === 'annotation' && (sourceImageUrl === null ? (
@@ -1915,6 +1926,12 @@ const styles = StyleSheet.create({
   optionCard: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 13, backgroundColor: theme.card },
   optionTitle: { color: theme.ink, fontWeight: '700', fontSize: 15 },
   optionDetail: { color: theme.faint, fontSize: 12, lineHeight: 18, marginTop: 4 },
+  editHelpRow: { alignItems: 'flex-end', marginTop: -4 },
+  editHelpButton: {
+    width: 44, height: 44, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: theme.line, borderRadius: 22, backgroundColor: theme.card,
+  },
+  editHelpIcon: { color: theme.ink, fontSize: 18, fontWeight: '800' },
   creditEstimate: { color: theme.faint, fontSize: 12, lineHeight: 18, marginTop: 6 },
   compareRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   comparePane: { flexGrow: 1, flexBasis: 280, gap: 6 },

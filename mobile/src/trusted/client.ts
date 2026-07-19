@@ -831,6 +831,8 @@ const decodeStudioContinuationPrompt: Decoder<StudioContinuationPrompt> = (value
   const candidateId = optionalText(value.candidate_id);
   const imageRunId = optionalText(value.image_run_id);
   const appliedAssetId = optionalText(value.applied_asset_id);
+  const outcomeCode = value.outcome_code === undefined
+    ? null : optionalText(value.outcome_code);
   const variant = value.variant === null ? null : number(value.variant);
   if (
     promptId === null || sequence === null || !Number.isInteger(sequence) || sequence < 1
@@ -844,7 +846,8 @@ const decodeStudioContinuationPrompt: Decoder<StudioContinuationPrompt> = (value
       && inputMode !== 'background' && inputMode !== 'angle' && inputMode !== 'symmetry')
     || (scope !== 'appearance' && scope !== 'marked_region')
     || studioJobId === undefined || candidateId === undefined || imageRunId === undefined
-    || appliedAssetId === undefined || (value.variant !== null && variant === null)
+    || appliedAssetId === undefined || outcomeCode === undefined
+    || (value.variant !== null && variant === null)
   ) return null;
   return {
     prompt_id: promptId,
@@ -858,6 +861,7 @@ const decodeStudioContinuationPrompt: Decoder<StudioContinuationPrompt> = (value
     source_sha256: sourceSha256,
     studio_job_id: studioJobId,
     state,
+    outcome_code: outcomeCode,
     candidate_id: candidateId,
     image_run_id: imageRunId,
     applied_asset_id: appliedAssetId,

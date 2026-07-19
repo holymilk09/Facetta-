@@ -1297,6 +1297,7 @@ def test_visual_provider_failure_atomically_fails_bound_job_without_charge(
     assert prompt["prompt"] == raw_words
     assert prompt["input_mode"] == "point"
     assert prompt["state"] == "failed"
+    assert prompt["outcome_code"] == "image_provider_failed"
     assert "PRESERVE EVERY OTHER" not in prompt["prompt"]
     with Session() as db:
         job = db.get(StudioJobRecord, job_id)

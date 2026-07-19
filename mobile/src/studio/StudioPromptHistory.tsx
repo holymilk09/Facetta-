@@ -11,6 +11,7 @@ export interface StudioPromptHistoryEntry {
   prompt: string;
   revision: number | null;
   state: StudioContinuationPromptState | 'initial' | 'legacy_saved';
+  outcomeCode: string | null;
 }
 
 export interface StudioPromptHistoryProps {
@@ -60,6 +61,7 @@ export function studioPromptHistory(
           prompt: initialPrompt,
           revision: initial.revision,
           state: 'initial',
+          outcomeCode: null,
         },
         order: initial.revision,
         tie: 0,
@@ -82,6 +84,7 @@ export function studioPromptHistory(
             prompt: continuation.prompt,
             revision: appliedRevision,
             state: continuation.state,
+            outcomeCode: continuation.outcome_code,
           },
           order: appliedRevision ?? Number.MAX_SAFE_INTEGER,
           tie: continuation.sequence,
@@ -102,6 +105,7 @@ export function studioPromptHistory(
           prompt,
           revision: revision.revision,
           state: 'legacy_saved',
+          outcomeCode: null,
         },
         order: revision.revision,
         tie: 1,
@@ -121,6 +125,7 @@ export function studioPromptHistory(
       prompt,
       revision: revision.revision,
       state: 'legacy_saved',
+      outcomeCode: null,
     });
   });
   if (entries.length === 0) {
@@ -131,6 +136,7 @@ export function studioPromptHistory(
         prompt,
         revision: project.active_revision.revision,
         state: 'legacy_saved',
+        outcomeCode: null,
       });
     }
   }
@@ -158,8 +164,14 @@ export function StudioPromptHistory({
       return entry.revision === null ? 'Applied as a saved revision' : `Saved in Revision ${entry.revision}`;
     }
     if (entry.state === 'saved_as_variation') return 'Saved as a separate variation';
-    if (entry.state === 'discarded') return 'Discarded · no revision saved';
-    if (entry.state === 'failed') return 'Could not generate · no revision saved';
+    if (entry.state === 'discarded') return 'Preview discarded · saved revision unchanged';
+    if (entry.state === 'failed') return ({
+      image_provider_failed: 'Generation service was unavailable · saved revision unchanged',
+      image_evaluation_failed: 'Could not verify the edit safely · saved revision unchanged',
+      image_quality_failed: 'Preview did not pass jewelry quality checks · saved revision unchanged',
+      invalid_image_plan: 'Request could not be prepared safely · saved revision unchanged',
+      preview_expired: 'Preview expired · saved revision unchanged',
+    })[entry.outcomeCode ?? ''] ?? 'Generation failed · saved revision unchanged';
     if (entry.state === 'requested') return 'Requested · generation in progress';
     if (entry.state === 'preview_ready') return 'Temporary preview · apply to save';
     return entry.revision === null ? 'Saved prompt' : `Saved in Revision ${entry.revision}`;

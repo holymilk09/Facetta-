@@ -480,6 +480,7 @@ def _continuation_prompt_payload(
     candidate_id: str | None = None,
     image_run_id: str | None = None,
     applied_asset_id: str | None = None,
+    outcome_code: str | None = None,
 ) -> dict:
     return {
         "prompt_id": prompt.prompt_id,
@@ -493,6 +494,7 @@ def _continuation_prompt_payload(
         "source_sha256": prompt.source_sha256,
         "studio_job_id": prompt.studio_job_id,
         "state": state,
+        "outcome_code": outcome_code,
         "candidate_id": candidate_id,
         "image_run_id": image_run_id,
         "applied_asset_id": applied_asset_id,
@@ -1964,6 +1966,8 @@ def studio_continuation_prompt_history(
     payloads: list[dict] = []
     for prompt in prompts:
         candidate = candidate_by_prompt_id.get(prompt.prompt_id)
+        job = jobs.get(prompt.studio_job_id) if prompt.studio_job_id is not None else None
+        outcome_code: str | None = None
         state: Literal[
             "requested", "preview_ready", "applied", "saved_as_variation",
             "discarded", "failed",
@@ -1976,12 +1980,13 @@ def studio_continuation_prompt_history(
                 "discarded": "discarded",
                 "expired": "failed",
             }[candidate.status]
+            if candidate.status == "expired":
+                outcome_code = "preview_expired"
         elif (
-            prompt.studio_job_id is not None
-            and jobs.get(prompt.studio_job_id) is not None
-            and jobs[prompt.studio_job_id].status in {"failed", "canceled"}
+            job is not None and job.status in {"failed", "canceled"}
         ):
-            state = "failed"
+            state = "discarded" if job.status == "canceled" else "failed"
+            outcome_code = "request_canceled" if job.status == "canceled" else job.error_code
         payloads.append(_continuation_prompt_payload(
             prompt,
             state=state,
@@ -1992,6 +1997,7 @@ def studio_continuation_prompt_history(
             applied_asset_id=(
                 candidate.terminal_asset_id if candidate is not None else None
             ),
+            outcome_code=outcome_code,
         ))
     return {"prompts": payloads}
 

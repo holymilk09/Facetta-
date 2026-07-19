@@ -89,6 +89,7 @@ describe('StudioPromptHistory', () => {
       annotations: [], input_mode: 'symmetry', scope: 'appearance', variant: 0,
       source_asset_id: first.asset_id, source_sha256: 'a'.repeat(64),
       studio_job_id: 'job_1', state: 'applied', candidate_id: 'candidate_1',
+      outcome_code: null,
       image_run_id: 'run_1', applied_asset_id: second.asset_id,
       created_at: '2026-07-19T00:00:00Z',
     };
@@ -149,6 +150,28 @@ describe('StudioPromptHistory', () => {
     expect(screen.getByText('TEMPORARY PREVIEW')).toBeTruthy();
     expect(screen.getByText('Make the chain white gold and braided.')).toBeTruthy();
     expect(screen.getByText('Apply to save this as the next revision.')).toBeTruthy();
+  });
+
+  it('explains failed and discarded attempts without implying a revision was lost', async () => {
+    const base: StudioContinuationPrompt = {
+      prompt_id: 'scp_failed', sequence: 1, prompt: 'Deepen the marked leaf color.',
+      annotations: [], input_mode: 'point', scope: 'marked_region', variant: 0,
+      source_asset_id: restored.asset_id, source_sha256: 'b'.repeat(64),
+      studio_job_id: 'job_failed', state: 'failed', outcome_code: 'image_quality_failed',
+      candidate_id: null, image_run_id: null, applied_asset_id: null,
+      created_at: '2026-07-19T01:00:00Z',
+    };
+    await render(<StudioPromptHistory project={project} continuationPrompts={[
+      base,
+      { ...base, prompt_id: 'scp_discarded', sequence: 2, prompt: 'Try emerald green.',
+        state: 'discarded', outcome_code: 'request_canceled' },
+    ]} />);
+
+    expect(screen.getByText(
+      'Preview did not pass jewelry quality checks · saved revision unchanged',
+    )).toBeTruthy();
+    expect(screen.getByText('Preview discarded · saved revision unchanged')).toBeTruthy();
+    expect(screen.queryByText(/no revision saved/i)).toBeNull();
   });
 
   it('offers a separate path without deleting the saved conversation', async () => {

@@ -662,9 +662,7 @@ export default function App() {
                     unavailable && styles.actionChipTextDisabled,
                     studioView === 'action' && selectedActionId === action.id && styles.actionChipTextActive,
                   ]}>{action.shortLabel}</Text>
-                  {unavailableReason !== null && (
-                    <Text style={styles.actionChipReason}>{unavailableReason}</Text>
-                  )}
+                  {prerequisite !== null && <Text style={styles.actionChipBadge}>•</Text>}
                 </Pressable>
               );
             })}
@@ -1110,14 +1108,16 @@ const styles = StyleSheet.create({
   actionRailDark: { backgroundColor: '#15121c', borderBottomColor: '#332b40' },
   actionRailContent: { gap: 7, paddingHorizontal: 16 },
   actionChip: {
-    minWidth: 72,
+    minWidth: 64,
+    minHeight: 44,
     alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: theme.line,
     backgroundColor: theme.card,
-    paddingHorizontal: 13,
-    paddingVertical: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
   },
   actionChipDark: { backgroundColor: '#221d2b', borderColor: '#41364f' },
   actionChipDisabled: { opacity: 0.62 },
@@ -1126,7 +1126,7 @@ const styles = StyleSheet.create({
   actionChipTextDark: { color: '#c8bdcf' },
   actionChipTextDisabled: { color: theme.faint },
   actionChipTextActive: { color: '#ffffff' },
-  actionChipReason: { color: theme.faint, fontSize: 10, lineHeight: 13, marginTop: 2 },
+  actionChipBadge: { color: theme.accent, fontSize: 16, lineHeight: 10, marginTop: -1 },
   moreMenu: {
     position: 'absolute',
     zIndex: 30,

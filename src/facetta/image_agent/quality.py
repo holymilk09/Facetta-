@@ -2281,7 +2281,23 @@ class RingQualityEvaluator:
             ),
         ]
         if JEWELRY_SYMMETRY_CONTRACT in plan.intent:
-            observed_symmetry = item.symmetry_expectation_matches
+            necklace_gate = evaluate_necklace_symmetry_audits(
+                plan.intent,
+                item.necklace_symmetry_audits,
+                source_present=source_image is not None,
+                observed_jewelry_type=item.observed_jewelry_type,
+            )
+            explicit_symmetry = item.symmetry_expectation_matches
+            # A complete structured necklace audit is stronger evidence than a
+            # nullable summary field from the same evaluator response. Never
+            # rescue an explicit false or a failed/incomplete structured audit.
+            observed_symmetry = (
+                True
+                if explicit_symmetry is None
+                and necklace_gate.applicable
+                and necklace_gate.passed
+                else explicit_symmetry
+            )
             checks.insert(-2, QualityCheck(
                 code="jewelry_symmetry",
                 passed=observed_symmetry is True,
@@ -2294,17 +2310,16 @@ class RingQualityEvaluator:
                 ),
                 evidence={
                     "observed": observed_symmetry,
+                    "summary_observed": explicit_symmetry,
+                    "confirmed_by_structured_necklace_audit": (
+                        explicit_symmetry is None
+                        and observed_symmetry is True
+                    ),
                     "observations": list(item.symmetry_observations),
                     "default_symmetry_required": True,
                     "identity_source_or_explicit_asymmetry_may_override": True,
                 },
             ))
-            necklace_gate = evaluate_necklace_symmetry_audits(
-                plan.intent,
-                item.necklace_symmetry_audits,
-                source_present=source_image is not None,
-                observed_jewelry_type=item.observed_jewelry_type,
-            )
             if necklace_gate.applicable:
                 checks.insert(-2, QualityCheck(
                     code="necklace_sequence_symmetry",

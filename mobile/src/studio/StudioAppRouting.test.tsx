@@ -1205,7 +1205,7 @@ test('Views opens its starting-facts prerequisite and resumes after one save act
     'Generate technical views; Save starting facts first',
   );
   expect(prerequisiteViews.props.accessibilityState).toEqual({ disabled: false });
-  expect(view.getByText('Save starting facts first')).toBeTruthy();
+  expect(view.queryByText('Save starting facts first')).toBeNull();
   expect(view.queryByText('Views route reached')).toBeNull();
   fireEvent.press(prerequisiteViews);
   expect(await view.findByText('Save starting facts')).toBeTruthy();

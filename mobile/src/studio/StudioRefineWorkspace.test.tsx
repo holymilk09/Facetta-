@@ -1244,7 +1244,12 @@ describe('StudioRefineWorkspace', () => {
       />,
     );
     await fireEvent.press(screen.getByLabelText('Describe refine mode'));
-    expect(await screen.findByText(/interpret the complete request/i)).toBeTruthy();
+    expect(screen.queryByText(/interprets the complete request/i)).toBeNull();
+    const editHelp = screen.getByLabelText('How Facetta protects unmentioned areas');
+    expect(editHelp.props.accessibilityState).toEqual({ expanded: false });
+    await fireEvent.press(editHelp);
+    expect(await screen.findByText(/interprets the complete request/i)).toBeTruthy();
+    expect(editHelp.props.accessibilityState).toEqual({ expanded: true });
     await fireEvent.changeText(
       screen.getByPlaceholderText(/make the center stone oval/i),
       'Make the background warmer and the metal more luminous',

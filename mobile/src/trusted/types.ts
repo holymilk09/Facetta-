@@ -644,6 +644,8 @@ export interface StudioContinuationPrompt {
   source_sha256: string;
   studio_job_id: string | null;
   state: StudioContinuationPromptState;
+  /** Stable designer-safe failure category; raw provider details are never exposed. */
+  outcome_code: string | null;
   candidate_id: string | null;
   image_run_id: string | null;
   applied_asset_id: string | null;

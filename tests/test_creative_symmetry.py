@@ -251,6 +251,50 @@ def test_symmetry_contract_is_appended_exactly_once() -> None:
     assert "identity source remains authoritative" in once
 
 
+def test_complete_structured_necklace_audit_resolves_nullable_symmetry_summary() -> None:
+    instruction = with_jewelry_symmetry_contract("A bilateral ruby necklace")
+    plan = build_image_plan(ImageOperation.CREATIVE_GENERATE, instruction)
+    audit = NecklaceSymmetryAudit(
+        expectation="bilateral",
+        centerline_anchor="center ruby pendant",
+        complete_piece_assessable=True,
+        left_count=1,
+        right_count=1,
+        pair_audits=(NecklaceSymmetryPairAudit(
+            position_from_center=1,
+            left_component="left ruby leaf link",
+            right_component="right ruby leaf link",
+            motif_order_matches=True,
+            orientation_matches=True,
+            spacing_matches=True,
+            scale_matches=True,
+            metal_treatment_matches=True,
+            pave_coverage_matches=True,
+            gemstone_treatment_matches=True,
+            connection_type_matches=True,
+            observation="the corresponding links match across the centerline",
+        ),),
+        unrequested_differences_absent=True,
+    )
+    inspection = _inspection(
+        None,
+        necklace_audits=(audit,),
+        observed_jewelry_type="necklace",
+    )
+    report = RingQualityEvaluator(
+        prompt_creative_inspector=_Inspector(inspection),
+        require_cross_inspection=False,
+        require_render_cross_inspection=False,
+    ).evaluate(plan, _png(), source_image=None, mask_bytes=None)
+
+    checks = {check.code: check for check in report.checks}
+    assert checks["jewelry_symmetry"].passed is True
+    assert checks["jewelry_symmetry"].evidence[
+        "confirmed_by_structured_necklace_audit"
+    ] is True
+    assert checks["necklace_sequence_symmetry"].passed is True
+
+
 def test_six_leaf_ruby_pattern_gets_an_exact_jewelry_interpretation() -> None:
     designer_words = (
         "Surrounding the ruby is 6 leaves, half white diamonds and half "
