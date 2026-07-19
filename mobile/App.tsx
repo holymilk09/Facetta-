@@ -662,7 +662,7 @@ export default function App() {
                     unavailable && styles.actionChipTextDisabled,
                     studioView === 'action' && selectedActionId === action.id && styles.actionChipTextActive,
                   ]}>{action.shortLabel}</Text>
-                  {prerequisite !== null && <Text style={styles.actionChipBadge}>•</Text>}
+                  {prerequisite !== null && <Text style={styles.actionChipBadge}>Facts first</Text>}
                 </Pressable>
               );
             })}
@@ -1126,7 +1126,7 @@ const styles = StyleSheet.create({
   actionChipTextDark: { color: '#c8bdcf' },
   actionChipTextDisabled: { color: theme.faint },
   actionChipTextActive: { color: '#ffffff' },
-  actionChipBadge: { color: theme.accent, fontSize: 16, lineHeight: 10, marginTop: -1 },
+  actionChipBadge: { color: theme.accent, fontSize: 8, lineHeight: 10, fontWeight: '800', marginTop: 1 },
   moreMenu: {
     position: 'absolute',
     zIndex: 30,

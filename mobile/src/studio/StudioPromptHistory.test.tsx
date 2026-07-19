@@ -166,12 +166,59 @@ describe('StudioPromptHistory', () => {
       { ...base, prompt_id: 'scp_discarded', sequence: 2, prompt: 'Try emerald green.',
         state: 'discarded', outcome_code: 'request_canceled' },
     ]} />);
+    await fireEvent.press(screen.getByLabelText('Show design prompt history'));
 
     expect(screen.getByText(
       'Preview did not pass jewelry quality checks · saved revision unchanged',
     )).toBeTruthy();
     expect(screen.getByText('Preview discarded · saved revision unchanged')).toBeTruthy();
     expect(screen.queryByText(/no revision saved/i)).toBeNull();
+  });
+
+  it('reuses wording only when the failure belongs to the active revision', async () => {
+    const onReusePrompt = jest.fn();
+    const failed: StudioContinuationPrompt = {
+      prompt_id: 'scp_retry', sequence: 1, prompt: 'Deepen the marked leaf color.',
+      annotations: [], input_mode: 'point', scope: 'marked_region', variant: 0,
+      source_asset_id: restored.asset_id, source_sha256: 'c'.repeat(64),
+      studio_job_id: 'job_retry', state: 'failed', outcome_code: 'image_quality_failed',
+      candidate_id: null, image_run_id: null, applied_asset_id: null,
+      created_at: '2026-07-19T01:00:00Z',
+    };
+    const { rerender } = await render(
+      <StudioPromptHistory
+        project={project}
+        continuationPrompts={[failed]}
+        onReusePrompt={onReusePrompt}
+      />,
+    );
+    await fireEvent.press(screen.getByLabelText('Reuse wording: Deepen the marked leaf color.'));
+    expect(onReusePrompt).toHaveBeenCalledWith('Deepen the marked leaf color.');
+
+    await rerender(<StudioPromptHistory
+      project={project}
+      continuationPrompts={[{ ...failed, source_asset_id: first.asset_id }]}
+      onReusePrompt={onReusePrompt}
+    />);
+    expect(screen.queryByText('Reuse wording')).toBeNull();
+  });
+
+  it('collapses long histories by default so the editor remains reachable', async () => {
+    const prompts = Array.from({ length: 4 }, (_, index): StudioContinuationPrompt => ({
+      prompt_id: `scp_${index + 1}`, sequence: index + 1, prompt: `Request ${index + 1}`,
+      annotations: [], input_mode: 'describe', scope: 'appearance', variant: 0,
+      source_asset_id: restored.asset_id, source_sha256: 'd'.repeat(64),
+      studio_job_id: `job_${index + 1}`, state: 'failed', outcome_code: 'image_quality_failed',
+      candidate_id: null, image_run_id: null, applied_asset_id: null,
+      created_at: `2026-07-19T0${index + 1}:00:00Z`,
+    }));
+    await render(<StudioPromptHistory project={project} continuationPrompts={prompts} />);
+
+    expect((await screen.findByLabelText('Show design prompt history')).props.accessibilityState)
+      .toEqual({ expanded: false });
+    expect(screen.queryByText('Request 1')).toBeNull();
+    await fireEvent.press(screen.getByLabelText('Show design prompt history'));
+    expect(screen.getByText('Request 4')).toBeTruthy();
   });
 
   it('offers a separate path without deleting the saved conversation', async () => {

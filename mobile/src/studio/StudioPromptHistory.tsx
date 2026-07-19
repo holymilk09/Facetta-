@@ -12,6 +12,7 @@ export interface StudioPromptHistoryEntry {
   revision: number | null;
   state: StudioContinuationPromptState | 'initial' | 'legacy_saved';
   outcomeCode: string | null;
+  sourceAssetId: string | null;
 }
 
 export interface StudioPromptHistoryProps {
@@ -20,6 +21,8 @@ export interface StudioPromptHistoryProps {
   continuationPrompts?: readonly StudioContinuationPrompt[] | null;
   previewPrompt?: string | null;
   onStartNewDesign?: () => void;
+  /** Refill words from a failed request only when it belongs to the active revision. */
+  onReusePrompt?: (prompt: string) => void;
   compact?: boolean;
 }
 
@@ -62,6 +65,7 @@ export function studioPromptHistory(
           revision: initial.revision,
           state: 'initial',
           outcomeCode: null,
+          sourceAssetId: initial.asset.asset_id,
         },
         order: initial.revision,
         tie: 0,
@@ -85,6 +89,7 @@ export function studioPromptHistory(
             revision: appliedRevision,
             state: continuation.state,
             outcomeCode: continuation.outcome_code,
+            sourceAssetId: continuation.source_asset_id,
           },
           order: appliedRevision ?? Number.MAX_SAFE_INTEGER,
           tie: continuation.sequence,
@@ -106,6 +111,7 @@ export function studioPromptHistory(
           revision: revision.revision,
           state: 'legacy_saved',
           outcomeCode: null,
+          sourceAssetId: revision.asset.asset_id,
         },
         order: revision.revision,
         tie: 1,
@@ -126,6 +132,7 @@ export function studioPromptHistory(
       revision: revision.revision,
       state: 'legacy_saved',
       outcomeCode: null,
+      sourceAssetId: revision.asset.asset_id,
     });
   });
   if (entries.length === 0) {
@@ -137,6 +144,7 @@ export function studioPromptHistory(
         revision: project.active_revision.revision,
         state: 'legacy_saved',
         outcomeCode: null,
+        sourceAssetId: project.active_revision.asset_id,
       });
     }
   }
@@ -144,13 +152,14 @@ export function studioPromptHistory(
 }
 
 export function StudioPromptHistory({
-  project, continuationPrompts = null, previewPrompt = null, onStartNewDesign, compact = false,
+  project, continuationPrompts = null, previewPrompt = null, onStartNewDesign,
+  onReusePrompt, compact = false,
 }: StudioPromptHistoryProps) {
   const entries = useMemo(
     () => studioPromptHistory(project, continuationPrompts),
     [continuationPrompts, project],
   );
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(entries.length <= 3);
   const temporaryPrompt = previewPrompt?.trim() ?? '';
   const temporaryAlreadyRecorded = entries.some((entry) => (
     entry.prompt === temporaryPrompt
@@ -209,6 +218,17 @@ export function StudioPromptHistory({
                   ? 'STARTED WITH' : 'THEN REQUESTED'}</Text>
                 <Text style={styles.prompt}>{entry.prompt}</Text>
                 <Text style={styles.revisionLabel}>{statusText(entry)}</Text>
+                {entry.state === 'failed' && onReusePrompt !== undefined
+                  && entry.sourceAssetId === project?.active_asset_id && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Reuse wording: ${entry.prompt}`}
+                    accessibilityHint="Copies the words into Describe changes. Marked areas are not reused."
+                    onPress={() => onReusePrompt(entry.prompt)}
+                    style={styles.retryButton}>
+                    <Text style={styles.retryText}>Reuse wording</Text>
+                  </Pressable>
+                )}
               </View>
             </View>
           ))}
@@ -258,6 +278,8 @@ const styles = StyleSheet.create({
   toggle: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 6 },
   toggleText: { color: '#5c3fc0', fontSize: 10, fontWeight: '800' },
   timeline: { gap: 13, marginTop: 15 },
+  retryButton: { minHeight: 36, alignSelf: 'flex-start', justifyContent: 'center', marginTop: 3 },
+  retryText: { color: '#5c3fc0', fontSize: 11, fontWeight: '800' },
   step: { alignItems: 'flex-start', flexDirection: 'row', gap: 10 },
   stepNumber: {
     width: 24,

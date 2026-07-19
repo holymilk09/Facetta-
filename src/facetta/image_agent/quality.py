@@ -53,6 +53,11 @@ from facetta.image_agent.vision import (
     vision_json,
     vision_json_pair,
 )
+from facetta.image_agent.providers import (
+    is_xai_quota_exhaustion,
+    note_xai_quota_exhausted,
+    xai_quota_cooldown_active,
+)
 
 
 def _qa_vision_json(
@@ -63,9 +68,18 @@ def _qa_vision_json(
 ) -> dict:
     """Keep Grok primary, retrying only provider-unavailable QA with OpenAI."""
 
+    if xai_quota_cooldown_active() and env_value("OPENAI_API_KEY"):
+        return openai_vision_json(
+            system,
+            image,
+            user_text,
+            response_schema=response_schema,
+        )
     try:
         return vision_json(system, image, user_text)
-    except VisionProviderUnavailable:
+    except VisionProviderUnavailable as exc:
+        if is_xai_quota_exhaustion(exc):
+            note_xai_quota_exhausted()
         if not env_value("OPENAI_API_KEY"):
             raise
         return openai_vision_json(
@@ -84,9 +98,13 @@ def _qa_vision_json_pair(
 ) -> dict:
     """Keep Grok primary for pair QA with one narrow availability fallback."""
 
+    if xai_quota_cooldown_active() and env_value("OPENAI_API_KEY"):
+        return openai_vision_json_pair(system, image_a, image_b, user_text)
     try:
         return vision_json_pair(system, image_a, image_b, user_text)
-    except VisionProviderUnavailable:
+    except VisionProviderUnavailable as exc:
+        if is_xai_quota_exhaustion(exc):
+            note_xai_quota_exhausted()
         if not env_value("OPENAI_API_KEY"):
             raise
         return openai_vision_json_pair(system, image_a, image_b, user_text)

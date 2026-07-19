@@ -51,14 +51,25 @@ from facetta.spec import Spec
 from facetta.image_agent.planning import attempt_cache_key
 from facetta.image_agent.providers import (
     _provider_call_error,
+    _reset_xai_quota_cooldown,
     available_configured_route,
     available_fallback_route,
     configured_fallback_provider,
+    note_xai_quota_exhausted,
+    RenderPrimitiveProvider,
+    xai_quota_cooldown_active,
 )
 from facetta.provider_errors import RenderUnavailable
 
 
 HALO = Spec.model_validate(HALO_SPEC)
+
+
+@pytest.fixture(autouse=True)
+def reset_xai_quota_cooldown():
+    _reset_xai_quota_cooldown()
+    yield
+    _reset_xai_quota_cooldown()
 
 
 def test_canonical_agent_does_not_depend_on_legacy_specagent_or_private_media():
@@ -2494,6 +2505,85 @@ class TestClosedLoopRouting:
         assert failure.retryable is True
         assert failure.fallback_eligible is False
         assert failure.code == "image_provider_call_failed"
+        assert xai_quota_cooldown_active() is False
+
+    def test_quota_cooldown_routes_around_xai_then_expires(
+        self,
+        monkeypatch,
+    ):
+        now = [100.0]
+        monkeypatch.setattr(
+            "facetta.image_agent.providers.time.monotonic", lambda: now[0],
+        )
+        monkeypatch.setenv("XAI_KEY", "xai-key")
+        monkeypatch.delenv("FAL_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+
+        failure = _provider_call_error(
+            ImageRoute.GROK_EDIT,
+            render_failure(403, "monthly spending limit reached"),
+        )
+        note_xai_quota_exhausted()
+
+        assert failure.code == "xai_quota_exhausted"
+        assert xai_quota_cooldown_active() is True
+        assert available_configured_route(
+            ImageRoute.GROK_EDIT,
+        ) is ImageRoute.OPENAI_EDIT
+        assert available_configured_route(
+            ImageRoute.GROK_GENERATE,
+        ) is ImageRoute.OPENAI_GENERATE
+
+        now[0] += 901
+        assert xai_quota_cooldown_active() is False
+        assert available_configured_route(
+            ImageRoute.GROK_EDIT,
+        ) is ImageRoute.GROK_EDIT
+
+    def test_render_adapter_opens_cooldown_on_confirmed_xai_quota(
+        self,
+        monkeypatch,
+    ):
+        plan = build_image_plan(
+            ImageOperation.CREATIVE_GENERATE,
+            "a symmetric ruby necklace",
+        )
+        monkeypatch.setattr(
+            "facetta.render.generate_image",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                render_failure(403, "monthly spending limit reached")
+            ),
+        )
+
+        with pytest.raises(ProviderCallError) as caught:
+            RenderPrimitiveProvider().execute(
+                plan,
+                ImageRoute.GROK_GENERATE,
+                "prompt",
+                source_image=None,
+                mask_bytes=None,
+            )
+
+        assert caught.value.code == "xai_quota_exhausted"
+        assert xai_quota_cooldown_active() is True
+
+    def test_quota_cooldown_without_fallback_keeps_honest_xai_route(
+        self,
+        monkeypatch,
+    ):
+        monkeypatch.setenv("XAI_KEY", "xai-key")
+        monkeypatch.delenv("FAL_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        _provider_call_error(
+            ImageRoute.GROK_GENERATE,
+            render_failure(403, "quota exhausted"),
+        )
+        note_xai_quota_exhausted()
+
+        assert xai_quota_cooldown_active() is True
+        assert available_configured_route(
+            ImageRoute.GROK_GENERATE,
+        ) is ImageRoute.GROK_GENERATE
 
     def test_three_failed_candidates_raise_structured_quality_failure(self):
         provider = FakeProvider()

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from typing import Protocol
 
 import httpx
@@ -38,6 +40,51 @@ _XAI_QUOTA_EXHAUSTION_MARKERS = (
     "quota exhausted",
 )
 
+# Quota exhaustion is durable enough that probing xAI again for every Studio
+# request only adds latency before the same task-safe fallback. Keep this
+# process-local and time bounded: a restart or the first request after expiry
+# probes xAI again, so replenished credits recover without operator action.
+_XAI_QUOTA_COOLDOWN_SECONDS = 15 * 60
+_xai_quota_cooldown_until = 0.0
+_xai_quota_cooldown_lock = threading.Lock()
+
+
+def is_xai_quota_exhaustion(exc: BaseException) -> bool:
+    cause: BaseException | None = exc
+    while cause is not None:
+        if isinstance(cause, httpx.HTTPStatusError):
+            return (
+                cause.response.status_code == 403
+                and any(
+                    marker in cause.response.text.casefold()
+                    for marker in _XAI_QUOTA_EXHAUSTION_MARKERS
+                )
+            )
+        cause = cause.__cause__
+    return False
+
+
+def note_xai_quota_exhausted() -> None:
+    global _xai_quota_cooldown_until
+    with _xai_quota_cooldown_lock:
+        _xai_quota_cooldown_until = max(
+            _xai_quota_cooldown_until,
+            time.monotonic() + _XAI_QUOTA_COOLDOWN_SECONDS,
+        )
+
+
+def xai_quota_cooldown_active() -> bool:
+    with _xai_quota_cooldown_lock:
+        return time.monotonic() < _xai_quota_cooldown_until
+
+
+def _reset_xai_quota_cooldown() -> None:
+    """Reset process-local provider state for deterministic tests."""
+
+    global _xai_quota_cooldown_until
+    with _xai_quota_cooldown_lock:
+        _xai_quota_cooldown_until = 0.0
+
 
 def _provider_call_error(
     route: ImageRoute,
@@ -48,22 +95,13 @@ def _provider_call_error(
     if route not in {ImageRoute.GROK_GENERATE, ImageRoute.GROK_EDIT}:
         return ProviderCallError(str(exc))
 
-    cause: BaseException | None = exc
-    while cause is not None:
-        if isinstance(cause, httpx.HTTPStatusError):
-            response = cause.response
-            detail = response.text.casefold()
-            if response.status_code == 403 and any(
-                marker in detail for marker in _XAI_QUOTA_EXHAUSTION_MARKERS
-            ):
-                return ProviderCallError(
-                    str(exc),
-                    code="xai_quota_exhausted",
-                    retryable=False,
-                    fallback_eligible=True,
-                )
-            break
-        cause = cause.__cause__
+    if is_xai_quota_exhaustion(exc):
+        return ProviderCallError(
+            str(exc),
+            code="xai_quota_exhausted",
+            retryable=False,
+            fallback_eligible=True,
+        )
     return ProviderCallError(str(exc))
 
 
@@ -115,7 +153,7 @@ def available_configured_route(route: ImageRoute) -> ImageRoute:
         ImageRoute.OPENAI_EDIT,
     }
     if route in {ImageRoute.GROK_GENERATE, ImageRoute.GROK_EDIT}:
-        if env_value("XAI_KEY"):
+        if env_value("XAI_KEY") and not xai_quota_cooldown_active():
             return route
         provider = configured_fallback_provider()
         if provider == "openai":
@@ -224,7 +262,10 @@ class RenderPrimitiveProvider:
         except ProviderCallError:
             raise
         except RenderUnavailable as exc:
-            raise _provider_call_error(route, exc) from exc
+            provider_error = _provider_call_error(route, exc)
+            if provider_error.code == "xai_quota_exhausted":
+                note_xai_quota_exhausted()
+            raise provider_error from exc
         if not image:
             raise ProviderCallError("image provider returned an empty candidate")
         return ProviderImage(image_bytes=image, cached=cached)

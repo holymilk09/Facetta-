@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import io
 
+import httpx
 import pytest
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -23,6 +24,13 @@ from facetta.image_agent import providers as providers_module
 from facetta.image_agent import vision as vision_module
 from facetta.provider_errors import RenderUnavailable
 from facetta.source_understanding import compile_rough_drawing_intent_brief
+
+
+@pytest.fixture(autouse=True)
+def reset_xai_quota_cooldown():
+    providers_module._reset_xai_quota_cooldown()
+    yield
+    providers_module._reset_xai_quota_cooldown()
 
 
 def _inspection_payload() -> dict:
@@ -183,6 +191,141 @@ def test_qa_fallback_does_not_change_grok_primary_image_routes(monkeypatch):
     assert providers_module.available_configured_route(
         ImageRoute.GROK_EDIT,
     ) is ImageRoute.GROK_EDIT
+
+
+def test_quota_cooldown_bypasses_grok_for_single_and_pair_qa(monkeypatch):
+    calls: list[str] = []
+    monkeypatch.setattr(
+        quality_module,
+        "env_value",
+        lambda key, default=None: (
+            "openai-key" if key == "OPENAI_API_KEY" else default
+        ),
+    )
+    monkeypatch.setattr(
+        quality_module,
+        "vision_json",
+        lambda *_args: pytest.fail("single-image Grok QA must be bypassed"),
+    )
+    monkeypatch.setattr(
+        quality_module,
+        "vision_json_pair",
+        lambda *_args: pytest.fail("pair Grok QA must be bypassed"),
+    )
+    monkeypatch.setattr(
+        quality_module,
+        "openai_vision_json",
+        lambda *_args, **_kwargs: calls.append("single") or {"single": True},
+    )
+    monkeypatch.setattr(
+        quality_module,
+        "openai_vision_json_pair",
+        lambda *_args: calls.append("pair") or {"pair": True},
+    )
+    providers_module.note_xai_quota_exhausted()
+
+    assert quality_module._qa_vision_json("system", b"image", "ask") == {
+        "single": True,
+    }
+    assert quality_module._qa_vision_json_pair(
+        "system", b"a", b"b", "ask",
+    ) == {"pair": True}
+    assert calls == ["single", "pair"]
+
+
+def test_grok_qa_quota_failure_opens_shared_cooldown(monkeypatch):
+    monkeypatch.setattr(
+        quality_module,
+        "env_value",
+        lambda key, default=None: (
+            "openai-key" if key == "OPENAI_API_KEY" else default
+        ),
+    )
+
+    def quota_failure(*_args):
+        request = httpx.Request("POST", "https://api.x.ai/v1/chat/completions")
+        response = httpx.Response(
+            403,
+            request=request,
+            text="monthly spending limit reached",
+        )
+        status_error = httpx.HTTPStatusError(
+            "forbidden", request=request, response=response,
+        )
+        try:
+            raise status_error
+        except httpx.HTTPStatusError as exc:
+            raise vision_module.VisionProviderUnavailable(
+                "xAI quota exhausted",
+            ) from exc
+
+    monkeypatch.setattr(quality_module, "vision_json", quota_failure)
+    monkeypatch.setattr(
+        quality_module,
+        "openai_vision_json",
+        lambda *_args, **_kwargs: {"provider": "openai"},
+    )
+
+    assert quality_module._qa_vision_json("system", b"image", "ask") == {
+        "provider": "openai",
+    }
+    assert providers_module.xai_quota_cooldown_active() is True
+
+
+def test_quota_cooldown_without_openai_still_uses_grok_qa(monkeypatch):
+    calls: list[str] = []
+    monkeypatch.setattr(quality_module, "env_value", lambda *_args: None)
+    monkeypatch.setattr(
+        quality_module,
+        "vision_json",
+        lambda *_args: calls.append("grok") or {"provider": "grok"},
+    )
+    monkeypatch.setattr(
+        quality_module,
+        "openai_vision_json",
+        lambda *_args, **_kwargs: pytest.fail("no OpenAI key is configured"),
+    )
+    providers_module.note_xai_quota_exhausted()
+
+    assert quality_module._qa_vision_json("system", b"image", "ask") == {
+        "provider": "grok",
+    }
+    assert calls == ["grok"]
+
+
+def test_expired_quota_cooldown_restores_grok_qa(monkeypatch):
+    now = [50.0]
+    calls: list[str] = []
+    monkeypatch.setattr(providers_module.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(
+        quality_module,
+        "env_value",
+        lambda key, default=None: (
+            "openai-key" if key == "OPENAI_API_KEY" else default
+        ),
+    )
+    monkeypatch.setattr(
+        quality_module,
+        "vision_json",
+        lambda *_args: calls.append("grok") or {"provider": "grok"},
+    )
+    monkeypatch.setattr(
+        quality_module,
+        "openai_vision_json",
+        lambda *_args, **_kwargs: calls.append("openai") or {
+            "provider": "openai",
+        },
+    )
+    providers_module.note_xai_quota_exhausted()
+
+    assert quality_module._qa_vision_json("system", b"image", "ask") == {
+        "provider": "openai",
+    }
+    now[0] += providers_module._XAI_QUOTA_COOLDOWN_SECONDS + 1
+    assert quality_module._qa_vision_json("system", b"image", "ask") == {
+        "provider": "grok",
+    }
+    assert calls == ["openai", "grok"]
 
 
 def test_grok_pair_qa_retries_openai_only_when_provider_is_unavailable(

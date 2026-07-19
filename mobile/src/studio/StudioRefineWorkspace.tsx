@@ -1237,6 +1237,14 @@ export function StudioRefineWorkspace({
             continuationPrompts={continuationPrompts}
             previewPrompt={preview === null ? null : previewPrompt}
             onStartNewDesign={onStartNewDesign}
+            onReusePrompt={(prompt) => {
+              setMode('instruction');
+              setInstruction(prompt);
+              setPreview(null);
+              setPreviewPrompt(null);
+              setUnderstoodAs(null);
+              setError(null);
+            }}
             compact
           />
           <StudioCanvasEditPanel
@@ -1546,6 +1554,14 @@ export function StudioRefineWorkspace({
           continuationPrompts={continuationPrompts}
           previewPrompt={preview === null ? null : previewPrompt}
           onStartNewDesign={onStartNewDesign}
+          onReusePrompt={(prompt) => {
+            setMode('instruction');
+            setInstruction(prompt);
+            setPreview(null);
+            setPreviewPrompt(null);
+            setUnderstoodAs(null);
+            setError(null);
+          }}
         />
       )}
 
