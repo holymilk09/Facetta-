@@ -118,6 +118,21 @@ function collectionContext(collection: WorkspaceCollection): string | null {
     ?? null;
 }
 
+function linkedClientName(
+  familyId: string | null,
+  collections: WorkspaceCollection[],
+  familyCollectionIds: Record<string, string[]> | null,
+): string | null {
+  if (familyId === null || familyCollectionIds === null) return null;
+  const memberIds = new Set(familyCollectionIds[familyId] ?? []);
+  const names = [...new Set(collections
+    .filter((collection) => collection.template === 'client' && memberIds.has(collection.id))
+    .map((collection) => collection.metadata.client_name)
+    .filter((name): name is string => typeof name === 'string' && name.trim().length > 0)
+    .map((name) => name.trim()))];
+  return names.length === 1 ? names[0] : null;
+}
+
 /**
  * Project `updated_at` represents activity on the variation as a whole. It can
  * move for presentation or marketing work without appending a design revision,
@@ -1046,6 +1061,7 @@ export function StudioCollectionsWorkspace({
   const savedOutputs = [...project.derived_assets]
     .filter((asset) => asset.image_url !== null && SAVED_OUTPUT_CAPABILITIES.has(asset.capability))
     .sort((left, right) => (right.created_at ?? '').localeCompare(left.created_at ?? ''));
+  const clientName = linkedClientName(data.history.family_id, collections, familyCollectionIds);
 
   return (
     <ScrollView contentContainerStyle={styles.workspace}>
@@ -1055,11 +1071,22 @@ export function StudioCollectionsWorkspace({
       {error !== null && <Notice kind="error" text={error} />}
 
       <View style={styles.familyHero}>
+        <View style={styles.familyHeader}>
+          <View style={styles.familyHeadingCopy}>
+            <Text style={styles.eyebrow}>Design family</Text>
+            <Text numberOfLines={2} style={styles.familyTitle}>{family?.title ?? project.title}</Text>
+            <Text style={styles.meta}>
+              {family === null
+                ? 'First saved direction · every revision preserved'
+                : `${family.variations.length} variation${family.variations.length === 1 ? '' : 's'} · every revision preserved`}
+            </Text>
+          </View>
+        </View>
         {familyCoverAssetId !== null ? (
           <Image
             accessibilityLabel="Design family cover"
             source={{ uri: api.assetImageUrl(familyCoverAssetId) }}
-            resizeMode="cover"
+            resizeMode="contain"
             style={styles.familyCover}
           />
         ) : (
@@ -1067,24 +1094,23 @@ export function StudioCollectionsWorkspace({
             <Text style={styles.coverPlaceholderText}>No cover yet</Text>
           </View>
         )}
-        <View style={styles.familyCopy}>
-          <Text style={styles.eyebrow}>Design family</Text>
-          <Text style={styles.familyTitle}>{family?.title ?? project.title}</Text>
-          <Text style={styles.meta}>
-            {family === null
-              ? 'This is the first saved direction. Create a variation to begin its family.'
-              : `${family.variations.length} variation${family.variations.length === 1 ? '' : 's'} · every revision preserved`}
-          </Text>
-          {onContinueRefining !== undefined && (
-            <View style={styles.familyActions}>
+        {(onContinueRefining !== undefined || project.active_asset_id !== null) && (
+          <View style={styles.familyActions}>
+            {onContinueRefining !== undefined && (
               <Button
-                title="Continue refining"
+                title="Refine design"
                 disabled={project.active_asset_id === null}
                 onPress={onContinueRefining}
               />
-            </View>
-          )}
-        </View>
+            )}
+            <Button
+              title="Create variation"
+              kind="ghost"
+              disabled={project.active_asset_id === null}
+              onPress={onVaryCurrent}
+            />
+          </View>
+        )}
       </View>
 
       <View style={styles.section}>
@@ -1192,11 +1218,21 @@ export function StudioCollectionsWorkspace({
         <View style={styles.destinationCard}>
           <StudioDestinationChooser
             context={destinationContext}
-            title="Use this revision"
+            title="Create images from this revision"
             description={destinationContext.hasExactSpecification
-              ? 'Prepare this exact saved revision for a client, marketing, or optional eligible Factory review. Its design history will not change.'
-              : 'Prepare this saved visual direction for a client or marketing. Its design history will not change.'}
+              ? 'Prepare this exact saved revision for client review, a campaign, or optional eligible Factory review. Its design history will not change.'
+              : 'Prepare this saved visual direction for client review or a campaign. Its design history will not change.'}
             excludeDestinations={COLLECTIONS_DESTINATION_EXCLUSIONS}
+            destinationCopy={{
+              client: {
+                label: clientName === null ? 'Client review' : `For ${clientName}`,
+                description: 'Create one polished image to share for approval.',
+              },
+              marketing: {
+                label: 'Campaign image set',
+                description: 'Create a coordinated image set for ecommerce and campaigns.',
+              },
+            }}
             onSelect={onSelectDestination}
           />
         </View>
@@ -1205,14 +1241,16 @@ export function StudioCollectionsWorkspace({
       <View style={styles.section}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`${showPresentationImages ? 'Hide' : 'Show'} presentation images (${savedOutputs.length})`}
+          accessibilityLabel={`${showPresentationImages ? 'Hide' : 'Show'} ready-to-share images (${savedOutputs.length})`}
           accessibilityState={{ expanded: showPresentationImages }}
           onPress={() => setShowPresentationImages((visible) => !visible)}
           style={styles.disclosureRow}>
           <View style={styles.disclosureCopy}>
-            <Text style={styles.sectionTitle}>Presentation images</Text>
+            <Text style={styles.sectionTitle}>Ready-to-share images</Text>
             <Text style={styles.meta}>
-              {savedOutputs.length} saved image{savedOutputs.length === 1 ? '' : 's'}
+              {savedOutputs.length === 0
+                ? 'None yet · create one from the options above'
+                : `${savedOutputs.length} saved image${savedOutputs.length === 1 ? '' : 's'}`}
             </Text>
           </View>
           <Text style={styles.disclosureMark}>{showPresentationImages ? '−' : '+'}</Text>
@@ -1220,12 +1258,12 @@ export function StudioCollectionsWorkspace({
         {showPresentationImages && (
           <>
             <Text style={styles.sectionCopy}>
-              Client, marketing, and view images live beside the exact design revision they came
-              from. They never replace design history.
+              Polished client-review, campaign, and technical images saved from this exact
+              revision. They never replace design history.
             </Text>
             {savedOutputs.length === 0 ? (
               <View style={styles.inlineEmpty}>
-                <Text style={styles.meta}>No presentation or view images have been saved for this variation.</Text>
+                <Text style={styles.meta}>No ready-to-share images have been saved for this variation.</Text>
               </View>
             ) : (
               <View style={styles.outputGrid}>
@@ -1384,9 +1422,13 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: theme.line, borderRadius: 20, overflow: 'hidden',
     backgroundColor: theme.card, marginBottom: 14,
   },
-  familyCover: { width: '100%', height: 260, backgroundColor: theme.blush },
-  familyCopy: { padding: 16 },
-  familyActions: { alignItems: 'flex-start', marginTop: 12 },
+  familyHeader: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10 },
+  familyHeadingCopy: { maxWidth: 680 },
+  familyCover: { width: '100%', height: 340, backgroundColor: theme.paper },
+  familyActions: {
+    flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8,
+    borderTopWidth: 1, borderTopColor: theme.line, padding: 12,
+  },
   destinationCard: {
     borderWidth: 1, borderColor: theme.line, borderRadius: 16, padding: 14,
     backgroundColor: theme.card, marginBottom: 14, gap: 14,
@@ -1397,7 +1439,7 @@ const styles = StyleSheet.create({
     color: theme.accent, fontSize: 10, fontWeight: '700', letterSpacing: 1.2,
     textTransform: 'uppercase', marginBottom: 5,
   },
-  familyTitle: { color: theme.ink, fontFamily: theme.serif, fontSize: 24, marginBottom: 5 },
+  familyTitle: { color: theme.ink, fontFamily: theme.serif, fontSize: 19, lineHeight: 24, marginBottom: 4 },
   meta: { color: theme.faint, fontSize: 12, lineHeight: 17 },
   section: {
     borderWidth: 1, borderColor: theme.line, borderRadius: 16, padding: 14,

@@ -18,6 +18,11 @@ export interface StudioDestinationChooserProps {
   description?: string;
   /** Omit the destination the designer is already viewing to avoid no-op loops. */
   excludeDestinations?: readonly StudioDestinationId[];
+  /** Context-specific product copy without changing the canonical destination contract. */
+  destinationCopy?: Partial<Record<StudioDestinationId, {
+    label?: string;
+    description?: string;
+  }>>;
 }
 
 const availabilityLabel = (
@@ -44,6 +49,7 @@ export function StudioDestinationChooser({
   title = 'Where next?',
   description = 'Choose what you want to do with this saved revision.',
   excludeDestinations = [],
+  destinationCopy = {},
 }: StudioDestinationChooserProps) {
   const destinations = STUDIO_DESTINATIONS.filter((destination) => (
     !excludeDestinations.includes(destination.id)
@@ -58,13 +64,16 @@ export function StudioDestinationChooser({
         {destinations.map((destination) => {
           const available = destination.isAvailable(context);
           const availability = availabilityLabel(destination, available);
+          const label = destinationCopy[destination.id]?.label ?? destination.label;
+          const destinationDescription = destinationCopy[destination.id]?.description
+            ?? destination.description;
           return (
             <Pressable
               key={destination.id}
               testID={`studio-destination-card-${destination.id}`}
               accessibilityRole="button"
-              accessibilityLabel={destination.label}
-              accessibilityHint={`${destination.description} ${availability}.`}
+              accessibilityLabel={label}
+              accessibilityHint={`${destinationDescription} ${availability}.`}
               accessibilityState={{ disabled: !available }}
               disabled={!available}
               onPress={() => onSelect(destination.id)}
@@ -74,14 +83,14 @@ export function StudioDestinationChooser({
                 pressed && available && styles.destinationCardPressed,
               ]}>
               <View style={styles.cardHeading}>
-                <Text style={styles.destinationLabel}>{destination.label}</Text>
+                <Text style={styles.destinationLabel}>{label}</Text>
                 <Text
                   testID={`studio-destination-availability-${destination.id}`}
                   style={[styles.availability, !available && styles.availabilityUnavailable]}>
                   {availability}
                 </Text>
               </View>
-              <Text style={styles.destinationDescription}>{destination.description}</Text>
+              <Text style={styles.destinationDescription}>{destinationDescription}</Text>
             </Pressable>
           );
         })}

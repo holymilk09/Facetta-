@@ -32,9 +32,9 @@ describe('StudioPresentWorkspace destination entry', () => {
       </AuthenticatedImageProvider>,
     );
 
-    expect(screen.getByText('Marketing selected')).toBeTruthy();
+    expect(screen.getByText('Campaign image set selected')).toBeTruthy();
     expect(screen.queryByText('What do you need?')).toBeNull();
-    expect(screen.queryByRole('radio', { name: 'Client' })).toBeNull();
+    expect(screen.queryByRole('radio', { name: 'Client review' })).toBeNull();
     expect(screen.getByText('2 requested outputs · estimated 36 credits')).toBeTruthy();
 
     await act(async () => {
@@ -42,6 +42,6 @@ describe('StudioPresentWorkspace destination entry', () => {
     });
 
     expect(screen.getByText('What do you need?')).toBeTruthy();
-    expect(screen.getByRole('radio', { name: 'Client' })).toBeTruthy();
+    expect(screen.getByRole('radio', { name: 'Client review' })).toBeTruthy();
   });
 });

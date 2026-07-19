@@ -67,15 +67,15 @@ export const STUDIO_DESTINATIONS: readonly StudioDestinationDefinition[] = [
   {
     ...jobPolicy(presentAction),
     id: 'client',
-    label: 'Client',
-    description: 'Prepare one polished image for review or presentation.',
+    label: 'Client review',
+    description: 'Create one polished image to share for approval.',
     isAvailable: hasSavedRevision,
   },
   {
     ...jobPolicy(presentAction),
     id: 'marketing',
-    label: 'Marketing',
-    description: 'Prepare a small reviewable ecommerce image set.',
+    label: 'Campaign image set',
+    description: 'Create a coordinated image set for ecommerce and campaigns.',
     isAvailable: hasSavedRevision,
   },
   {

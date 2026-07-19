@@ -450,7 +450,7 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByText('Continue refining')).toBeTruthy();
     expect(screen.queryByText('Factory')).toBeNull();
     await fireEvent.press(screen.getByText('Library'));
-    await fireEvent.press(screen.getByText('Client'));
+    await fireEvent.press(screen.getByText('Client review'));
     expect(onSelectDestination).toHaveBeenNthCalledWith(1, 'library');
     expect(onSelectDestination).toHaveBeenNthCalledWith(2, 'client');
   });

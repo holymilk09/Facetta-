@@ -402,7 +402,7 @@ describe('StudioPresentWorkspace', () => {
       createdBy="designer"
     />);
 
-    fireEvent.press(screen.getByText('Marketing'));
+    fireEvent.press(screen.getByText('Campaign image set'));
     expect(await screen.findByText('2 requested outputs · estimated 36 credits')).toBeTruthy();
     expect(screen.getByText(/Generation creates review previews only/i)).toBeTruthy();
     expect(screen.queryByText(/saved and charged when generation finishes/i)).toBeNull();
@@ -545,7 +545,7 @@ describe('StudioPresentWorkspace', () => {
       createdBy="designer"
     />);
 
-    await act(async () => { fireEvent.press(screen.getByText('Marketing')); });
+    await act(async () => { fireEvent.press(screen.getByText('Campaign image set')); });
     expect(screen.getByText(/charged only for the outputs you explicitly save/i)).toBeTruthy();
     const generate = await screen.findByText('Generate 2 presentation previews');
     await act(async () => { fireEvent.press(generate); });

@@ -21,7 +21,7 @@ test('keeps the three everyday destinations in registry order with their descrip
 
   expect(screen.getAllByTestId(/studio-destination-card-/).map((card) => (
     card.props.accessibilityLabel
-  ))).toEqual(['Library', 'Client', 'Marketing']);
+  ))).toEqual(['Library', 'Client review', 'Campaign image set']);
 
   for (const id of ['library', 'client', 'marketing'] as const) {
     const destination = getStudioDestination(id);
@@ -30,7 +30,7 @@ test('keeps the three everyday destinations in registry order with their descrip
       .toBe('Available now');
   }
 
-  fireEvent.press(screen.getByLabelText('Marketing'));
+  fireEvent.press(screen.getByLabelText('Campaign image set'));
   expect(onSelect).toHaveBeenCalledWith('marketing');
 });
 
@@ -49,7 +49,7 @@ test('shows Factory only when the exact active revision passes its registry pred
 
   expect(screen.getAllByTestId(/studio-destination-card-/).map((card) => (
     card.props.accessibilityLabel
-  ))).toEqual(['Library', 'Client', 'Marketing', 'Factory']);
+  ))).toEqual(['Library', 'Client review', 'Campaign image set', 'Factory']);
   expect(screen.getByText(getStudioDestination('factory').description)).toBeTruthy();
   expect(screen.getByTestId('studio-destination-availability-factory').props.children)
     .toBe('Available for this exact revision');
@@ -64,16 +64,16 @@ test('omits the destination already being viewed without changing registry order
     context={{ ...savedContext, factoryEligible: true }}
     excludeDestinations={['library']}
     onSelect={onSelect}
-    title="Use this revision"
+    title="Create images from this revision"
   />);
 
-  expect(screen.getByText('Use this revision')).toBeTruthy();
+  expect(screen.getByText('Create images from this revision')).toBeTruthy();
   expect(screen.queryByLabelText('Library')).toBeNull();
   expect(screen.getAllByTestId(/studio-destination-card-/).map((card) => (
     card.props.accessibilityLabel
-  ))).toEqual(['Client', 'Marketing', 'Factory']);
+  ))).toEqual(['Client review', 'Campaign image set', 'Factory']);
 
-  fireEvent.press(screen.getByLabelText('Client'));
+  fireEvent.press(screen.getByLabelText('Client review'));
   expect(onSelect).toHaveBeenCalledWith('client');
 });
 

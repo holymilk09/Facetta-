@@ -722,6 +722,7 @@ describe('StudioCollectionsWorkspace', () => {
     expect(screen.getByLabelText('Design family cover').props.source.headers).toEqual({
       Authorization: 'Bearer first-party-token',
     });
+    expect(screen.getByLabelText('Design family cover').props.resizeMode).toBe('contain');
     expect(screen.getByText('Original family direction')).toBeTruthy();
     expect(screen.getByText('Branched from Variation 1 · Original')).toBeTruthy();
     expect(screen.getByText('Variation 2 · White metal study')).toBeTruthy();
@@ -817,13 +818,13 @@ describe('StudioCollectionsWorkspace', () => {
       </AuthenticatedImageProvider>,
     );
 
-    expect(await screen.findByText('Presentation images')).toBeTruthy();
-    expect(screen.getByLabelText('Show presentation images (3)').props.accessibilityState).toEqual({
+    expect(await screen.findByText('Ready-to-share images')).toBeTruthy();
+    expect(screen.getByLabelText('Show ready-to-share images (3)').props.accessibilityState).toEqual({
       expanded: false,
     });
     expect(screen.queryByText('Client beauty render')).toBeNull();
-    await fireEvent.press(screen.getByLabelText('Show presentation images (3)'));
-    expect(screen.getByLabelText('Hide presentation images (3)').props.accessibilityState).toEqual({
+    await fireEvent.press(screen.getByLabelText('Show ready-to-share images (3)'));
+    expect(screen.getByLabelText('Hide ready-to-share images (3)').props.accessibilityState).toEqual({
       expanded: true,
     });
     expect(screen.getByText('Client beauty render')).toBeTruthy();
@@ -876,8 +877,8 @@ describe('StudioCollectionsWorkspace', () => {
       />,
     );
 
-    await screen.findByText('Presentation images');
-    await fireEvent.press(screen.getByLabelText('Show presentation images (1)'));
+    await screen.findByText('Ready-to-share images');
+    await fireEvent.press(screen.getByLabelText('Show ready-to-share images (1)'));
     expect(await screen.findByText('Client beauty render')).toBeTruthy();
     expect(screen.getByText('Source details unavailable')).toBeTruthy();
     expect(screen.queryByText(/lineage/i)).toBeNull();
@@ -906,8 +907,8 @@ describe('StudioCollectionsWorkspace', () => {
       />,
     );
 
-    await screen.findByText('Presentation images');
-    await fireEvent.press(screen.getByLabelText('Show presentation images (1)'));
+    await screen.findByText('Ready-to-share images');
+    await fireEvent.press(screen.getByLabelText('Show ready-to-share images (1)'));
     await screen.findByText('Client beauty render');
     await fireEvent.press(screen.getByText('Export client beauty render'));
     expect(await screen.findByText(
@@ -1054,7 +1055,7 @@ describe('StudioCollectionsWorkspace', () => {
     expect(await screen.findByText('Harness active asset: asset_3')).toBeTruthy();
     expect(await screen.findByLabelText('Show revision history (3)')).toBeTruthy();
     expect(getStudioProjectHistory).toHaveBeenCalledTimes(2);
-    await fireEvent.press(screen.getByText('Client'));
+    await fireEvent.press(screen.getByText('Client review'));
     expect(onSelectDestination).toHaveBeenCalledWith('client', 'asset_3');
   });
 
@@ -1070,23 +1071,23 @@ describe('StudioCollectionsWorkspace', () => {
     );
 
     expect(await screen.findByText('Sapphire orbit ring')).toBeTruthy();
-    expect(screen.getByLabelText('Show presentation images (0)').props.accessibilityState).toEqual({
+    expect(screen.getByLabelText('Show ready-to-share images (0)').props.accessibilityState).toEqual({
       expanded: false,
     });
     expect(screen.getByLabelText('Show revision history (2)').props.accessibilityState).toEqual({
       expanded: false,
     });
-    expect(screen.queryByText('No presentation or view images have been saved for this variation.')).toBeNull();
+    expect(screen.queryByText('No ready-to-share images have been saved for this variation.')).toBeNull();
     expect(screen.queryByLabelText('Compare revision 1')).toBeNull();
     expect(screen.queryByText('Restore revision 1 as new')).toBeNull();
 
-    await fireEvent.press(screen.getByText('Client'));
+    await fireEvent.press(screen.getByText('Client review'));
     expect(handlers.onSelectDestination).toHaveBeenCalledWith('client');
-    expect(screen.getByText('Use this revision')).toBeTruthy();
+    expect(screen.getByText('Create images from this revision')).toBeTruthy();
     expect(screen.queryByText('Library')).toBeNull();
     expect(screen.queryByText('Factory')).toBeNull();
 
-    await fireEvent.press(screen.getByRole('button', { name: 'Continue refining' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Refine design' }));
     expect(handlers.onContinueRefining).toHaveBeenCalledTimes(1);
     expect(handlers.onOpenProject).not.toHaveBeenCalled();
 
@@ -1098,6 +1099,35 @@ describe('StudioCollectionsWorkspace', () => {
     await fireEvent.press(screen.getByLabelText('Hide revision history (2)'));
     expect(screen.queryByText('Revision 2 · Active')).toBeNull();
     expect(screen.queryByText('Restore revision 1 as new')).toBeNull();
+  });
+
+  test('uses the one verified linked client name for the review destination', async () => {
+    const linCollection = {
+      id: 'collection_client', name: 'Lin commission', template: 'client' as const,
+      metadata: { client_name: ' Lin Chen ' }, archived_at: null,
+      created_at: '2026-07-12T00:00:00Z', updated_at: '2026-07-12T00:00:00Z',
+      family_count: 1,
+    };
+    const client = api({
+      listWorkspaceCollections: jest.fn(async () => ({
+        data: { collections: [linCollection] }, error: null, status: 200,
+      })),
+      listDesignFamilyCollections: jest.fn(async () => ({
+        data: { collections: [linCollection] }, error: null, status: 200,
+      })),
+    });
+
+    await render(
+      <StudioCollectionsWorkspace
+        api={client}
+        project={project}
+        createdBy="usr_designer"
+        {...callbacks()}
+      />,
+    );
+
+    expect(await screen.findByRole('button', { name: 'For Lin Chen' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Client review' })).toBeNull();
   });
 
   test('shows Factory in the shared chooser only when the host verifies eligibility', async () => {
@@ -1112,7 +1142,7 @@ describe('StudioCollectionsWorkspace', () => {
       />,
     );
 
-    expect(await screen.findByText('Use this revision')).toBeTruthy();
+    expect(await screen.findByText('Create images from this revision')).toBeTruthy();
     expect(screen.queryByText('Library')).toBeNull();
     await fireEvent.press(screen.getByText('Factory'));
     expect(handlers.onSelectDestination).toHaveBeenCalledWith('factory');
@@ -1134,7 +1164,7 @@ describe('StudioCollectionsWorkspace', () => {
     );
 
     expect(await screen.findByText(
-      'Prepare this saved visual direction for a client or marketing. Its design history will not change.',
+      'Prepare this saved visual direction for client review or a campaign. Its design history will not change.',
     )).toBeTruthy();
     expect(screen.queryByText(/exact saved revision/)).toBeNull();
     expect(screen.queryByText('Factory')).toBeNull();
@@ -1178,7 +1208,7 @@ describe('StudioCollectionsWorkspace', () => {
 
     await fireEvent.press(screen.getByText('Retry'));
 
-    expect(await screen.findByText('Use this revision')).toBeTruthy();
+    expect(await screen.findByText('Create images from this revision')).toBeTruthy();
     expect(screen.queryByText('Library')).toBeNull();
     expect(screen.queryByText('Saved history is unavailable')).toBeNull();
     expect(getStudioProjectHistory).toHaveBeenCalledTimes(2);
