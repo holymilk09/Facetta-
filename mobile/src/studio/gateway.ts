@@ -32,6 +32,7 @@ import type {
   StudioJobAction,
   StudioJobRecord,
   StudioMarkupResumeCandidate,
+  StudioPreviewCandidate,
   StudioFactPath,
   WorkspaceCollection,
 } from '../trusted/types';
@@ -428,6 +429,8 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'createVisualPreview'
   | 'listVisualPreviews'
   | 'getStudioContinuationPrompts'
+  | 'listStudioPreviewCandidates'
+  | 'decideStudioPreviewCandidate'
   | 'acceptVisualPreview'
   | 'discardVisualPreview'
   | 'saveVisualPreviewAsVariation'
@@ -733,6 +736,12 @@ export function createStudioGateway(
     saveAsVariationUrl: string;
     preview: StudioVisualPreview;
     studioJob: ActiveStudioJob | null;
+  }>();
+  const normalizedCandidates = new Map<string, {
+    trusted: StudioPreviewCandidate;
+    preview: PreviewCandidate;
+    lineage: ExactStudioLineage | StudioVisualLineage;
+    studioJob: ActiveStudioJob;
   }>();
   const preSpecPresentationCandidates = new Map<string, {
     runId: string;
@@ -1119,6 +1128,135 @@ export function createStudioGateway(
         designVersion: active?.design_version ?? null,
         blockers: reviewEligible ? [] : blockers.length > 0
           ? blockers : ['An exact design revision is required.'],
+      },
+      error: null,
+      status: result.status,
+    };
+  };
+
+  const decideNormalizedResumedCandidate = async (
+    candidateId: string,
+    createdBy: string,
+    decision: 'apply' | 'discard',
+  ): Promise<StudioGatewayResult<StudioCandidateDecisionResult>> => {
+    const stored = normalizedCandidates.get(candidateId);
+    if (stored === undefined) return gatewayError(
+      'CANDIDATE_NOT_FOUND', 'This preview is no longer available.', 'validation', 404,
+    );
+    if (stored.preview.status !== 'pending_review') return gatewayError(
+      'CANDIDATE_NOT_REVIEWABLE', 'This preview already has a final decision.', 'conflict', 409,
+    );
+    if (decision === 'apply' && stored.preview.verdict === 'reject') return gatewayError(
+      'CANDIDATE_REJECTED', 'A rejected preview cannot become design history.', 'quality', 422,
+    );
+    const exactVersion = 'sourceDesignVersion' in stored.lineage
+      ? stored.lineage.sourceDesignVersion : null;
+    const result = await client.decideStudioPreviewCandidate(candidateId, {
+      created_by: createdBy,
+      decision,
+      expected_active_asset_id: stored.lineage.sourceAssetId,
+      expected_design_version: exactVersion,
+    });
+    if (result.error !== null) return {
+      data: null, error: mapError(result.error), status: result.status,
+    };
+    if (result.data.kind !== stored.trusted.kind
+      || result.data.source_project_id !== stored.lineage.projectId) return gatewayError(
+      'INVALID_PREVIEW_DECISION_LINEAGE',
+      'The preview decision did not preserve its source design.',
+      'invalid_response', result.status,
+    );
+    let project: ProjectDetail | null = null;
+    if (decision === 'apply') {
+      const projectResult = await client.getProject(result.data.result_project_id);
+      if (projectResult.error !== null) return {
+        data: null, error: mapError(projectResult.error), status: projectResult.status,
+      };
+      if (result.data.terminal_asset_id === null
+        || projectResult.data.root_id !== stored.lineage.projectId
+        || projectResult.data.active_asset_id !== result.data.terminal_asset_id) {
+        return gatewayError(
+          'INVALID_PREVIEW_DECISION_LINEAGE',
+          'Applying the preview did not append the expected revision.',
+          'invalid_response', result.status,
+        );
+      }
+      project = projectResult.data;
+    }
+    const candidate = decidePreviewCandidate(
+      stored.preview,
+      decision,
+      now().toISOString(),
+      result.data.terminal_asset_id ?? undefined,
+    );
+    stored.preview = candidate;
+    return { data: { candidate, project }, error: null, status: result.status };
+  };
+
+  const saveNormalizedResumedCandidateVariation = async (
+    request: StudioCandidateVariationRequest,
+  ): Promise<StudioGatewayResult<StudioCandidateVariationResult>> => {
+    const stored = normalizedCandidates.get(request.candidateId);
+    if (stored === undefined) return gatewayError(
+      'CANDIDATE_NOT_FOUND', 'This preview is no longer available.', 'validation', 404,
+    );
+    const label = request.label.trim();
+    if (label.length === 0) return gatewayError(
+      'VARIATION_LABEL_REQUIRED', 'Name the variation before saving it.', 'validation', 422,
+    );
+    if (stored.preview.status !== 'pending_review' || stored.preview.verdict === 'reject') {
+      return gatewayError(
+        'CANDIDATE_NOT_REVIEWABLE', 'This preview cannot be saved.', 'conflict', 409,
+      );
+    }
+    const sourceBefore = await client.getProject(stored.lineage.projectId);
+    if (sourceBefore.error !== null) return {
+      data: null, error: mapError(sourceBefore.error), status: sourceBefore.status,
+    };
+    const exactVersion = 'sourceDesignVersion' in stored.lineage
+      ? stored.lineage.sourceDesignVersion : null;
+    const result = await client.decideStudioPreviewCandidate(request.candidateId, {
+      created_by: request.createdBy,
+      decision: 'save_as_variation',
+      expected_active_asset_id: stored.lineage.sourceAssetId,
+      expected_design_version: exactVersion,
+      variation_label: label,
+    });
+    if (result.error !== null) return {
+      data: null, error: mapError(result.error), status: result.status,
+    };
+    const [projectResult, sourceAfter, historyResult] = await Promise.all([
+      client.getProject(result.data.result_project_id),
+      client.getProject(stored.lineage.projectId),
+      client.getStudioProjectHistory(result.data.result_project_id),
+    ]);
+    if (projectResult.error !== null || sourceAfter.error !== null || historyResult.error !== null) {
+      const failure = projectResult.error !== null ? projectResult
+        : sourceAfter.error !== null ? sourceAfter : historyResult;
+      return { data: null, error: mapError(failure.error!), status: failure.status };
+    }
+    if (result.data.kind !== stored.trusted.kind
+      || result.data.source_project_id !== stored.lineage.projectId
+      || result.data.result_project_id === stored.lineage.projectId
+      || result.data.terminal_asset_id === null
+      || projectResult.data.active_asset_id !== result.data.terminal_asset_id
+      || historyResult.data.family_id === null
+      || !sameCanonicalSourceState(sourceBefore.data, sourceAfter.data)) return gatewayError(
+      'INVALID_PREVIEW_VARIATION_LINEAGE',
+      'The saved variation did not preserve the exact source revision.',
+      'invalid_response', result.status,
+    );
+    const candidate = decidePreviewCandidate(
+      stored.preview, 'save_as_variation', now().toISOString(),
+      result.data.terminal_asset_id,
+    );
+    normalizedCandidates.delete(request.candidateId);
+    return {
+      data: {
+        candidate,
+        project: projectResult.data,
+        familyId: historyResult.data.family_id,
+        variationIndex: historyResult.data.variation_index,
       },
       error: null,
       status: result.status,
@@ -1693,7 +1831,7 @@ export function createStudioGateway(
       if (jobs.error !== null) return {
         data: null, error: mapError(jobs.error), status: jobs.status,
       };
-      const matchingJob = [...jobs.data.jobs].reverse().find((job) => (
+      const matchingJob = jobs.data.jobs.find((job) => (
         job.action_id === 'refine'
         && (reviewJobId === undefined || job.job_id === reviewJobId)
         && job.active_design_id === lineage.projectId
@@ -1710,6 +1848,83 @@ export function createStudioGateway(
         'This saved refinement is not bound to the selected Activity job.',
         'conflict', 409,
       );
+
+      if (typeof client.listStudioPreviewCandidates === 'function') {
+        const normalized = await client.listStudioPreviewCandidates(lineage.projectId);
+        if (normalized.error !== null) return {
+          data: null, error: mapError(normalized.error), status: normalized.status,
+        };
+        const expectedVersion = 'sourceDesignVersion' in lineage
+          ? lineage.sourceDesignVersion : null;
+        const lineageCandidates = normalized.data.candidates.filter((candidate) => (
+          candidate.project_root_id === lineage.projectId
+          && candidate.source_asset_id === lineage.sourceAssetId
+          && candidate.expected_active_asset_id === lineage.sourceAssetId
+          && candidate.expected_design_version === expectedVersion
+          && candidate.status === 'reviewing'
+        ));
+        const reviewingJobs = new Map(jobs.data.jobs.filter((job) => (
+          job.action_id === 'refine'
+          && job.active_design_id === lineage.projectId
+          && job.source_revision_id === lineage.sourceAssetId
+          && (reviewJobId === undefined || job.job_id === reviewJobId)
+        )).map((job) => [job.job_id, job] as const));
+        const latestBinding = lineageCandidates
+          .flatMap((candidate) => {
+            if (candidate.studio_job_id === null) return [];
+            const job = reviewingJobs.get(candidate.studio_job_id);
+            return job === undefined ? [] : [{ candidate, job }];
+          })
+          .sort((left, right) => (
+            Date.parse(right.job.created_at) - Date.parse(left.job.created_at)
+            || Date.parse(right.candidate.created_at) - Date.parse(left.candidate.created_at)
+            || right.candidate.candidate_id.localeCompare(left.candidate.candidate_id)
+          ))[0];
+        if (latestBinding === undefined && lineageCandidates.length > 0) return gatewayError(
+          'RESUME_REFINE_JOB_MISMATCH',
+          'This pending preview is not bound to its exact Activity request.',
+          'conflict', 409,
+        );
+        if (latestBinding === undefined) return {
+          data: null, error: null, status: normalized.status,
+        };
+        const { candidate: latest, job: boundJob } = latestBinding;
+        const candidate: PreviewCandidate = {
+          id: latest.candidate_id,
+          jobId: latest.image_run_id,
+          sourceRevisionId: lineage.sourceAssetId,
+          assetUrl: latest.preview_url,
+          verdict: latest.verdict ?? 'reject',
+          status: 'pending_review',
+          checks: qualityPreviewChecks(latest.qa),
+          temporary: true,
+          expiresAt: latest.expires_at,
+          decision: null,
+          decidedAt: null,
+          canonicalRevisionId: null,
+        };
+        normalizedCandidates.set(candidate.id, {
+          trusted: latest,
+          preview: candidate,
+          lineage,
+          studioJob: {
+            jobId: boundJob.job_id,
+            owner: createdBy,
+            actionId: boundJob.action_id,
+            status: boundJob.status,
+          },
+        });
+        return {
+          data: {
+            candidate,
+            kind: latest.kind === 'catalog_revision' ? 'catalog' : latest.kind,
+            understoodAs: latest.requested_change
+              || 'A pending refinement was restored for review.',
+          },
+          error: null,
+          status: normalized.status,
+        };
+      }
 
       if ('sourceDesignVersion' in lineage) {
         const markupResult = typeof client.listStudioMarkupCandidates === 'function'
@@ -2027,6 +2242,9 @@ export function createStudioGateway(
     async applyVisualRefine(
       request: StudioCandidateDecisionRequest,
     ): Promise<StudioGatewayResult<StudioCandidateDecisionResult>> {
+      if (normalizedCandidates.has(request.candidateId)) {
+        return decideNormalizedResumedCandidate(request.candidateId, request.createdBy, 'apply');
+      }
       const stored = visualCandidates.get(request.candidateId);
       if (stored === undefined) return gatewayError(
         'CANDIDATE_NOT_FOUND', 'This visual preview is no longer available.', 'validation', 404,
@@ -2072,6 +2290,9 @@ export function createStudioGateway(
     async discardVisualRefine(
       request: StudioCandidateDecisionRequest,
     ): Promise<StudioGatewayResult<StudioCandidateDecisionResult>> {
+      if (normalizedCandidates.has(request.candidateId)) {
+        return decideNormalizedResumedCandidate(request.candidateId, request.createdBy, 'discard');
+      }
       const stored = visualCandidates.get(request.candidateId);
       if (stored === undefined) return gatewayError(
         'CANDIDATE_NOT_FOUND', 'This visual preview is no longer available.', 'validation', 404,
@@ -2109,6 +2330,9 @@ export function createStudioGateway(
     async saveVisualPreviewAsVariation(
       request: StudioCandidateVariationRequest,
     ): Promise<StudioGatewayResult<StudioCandidateVariationResult>> {
+      if (normalizedCandidates.has(request.candidateId)) {
+        return saveNormalizedResumedCandidateVariation(request);
+      }
       const stored = visualCandidates.get(request.candidateId);
       if (stored === undefined) return gatewayError(
         'CANDIDATE_NOT_FOUND', 'This visual preview is no longer available.', 'validation', 404,
@@ -2292,6 +2516,9 @@ export function createStudioGateway(
     async applyCatalogRefine(
       request: StudioCandidateDecisionRequest,
     ): Promise<StudioGatewayResult<StudioCandidateDecisionResult>> {
+      if (normalizedCandidates.has(request.candidateId)) {
+        return decideNormalizedResumedCandidate(request.candidateId, request.createdBy, 'apply');
+      }
       const stored = requireCandidate(request.candidateId);
       if (stored === null) return gatewayError(
         'CANDIDATE_NOT_FOUND', 'This preview is no longer available.', 'validation', 404,
@@ -2333,6 +2560,9 @@ export function createStudioGateway(
     async discardCatalogRefine(
       request: StudioCandidateDecisionRequest,
     ): Promise<StudioGatewayResult<StudioCandidateDecisionResult>> {
+      if (normalizedCandidates.has(request.candidateId)) {
+        return decideNormalizedResumedCandidate(request.candidateId, request.createdBy, 'discard');
+      }
       const stored = requireCandidate(request.candidateId);
       if (stored === null) return gatewayError(
         'CANDIDATE_NOT_FOUND', 'This preview is no longer available.', 'validation', 404,
@@ -2352,6 +2582,9 @@ export function createStudioGateway(
     async saveCatalogPreviewAsVariation(
       request: StudioCandidateVariationRequest,
     ): Promise<StudioGatewayResult<StudioCandidateVariationResult>> {
+      if (normalizedCandidates.has(request.candidateId)) {
+        return saveNormalizedResumedCandidateVariation(request);
+      }
       const stored = requireCandidate(request.candidateId);
       if (stored === null) return gatewayError(
         'CANDIDATE_NOT_FOUND', 'This preview is no longer available.', 'validation', 404,
@@ -2513,6 +2746,9 @@ export function createStudioGateway(
     async applyMarkupRefine(
       request: StudioCandidateDecisionRequest,
     ): Promise<StudioGatewayResult<StudioCandidateDecisionResult>> {
+      if (normalizedCandidates.has(request.candidateId)) {
+        return decideNormalizedResumedCandidate(request.candidateId, request.createdBy, 'apply');
+      }
       const stored = markupCandidates.get(request.candidateId);
       if (stored === undefined) return gatewayError(
         'CANDIDATE_NOT_FOUND', 'This preview is no longer available.', 'validation', 404,
@@ -2551,6 +2787,9 @@ export function createStudioGateway(
     async discardMarkupRefine(
       request: StudioCandidateDecisionRequest,
     ): Promise<StudioGatewayResult<StudioCandidateDecisionResult>> {
+      if (normalizedCandidates.has(request.candidateId)) {
+        return decideNormalizedResumedCandidate(request.candidateId, request.createdBy, 'discard');
+      }
       const stored = markupCandidates.get(request.candidateId);
       if (stored === undefined) return gatewayError(
         'CANDIDATE_NOT_FOUND', 'This preview is no longer available.', 'validation', 404,
@@ -2574,6 +2813,9 @@ export function createStudioGateway(
     async saveMarkupPreviewAsVariation(
       request: StudioCandidateVariationRequest,
     ): Promise<StudioGatewayResult<StudioCandidateVariationResult>> {
+      if (normalizedCandidates.has(request.candidateId)) {
+        return saveNormalizedResumedCandidateVariation(request);
+      }
       const stored = markupCandidates.get(request.candidateId);
       if (stored === undefined) return gatewayError(
         'CANDIDATE_NOT_FOUND', 'This preview is no longer available.', 'validation', 404,

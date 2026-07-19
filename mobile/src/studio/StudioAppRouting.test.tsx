@@ -41,6 +41,7 @@ const mockListDesignFamilies = jest.fn(async () => ({
   error: null,
   status: 200,
 }));
+const mockTrustedClientOptions: any[] = [];
 const mockGetStudioJob = jest.fn(async (jobId: string) => ({
   data: {
     job_id: jobId, owner: 'usr_designer', action_id: jobId.replace('job_', ''),
@@ -63,12 +64,15 @@ const deferred = <T,>() => {
 };
 
 jest.mock('../trusted/client', () => ({
-  createTrustedApiClient: () => ({
-    getProject: mockGetProject,
-    listDesignFamilies: mockListDesignFamilies,
-    getStudioJob: mockGetStudioJob,
-    getStudioCapabilities: mockGetStudioCapabilities,
-  }),
+  createTrustedApiClient: (options: any) => {
+    mockTrustedClientOptions.push(options);
+    return {
+      getProject: mockGetProject,
+      listDesignFamilies: mockListDesignFamilies,
+      getStudioJob: mockGetStudioJob,
+      getStudioCapabilities: mockGetStudioCapabilities,
+    };
+  },
 }));
 
 jest.mock('./StudioCreateWorkspace', () => {
@@ -407,6 +411,7 @@ afterEach(() => {
   mockGetStudioCapabilities.mockClear();
   mockListDesignFamilies.mockClear();
   mockGetStudioJob.mockClear();
+  mockTrustedClientOptions.length = 0;
 });
 
 const hydratedProject = {
@@ -670,6 +675,7 @@ test('a direct authenticated account switch clears the previous designer Create 
   await fireEvent.changeText(view.getByLabelText('Mock draft sentence'), 'Designer A private direction.');
   await fireEvent.press(view.getByText('Mock four directions'));
   await fireEvent.press(view.getByText('Mock add drawing reference'));
+  expect(mockTrustedClientOptions).toHaveLength(1);
 
   await act(async () => {
     mockAuthStateListener?.('SIGNED_IN', {
@@ -684,8 +690,31 @@ test('a direct authenticated account switch clears the previous designer Create 
   expect(view.getByLabelText('Mock draft sentence').props.value).toBe('');
   expect(view.getByText('Mock draft count: 1')).toBeTruthy();
   expect(view.getByText('Mock master source: none')).toBeTruthy();
+  expect(mockTrustedClientOptions).toHaveLength(2);
+  expect(mockTrustedClientOptions[1].getAccessToken()).toBe('server-issued-b-token');
   await fireEvent.press(view.getByLabelText('Account menu'));
   expect(view.getByText('designer-b@example.com')).toBeTruthy();
+});
+
+test('token refresh keeps the account gateway and exposes the latest access token', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  expect(mockTrustedClientOptions).toHaveLength(1);
+  const gatewayClientOptions = mockTrustedClientOptions[0];
+  expect(gatewayClientOptions.getAccessToken()).toBe('server-issued-test-token');
+
+  await act(async () => {
+    mockAuthStateListener?.('TOKEN_REFRESHED', {
+      provider: 'email', email: 'designer@example.com', name: 'Designer',
+      designerId: 'usr_designer', accessToken: 'server-issued-refreshed-token',
+      accessTokenExpiresAt: '2099-02-01T00:00:00Z',
+    });
+  });
+
+  expect(mockTrustedClientOptions).toHaveLength(1);
+  expect(gatewayClientOptions.getAccessToken()).toBe('server-issued-refreshed-token');
 });
 
 test('a stale bootstrap restore cannot overwrite a newer signed-in account', async () => {

@@ -121,6 +121,11 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(() => (
     PREVIEW_AUTH_BYPASS ? previewSession : loadAuthenticatedSession()
   ));
+  // Keep the gateway stable while Supabase rotates credentials. Candidate and
+  // StudioJob continuity is scoped to the authenticated account, while every
+  // request must still read the newest access token.
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
   const [stage, setStage] = useState<Stage>(() => (
     PREVIEW_AUTH_BYPASS ? 'app' : authLifecycleEnabled ? 'booting' : 'onboarding'
   ));
@@ -234,12 +239,12 @@ export default function App() {
     () => createStudioGatewayFromOptions(
       {
         baseUrl: apiUrl.replace(/\/$/, ''),
-        getAccessToken: () => sessionAccessToken(session),
+        getAccessToken: () => sessionAccessToken(sessionRef.current),
         requireAccessToken: !PREVIEW_AUTH_BYPASS,
         onAuthenticationFailure: expireAuthenticatedSession,
       },
     ),
-    [apiUrl, expireAuthenticatedSession, session],
+    [apiUrl, expireAuthenticatedSession, session?.designerId],
   );
   useEffect(() => {
     let active = true;

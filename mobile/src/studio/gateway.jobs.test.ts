@@ -424,6 +424,65 @@ test('resume Refine rejects a jobless saved markup before it becomes reviewable'
   assert.equal(result.error?.code, 'RESUME_REFINE_JOB_MISMATCH');
 });
 
+test('resume Refine selects the newest exact-lineage normalized candidate and decision seam', async () => {
+  const refineJob = (jobId: string, createdAt: string): StudioJobRecord => ({
+    job_id: jobId, owner: 'designer_1', action_id: 'refine', lane: 'trusted_structural',
+    status: 'reviewing', progress: 0.9, active_design_id: 'project_1',
+    source_revision_id: 'candidate_1', accepted_output_sha256: null, error_code: null,
+    created_at: createdAt, updated_at: createdAt,
+    billing: {
+      requested_outputs: 1, credits_per_output: 20, estimated_credits: 20,
+      completed_outputs: 0, charged_outputs: 0, charged_credits: 0,
+      policy: 'Only accepted outputs are charged.',
+    },
+  });
+  const oldJob = refineJob('job_old', '2026-07-19T00:00:00Z');
+  const newJob = refineJob('job_new', '2026-07-19T00:01:00Z');
+  const normalized = (candidateId: string, jobId: string, createdAt: string) => ({
+    candidate_id: candidateId, kind: 'markup' as const, status: 'reviewing' as const,
+    image_run_id: `run_${candidateId}`, project_root_id: 'project_1',
+    source_asset_id: 'candidate_1', expected_active_asset_id: 'candidate_1',
+    expected_design_version: 1, source_sha256: 'a'.repeat(64), output_sha256: 'b'.repeat(64),
+    requested_change: `Change ${candidateId}`, verdict: 'pass' as const, qa: quality,
+    studio_job_id: jobId, terminal_asset_id: null, created_at: createdAt,
+    expires_at: '2099-01-01T00:00:00Z', resolved_at: null,
+    available_decisions: ['apply', 'save_as_variation', 'discard'] as const,
+    preview_url: `https://test/${candidateId}.png`, decision_url: `/decision/${candidateId}`,
+    operation: 'LOCAL_EDIT', region_description: 'halo', annotations: [],
+  });
+  let decidedCandidate: string | null = null;
+  const gateway = createStudioGateway({
+    listStudioJobs: async () => ok({ jobs: [newJob, oldJob] }),
+    listStudioPreviewCandidates: async () => ok({ candidates: [
+      // Candidate timestamps intentionally disagree with Activity order. Resume
+      // follows the newest exact-lineage reviewing job, not transport timing.
+      normalized('candidate_old', oldJob.job_id, '2026-07-19T00:02:00Z'),
+      normalized('candidate_new', newJob.job_id, '2026-07-19T00:00:30Z'),
+    ] }),
+    decideStudioPreviewCandidate: async (candidateId: string) => {
+      decidedCandidate = candidateId;
+      return ok({
+        status: 'discarded' as const, candidate_id: candidateId, kind: 'markup' as const,
+        source_project_id: 'project_1', result_project_id: 'project_1',
+        terminal_asset_id: null, studio_job_id: newJob.job_id,
+      });
+    },
+  } as any);
+
+  const resumed = await gateway.resumeRefine({
+    projectId: 'project_1', sourceAssetId: 'candidate_1', sourceDesignVersion: 1,
+  }, 'designer_1');
+  assert.equal(resumed.error, null);
+  assert.equal(resumed.data?.candidate.id, 'candidate_new');
+  assert.equal(resumed.data?.kind, 'markup');
+
+  const discarded = await gateway.discardMarkupRefine({
+    candidateId: 'candidate_new', createdBy: 'designer_1',
+  });
+  assert.equal(discarded.error, null);
+  assert.equal(decidedCandidate, 'candidate_new');
+});
+
 test('resume Present rejects a jobless pre-spec candidate before it becomes reviewable', async () => {
   const gateway = createStudioGateway({
     listPreSpecPresentations: async () => ok({ candidates: [{

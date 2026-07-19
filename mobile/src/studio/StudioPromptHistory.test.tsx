@@ -112,6 +112,20 @@ describe('StudioPromptHistory', () => {
     expect(screen.queryByText('Internal preservation suffix that must never be shown.')).toBeNull();
   });
 
+  it('keeps exact markup prompts when the durable continuation ledger is empty', () => {
+    const exactProject = {
+      ...project,
+      design_id: 'design_1',
+      active_design_version: 2,
+      revisions: [revision(first), revision(second)],
+    } as ProjectDetail;
+
+    expect(studioPromptHistory(exactProject, []).map((entry) => entry.prompt)).toEqual([
+      'Ruby on a gold necklace',
+      'Add three small diamond and tsavorite leaves on each side of the ruby.',
+    ]);
+  });
+
   it('shows accepted designer prompts in immutable revision order', async () => {
     expect(studioPromptHistory(project).map((entry) => entry.prompt)).toEqual([
       'Ruby on a gold necklace',

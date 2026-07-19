@@ -895,7 +895,7 @@ export const decodeStudioPreviewCandidate: Decoder<StudioPreviewCandidate> = (va
   const expiresAt = nullableText(value.expires_at);
   const previewUrl = nullableText(value.preview_url);
   const decisionUrl = nullableText(value.decision_url);
-  const qa = decodeJsonObject(value.qa);
+  const qa = decodeImageQualityReport(value.qa);
   const expectedDesignVersion = value.expected_design_version === null
     ? null : number(value.expected_design_version);
   const studioJobId = value.studio_job_id === null ? null : nullableText(value.studio_job_id);

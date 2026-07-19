@@ -672,7 +672,7 @@ interface StudioPreviewCandidateBase {
   output_sha256: string;
   requested_change: string;
   verdict: 'pass' | 'warn' | null;
-  qa: JsonObject;
+  qa: ImageQualityReport;
   studio_job_id: string | null;
   terminal_asset_id: string | null;
   created_at: string;

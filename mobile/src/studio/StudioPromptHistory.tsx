@@ -50,17 +50,24 @@ export function studioPromptHistory(
   const ordered = [...project.revisions].sort((left, right) => left.revision - right.revision);
 
   if (continuationPrompts !== null) {
-    const entries: StudioPromptHistoryEntry[] = [];
+    const sequenced: Array<{ entry: StudioPromptHistoryEntry; order: number; tie: number }> = [];
     const initial = ordered.find((revision) => designerPrompt(revision.asset.instruction) !== null);
     const initialPrompt = designerPrompt(initial?.asset.instruction ?? null);
     if (initial !== undefined && initialPrompt !== null) {
-      entries.push({
-        id: `initial:${initial.asset.asset_id}`,
-        prompt: initialPrompt,
-        revision: initial.revision,
-        state: 'initial',
+      sequenced.push({
+        entry: {
+          id: `initial:${initial.asset.asset_id}`,
+          prompt: initialPrompt,
+          revision: initial.revision,
+          state: 'initial',
+        },
+        order: initial.revision,
+        tie: 0,
       });
     }
+    const ledgerAssetIds = new Set(continuationPrompts.flatMap((prompt) => (
+      prompt.applied_asset_id === null ? [] : [prompt.applied_asset_id]
+    )));
     [...continuationPrompts]
       .sort((left, right) => left.sequence - right.sequence)
       .forEach((continuation) => {
@@ -69,14 +76,40 @@ export function studioPromptHistory(
           : ordered.find(
             (revision) => revision.asset.asset_id === continuation.applied_asset_id,
           )?.revision ?? null;
-        entries.push({
-          id: continuation.prompt_id,
-          prompt: continuation.prompt,
-          revision: appliedRevision,
-          state: continuation.state,
+        sequenced.push({
+          entry: {
+            id: continuation.prompt_id,
+            prompt: continuation.prompt,
+            revision: appliedRevision,
+            state: continuation.state,
+          },
+          order: appliedRevision ?? Number.MAX_SAFE_INTEGER,
+          tie: continuation.sequence,
         });
       });
-    return entries;
+    // Exact-spec markup revisions predate the continuation ledger integration.
+    // Merge only revision instructions that have no ledger-owned applied asset;
+    // this preserves those designer prompts without exposing the compiled text
+    // already replaced by a raw continuation row.
+    ordered.forEach((revision) => {
+      if (revision.asset.asset_id === initial?.asset.asset_id
+        || ledgerAssetIds.has(revision.asset.asset_id)) return;
+      const prompt = designerPrompt(revision.asset.instruction);
+      if (prompt === null) return;
+      sequenced.push({
+        entry: {
+          id: revision.asset.asset_id,
+          prompt,
+          revision: revision.revision,
+          state: 'legacy_saved',
+        },
+        order: revision.revision,
+        tie: 1,
+      });
+    });
+    return sequenced
+      .sort((left, right) => left.order - right.order || left.tie - right.tie)
+      .map(({ entry }) => entry);
   }
 
   const entries: StudioPromptHistoryEntry[] = [];
