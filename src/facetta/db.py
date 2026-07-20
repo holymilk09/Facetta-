@@ -1441,6 +1441,11 @@ class ImageAttempt(Base):
     cost: Mapped[float | None] = mapped_column(Float, nullable=True)
     error_category: Mapped[str | None] = mapped_column(
         String(32), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_retryable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    retry_after_seconds: Mapped[float | None] = mapped_column(
+        Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow)
 
@@ -2184,6 +2189,26 @@ def _apply_additive_migrations(engine) -> None:
         with engine.begin() as conn:
             conn.execute(text(
                 "ALTER TABLE image_attempts ADD COLUMN cache_key VARCHAR(64)"))
+    if "error_code" not in attempt_columns:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE image_attempts ADD COLUMN error_code VARCHAR(128)"))
+    if "error_message" not in attempt_columns:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE image_attempts ADD COLUMN error_message TEXT"))
+    if "error_retryable" not in attempt_columns:
+        boolean_type = Boolean().compile(dialect=engine.dialect)
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE image_attempts ADD COLUMN "
+                f"error_retryable {boolean_type}"))
+    if "retry_after_seconds" not in attempt_columns:
+        float_type = Float().compile(dialect=engine.dialect)
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE image_attempts ADD COLUMN "
+                f"retry_after_seconds {float_type}"))
 
     # ``create_all`` creates this index on fresh databases. Existing databases
     # need an additive bootstrap. Preserve readable legacy data: if it already

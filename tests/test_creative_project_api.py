@@ -2596,7 +2596,7 @@ def test_create_keeps_valid_directions_when_primary_views_are_not_comparable(
         )
 
 
-def test_prompt_create_fails_closed_when_companion_identity_is_unconfirmed(
+def test_prompt_create_keeps_primary_when_companion_identity_is_unconfirmed(
     creative_client,
 ):
     client, Session = creative_client
@@ -2619,14 +2619,22 @@ def test_prompt_create_fails_closed_when_companion_identity_is_unconfirmed(
         "studio_job_id": job_id,
     })
 
-    assert response.status_code == 422, response.text
-    assert response.json()["code"] == "creative_comparison_qa_unconfirmed"
+    assert response.status_code == 201, response.text
+    project = response.json()
+    candidate = project["creative_candidates"][0]
+    assert [view["view"] for view in candidate["views"]] == ["primary"]
     with Session() as db:
-        assert db.scalar(select(func.count()).select_from(Project)) == 0
-        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        runs = list(db.scalars(select(ImageRun).where(
+            ImageRun.project_root_id == project["root_id"]
+        )))
+        assert len(runs) == 2
+        failed = next(run for run in runs if run.status == "failed")
+        assert failed.source_asset_id == candidate["asset_id"]
+        assert failed.accepted_asset_id is None
         job = db.get(StudioJobRecord, job_id)
         assert job is not None
-        assert job.status == "failed"
+        assert job.status == "reviewing"
+        assert job.requested_outputs == 1
         assert job.charged_outputs == 0
 
 
@@ -3228,6 +3236,109 @@ def test_from_prompt_keeps_valid_directions_when_another_direction_fails(
         assert job.charged_outputs == 2
 
 
+def test_from_prompt_partial_primary_failure_still_builds_companion_views(
+    creative_client,
+):
+    client, Session = creative_client
+    job_id = _running_create_job(client, requested_outputs=3)
+
+    def generate(instruction: str, variant: int):
+        if variant == 5:
+            plan = build_image_plan(
+                ImageOperation.CREATIVE_GENERATE,
+                instruction,
+                variant=variant,
+            )
+            raise ImageQualityFailure(
+                "one primary direction failed",
+                report=ImageQualityReport(
+                    verdict=QualityVerdict.FAIL,
+                    checks=(),
+                    score=0,
+                ),
+                attempts=(),
+                plan=plan,
+            )
+        return _prompt_creative_result(variant)
+
+    def compare(source: bytes, instruction: str, _variant: int, **_kwargs):
+        return _comparison_result(source, instruction)
+
+    app.dependency_overrides[get_creative_prompt_generator] = lambda: generate
+    app.dependency_overrides[get_creative_render_generator] = lambda: compare
+    response = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=3),
+        "comparison_views": ["three_quarter"],
+        "studio_job_id": job_id,
+    })
+
+    assert response.status_code == 201, response.text
+    project = response.json()
+    assert len(project["creative_candidates"]) == 2
+    assert all(
+        [view["view"] for view in candidate["views"]]
+        == ["primary", "three_quarter"]
+        for candidate in project["creative_candidates"]
+    )
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None and job.status == "reviewing"
+        assert job.requested_outputs == 3
+        runs = list(db.scalars(select(ImageRun).where(
+            ImageRun.project_root_id == project["root_id"]
+        )))
+        assert len(runs) == 5
+        assert sum(run.status == "failed" for run in runs) == 1
+
+
+def test_from_drawing_keeps_valid_primaries_when_one_variant_fails(
+    creative_client,
+):
+    client, Session = creative_client
+    job_id = _running_create_job(client, requested_outputs=3)
+
+    def generate(_source: bytes, _instruction: str, variant: int):
+        if variant == 8:
+            plan = build_image_plan(
+                ImageOperation.REFERENCE_RENDER,
+                "one source-led direction",
+                source_image=SOURCE,
+                variant=variant,
+            )
+            raise ImageQualityFailure(
+                "one source-led direction failed",
+                report=ImageQualityReport(
+                    verdict=QualityVerdict.FAIL,
+                    checks=(),
+                    score=0,
+                ),
+                attempts=(),
+                plan=plan,
+            )
+        return _creative_result(variant)
+
+    app.dependency_overrides[get_creative_render_generator] = lambda: generate
+    response = client.post("/projects/from-drawing", json={
+        **_request(variation_count=3),
+        "studio_job_id": job_id,
+    })
+
+    assert response.status_code == 201, response.text
+    project = response.json()
+    assert len(project["creative_candidates"]) == 2
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None and job.status == "reviewing"
+        assert job.requested_outputs == 3
+        assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+        runs = list(db.scalars(select(ImageRun).where(
+            ImageRun.project_root_id == project["root_id"]
+        )))
+        assert len(runs) == 3
+        failed = next(run for run in runs if run.status == "failed")
+        assert failed.accepted_asset_id is None
+
+
 def test_from_prompt_all_failed_directions_remain_zero_charge_evidence(
     creative_client,
 ):
@@ -3294,7 +3405,7 @@ def test_from_prompt_unexpected_provider_error_fails_job_without_project(
         assert db.scalar(select(func.count()).select_from(ImageRun)) == 0
 
 
-def test_from_prompt_unexpected_comparison_error_settles_completed_evidence(
+def test_from_prompt_unexpected_comparison_error_keeps_primary_reviewable(
     creative_client,
 ):
     client, Session = creative_client
@@ -3314,15 +3425,20 @@ def test_from_prompt_unexpected_comparison_error_settles_completed_evidence(
         "comparison_views": ["three_quarter"],
         "studio_job_id": job_id,
     })
-    assert response.status_code == 500, response.text
-    assert response.json()["code"] == "unexpected_generation_failure"
+    assert response.status_code == 201, response.text
+    project = response.json()
+    assert len(project["creative_candidates"]) == 1
+    assert [
+        view["view"]
+        for view in project["creative_candidates"][0]["views"]
+    ] == ["primary"]
     with Session() as db:
         job = db.get(StudioJobRecord, job_id)
-        assert job is not None and job.status == "failed"
-        assert job.error_code == "unexpected_generation_failure"
+        assert job is not None and job.status == "reviewing"
+        assert job.error_code is None
         assert (job.completed_outputs, job.charged_outputs) == (0, 0)
-        assert db.scalar(select(func.count()).select_from(Project)) == 0
-        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        assert db.scalar(select(func.count()).select_from(Project)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
         runs = list(db.scalars(select(ImageRun)))
         assert len(runs) == 1
         assert runs[0].operation == "CREATIVE_GENERATE"
@@ -6688,7 +6804,8 @@ def test_hard_quality_failure_leaves_no_product_records(creative_client):
         assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
         assert db.scalar(select(func.count()).select_from(Design)) == 0
         assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
-        assert db.scalar(select(func.count()).select_from(ImageRun)) == 1
+        # Both requested variants get durable zero-charge failure evidence.
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 2
 
 
 def test_variation_count_is_explicitly_bounded(creative_client):

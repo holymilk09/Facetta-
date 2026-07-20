@@ -58,15 +58,31 @@ class ProviderCallError(ImageAgentError):
         code: str | None = None,
         retryable: bool = True,
         fallback_eligible: bool = False,
+        retry_after_seconds: float | None = None,
     ) -> None:
         super().__init__(message, code=code)
         self.retryable = retryable
         self.fallback_eligible = fallback_eligible
+        self.retry_after_seconds = retry_after_seconds
 
 
 class ImageProviderFailure(ImageAgentError):
     category = FailureCategory.PROVIDER
     default_code = "image_provider_failed"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str | None = None,
+        retryable: bool = True,
+        retry_after_seconds: float | None = None,
+        attempts: Sequence[ImageAttemptSummary] = (),
+        plan: ImageAgentPlan | None = None,
+    ) -> None:
+        super().__init__(message, code=code, attempts=attempts, plan=plan)
+        self.retryable = retryable
+        self.retry_after_seconds = retry_after_seconds
 
 
 class ImageEvaluationFailure(ImageAgentError):

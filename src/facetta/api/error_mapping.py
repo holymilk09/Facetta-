@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from fastapi.responses import JSONResponse
 
 from facetta.image_agent import FailureCategory, ImageAgentError
@@ -44,14 +46,20 @@ def image_agent_error_response(
         "category": error.category.value,
         "error_category": f"{error.category.value}_failure",
         "detail": error.message,
-        "retryable": status == 502,
+        "retryable": getattr(error, "retryable", status == 502),
+        "retry_after_seconds": getattr(error, "retry_after_seconds", None),
         "image_run_id": image_run_id,
         "attempts": [attempt.model_dump(mode="json")
                      for attempt in error.attempts],
     }
     if extra:
         content.update(extra)
-    return JSONResponse(status_code=status, content=content)
+    retry_after = getattr(error, "retry_after_seconds", None)
+    headers = (
+        {"Retry-After": str(max(0, math.ceil(retry_after)))}
+        if isinstance(retry_after, (int, float)) else None
+    )
+    return JSONResponse(status_code=status, content=content, headers=headers)
 
 
 def provider_studio_job_error_response(

@@ -27,6 +27,7 @@ from facetta.image_agent import (
 from facetta.image_agent.openai_provider import (
     OPENAI_EDIT_URL,
     OPENAI_GENERATION_URL,
+    _completed_stream_payload,
 )
 from facetta.image_agent.providers import RoutedImageProvider
 from facetta.image_agent.prompts import compile_initial_prompt
@@ -60,9 +61,13 @@ class FakeResponse:
         *,
         status: int = 200,
         body: object | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.status_code = status
-        self.headers = {"x-request-id": "req_openai_test"}
+        self.headers = {
+            "x-request-id": "req_openai_test",
+            **(headers or {}),
+        }
         self._body = body if body is not None else {
             "data": [{"b64_json": base64.b64encode(image or b"").decode()}],
             "usage": {"total_tokens": 123, "output_tokens": 80},
@@ -90,6 +95,39 @@ class SequenceEvaluator:
             ),),
             score=96 if passed else 50,
         )
+
+
+def test_image_stream_uses_completed_frame_and_ignores_partial() -> None:
+    partial = base64.b64encode(b"partial").decode()
+    completed = base64.b64encode(_png((12, 34, 56))).decode()
+
+    payload = _completed_stream_payload([
+        "event: image_generation.partial_image",
+        f'data: {{"type":"image_generation.partial_image","b64_json":"{partial}","partial_image_index":0}}',
+        "",
+        "event: image_generation.completed",
+        f'data: {{"type":"image_generation.completed","b64_json":"{completed}","usage":{{"total_tokens":321}}}}',
+        "",
+    ])
+
+    assert payload == {
+        "data": [{"b64_json": completed}],
+        "usage": {"total_tokens": 321},
+    }
+
+
+def test_image_stream_rejects_partial_without_completed_frame() -> None:
+    partial = base64.b64encode(b"partial").decode()
+
+    with pytest.raises(ProviderCallError, match="without a completed image") as exc:
+        _completed_stream_payload([
+            "event: image_edit.partial_image",
+            f'data: {{"type":"image_edit.partial_image","b64_json":"{partial}","partial_image_index":0}}',
+            "",
+        ])
+
+    assert exc.value.code == "incomplete_openai_image_stream"
+    assert exc.value.retryable is True
 
 
 def test_routed_provider_can_use_low_quality_for_interactive_previews(
@@ -157,10 +195,39 @@ def test_generation_uses_gpt_image_json_contract_and_decodes_base64(
         "prompt": "compiled contract",
         "n": 1,
         "size": "1024x1024",
-        "quality": "medium",
+        "quality": "high",
         "output_format": "png",
         "background": "opaque",
     }
+
+
+def test_rate_limit_preserves_provider_retry_after(monkeypatch, tmp_path):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-only")
+    provider = OpenAIImageProvider(
+        post=lambda *_args, **_kwargs: FakeResponse(
+            status=429,
+            body={"error": {"code": "rate_limit_exceeded"}},
+            headers={"retry-after": "37"},
+        ),
+        cache_dir=tmp_path,
+    )
+    plan = build_image_plan(
+        ImageOperation.CONCEPT_GENERATE,
+        "one restrained oval sapphire engagement ring",
+    )
+
+    with pytest.raises(ProviderCallError) as caught:
+        provider.execute(
+            plan,
+            ImageRoute.OPENAI_GENERATE,
+            "compiled contract",
+            source_image=None,
+            mask_bytes=None,
+        )
+
+    assert caught.value.code == "openai_image_http_429"
+    assert caught.value.retryable is True
+    assert caught.value.retry_after_seconds == 37
 
 
 def test_masked_edit_translates_alpha_and_freezes_outside_pixels(

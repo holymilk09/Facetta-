@@ -834,10 +834,10 @@ def generate_studio_visual_preview(
         ),
         variant=variant,
     )
-    # Studio changes are interactive previews. Low-quality GPT Image output is
-    # still a full 1024-class raster, but returns materially faster and has
-    # proven more reliable than medium for source-image edits. QA and explicit
-    # Apply remain mandatory before the preview can enter revision history.
+    # Refine is the canonical path for creating the next reviewable revision.
+    # Request the provider's highest supported output quality; latency is never
+    # allowed to silently reduce jewelry detail or material fidelity. QA and
+    # explicit Apply remain mandatory before the preview enters history.
     from facetta.provider_affinity import locked_edit_routes
 
     locked_routes = (
@@ -845,7 +845,7 @@ def generate_studio_visual_preview(
         if locked_provider is not None and locked_model is not None else None
     )
     return JewelryImageAgent(
-        provider=RoutedImageProvider(openai_quality="low"),
+        provider=RoutedImageProvider(openai_quality="high"),
         attempt_routes=locked_routes,
         use_available_fallback=locked_routes is None,
     ).run(
@@ -896,7 +896,7 @@ def generate_pre_spec_presentation_preview(
         variant=variant,
     )
     return JewelryImageAgent(
-        provider=RoutedImageProvider(openai_quality="low"),
+        provider=RoutedImageProvider(openai_quality="high"),
         use_available_fallback=True,
     ).run(plan, source_image=source_image)
 

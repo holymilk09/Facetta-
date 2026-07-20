@@ -53,6 +53,7 @@ from facetta.image_agent.vision import (
     vision_json,
     vision_json_pair,
 )
+from facetta.provider_errors import RenderUnavailable
 from facetta.image_agent.providers import (
     is_xai_quota_exhaustion,
     note_xai_quota_exhausted,
@@ -77,17 +78,18 @@ def _qa_vision_json(
         )
     try:
         return vision_json(system, image, user_text)
-    except VisionProviderUnavailable as exc:
+    except (VisionProviderUnavailable, RenderUnavailable) as exc:
         if is_xai_quota_exhaustion(exc):
             note_xai_quota_exhausted()
         if not env_value("OPENAI_API_KEY"):
             raise
-        return openai_vision_json(
+        recovered = openai_vision_json(
             system,
             image,
             user_text,
             response_schema=response_schema,
         )
+        return _mark_qa_recovery(recovered, exc)
 
 
 def _qa_vision_json_pair(
@@ -95,19 +97,105 @@ def _qa_vision_json_pair(
     image_a: bytes,
     image_b: bytes,
     user_text: str,
+    response_schema: dict | None = None,
 ) -> dict:
     """Keep Grok primary for pair QA with one narrow availability fallback."""
 
     if xai_quota_cooldown_active() and env_value("OPENAI_API_KEY"):
-        return openai_vision_json_pair(system, image_a, image_b, user_text)
+        return openai_vision_json_pair(
+            system, image_a, image_b, user_text,
+            response_schema=response_schema,
+        )
     try:
         return vision_json_pair(system, image_a, image_b, user_text)
-    except VisionProviderUnavailable as exc:
+    except (VisionProviderUnavailable, RenderUnavailable) as exc:
         if is_xai_quota_exhaustion(exc):
             note_xai_quota_exhausted()
         if not env_value("OPENAI_API_KEY"):
             raise
-        return openai_vision_json_pair(system, image_a, image_b, user_text)
+        recovered = openai_vision_json_pair(
+            system, image_a, image_b, user_text,
+            response_schema=response_schema,
+        )
+        return _mark_qa_recovery(recovered, exc)
+
+
+def _mark_qa_recovery(payload: dict, exc: BaseException) -> dict:
+    """Record that QA changed reviewer while the candidate bytes stayed fixed."""
+
+    recovered = dict(payload)
+    raw_notes = recovered.get("notes")
+    notes = list(raw_notes) if isinstance(raw_notes, (list, tuple)) else []
+    notes.append(
+        "QA reviewer recovered on the identical generated image after the "
+        f"primary reviewer failed: {type(exc).__name__}"
+    )
+    recovered["notes"] = notes
+    return recovered
+
+
+def _validated_qa_pair(
+    system: str,
+    image_a: bytes,
+    image_b: bytes,
+    user_text: str,
+    model,
+    *,
+    normalize=None,
+):
+    """Validate Grok QA, then adjudicate contract drift on identical bytes."""
+
+    payload = _qa_vision_json_pair(
+        system,
+        image_a,
+        image_b,
+        user_text,
+        model.model_json_schema(),
+    )
+    normalized = normalize(payload) if normalize is not None else payload
+    try:
+        return model.model_validate(normalized)
+    except Exception as exc:
+        if not env_value("OPENAI_API_KEY"):
+            raise
+        recovered = openai_vision_json_pair(
+            system,
+            image_a,
+            image_b,
+            user_text,
+            response_schema=model.model_json_schema(),
+        )
+        recovered = _mark_qa_recovery(recovered, exc)
+        normalized = normalize(recovered) if normalize is not None else recovered
+        return model.model_validate(normalized)
+
+
+def _validated_qa_single(
+    system: str,
+    image: bytes,
+    user_text: str,
+    model,
+):
+    """Validate single-image QA with same-byte OpenAI adjudication."""
+
+    payload = _qa_vision_json(
+        system,
+        image,
+        user_text,
+        model.model_json_schema(),
+    )
+    try:
+        return model.model_validate(payload)
+    except Exception as exc:
+        if not env_value("OPENAI_API_KEY"):
+            raise
+        recovered = openai_vision_json(
+            system,
+            image,
+            user_text,
+            response_schema=model.model_json_schema(),
+        )
+        return model.model_validate(_mark_qa_recovery(recovered, exc))
 
 
 class ImageInspector(Protocol):
@@ -810,11 +898,12 @@ class GrokVisionInspector:
             "Expected facts: " + json.dumps(plan.spec_facts, sort_keys=True)
         )
         if reference:
-            data = _qa_vision_json_pair(
+            return _validated_qa_pair(
                 _RENDER_QA_WITH_REFERENCE_SYSTEM,
                 reference,
                 candidate,
                 ask,
+                RenderInspection,
             )
         else:
             data = _qa_vision_json(_RENDER_QA_SYSTEM, candidate, ask)
@@ -849,14 +938,14 @@ class GrokVisionInspector:
                 sort_keys=True,
             )
         )
-        data = _qa_vision_json_pair(
+        return _validated_qa_pair(
             (_NECKLACE_CHAIN_EDIT_QA_SYSTEM
              if plan.is_necklace_chain_style_edit else _EDIT_QA_SYSTEM),
             reference,
             candidate,
             ask,
+            EditInspection,
         )
-        return EditInspection.model_validate(data)
 
 
 class OpenAIVisionInspector:
@@ -876,7 +965,12 @@ class OpenAIVisionInspector:
         )
         data = (
             openai_vision_json_pair(
-                _RENDER_QA_WITH_REFERENCE_SYSTEM, reference, candidate, ask)
+                _RENDER_QA_WITH_REFERENCE_SYSTEM,
+                reference,
+                candidate,
+                ask,
+                response_schema=RenderInspection.model_json_schema(),
+            )
             if reference
             else openai_vision_json(_RENDER_QA_SYSTEM, candidate, ask)
         )
@@ -909,6 +1003,7 @@ class OpenAIVisionInspector:
             reference,
             candidate,
             ask,
+            response_schema=EditInspection.model_json_schema(),
         )
         return EditInspection.model_validate(data)
 
@@ -927,14 +1022,13 @@ class GrokCreativeRenderInspector:
             "Frozen source facts: " + json.dumps(list(plan.frozen)) + "\n"
             f"Expected output: {plan.expected_output}"
         )
-        payload = _qa_vision_json_pair(
+        return _validated_qa_pair(
             _creative_review_system(_CREATIVE_RENDER_QA_SYSTEM, plan),
             reference,
             candidate,
             ask,
-        )
-        return CreativeRenderInspection.model_validate(
-            _normalize_authorized_necklace_differences(payload)
+            CreativeRenderInspection,
+            normalize=_normalize_authorized_necklace_differences,
         )
 
 
@@ -957,6 +1051,7 @@ class OpenAICreativeRenderInspector:
             reference,
             candidate,
             ask,
+            response_schema=CreativeRenderInspection.model_json_schema(),
         )
         return CreativeRenderInspection.model_validate(
             _normalize_authorized_necklace_differences(payload)
@@ -977,15 +1072,14 @@ class GrokSkepticalCreativeRenderInspector:
             f"Selected source region: {plan.region_description or 'full source'}\n"
             "Frozen source facts: " + json.dumps(list(plan.frozen))
         )
-        payload = _qa_vision_json_pair(
+        return _validated_qa_pair(
             _creative_review_system(
                 _SKEPTICAL_CREATIVE_RENDER_AUDIT_SYSTEM, plan),
             reference,
             candidate,
             ask,
-        )
-        return CreativeRenderInspection.model_validate(
-            _normalize_authorized_necklace_differences(payload)
+            CreativeRenderInspection,
+            normalize=_normalize_authorized_necklace_differences,
         )
 
 
@@ -1009,6 +1103,7 @@ class OpenAISkepticalCreativeRenderInspector:
             reference,
             candidate,
             ask,
+            response_schema=CreativeRenderInspection.model_json_schema(),
         )
         return CreativeRenderInspection.model_validate(
             _normalize_authorized_necklace_differences(payload)
@@ -1232,13 +1327,13 @@ class GrokPromptCreativeRenderInspector:
             "Frozen facts: " + json.dumps(list(plan.frozen)) + "\n"
             f"Expected output: {plan.expected_output}"
         )
-        return CreativeRenderInspection.model_validate(_qa_vision_json(
+        return _validated_qa_single(
             _PROMPT_CREATIVE_RENDER_QA_SYSTEM
             + "\n\n" + _SIX_LEAF_RUBY_QA_GUIDANCE,
             candidate,
             ask,
-            CreativeRenderInspection.model_json_schema(),
-        ))
+            CreativeRenderInspection,
+        )
 
 
 class OpenAIPromptCreativeRenderInspector:
@@ -1327,15 +1422,15 @@ class GrokSkepticalEditInspector:
                 sort_keys=True,
             )
         )
-        data = _qa_vision_json_pair(
+        return _validated_qa_pair(
             (_SKEPTICAL_NECKLACE_CHAIN_EDIT_AUDIT_SYSTEM
              if plan.is_necklace_chain_style_edit
              else _SKEPTICAL_EDIT_AUDIT_SYSTEM),
             reference,
             candidate,
             ask,
+            EditCrossInspection,
         )
-        return EditCrossInspection.model_validate(data)
 
 
 class OpenAISkepticalEditInspector:
@@ -1366,6 +1461,7 @@ class OpenAISkepticalEditInspector:
             reference,
             candidate,
             ask,
+            response_schema=EditCrossInspection.model_json_schema(),
         )
         return EditCrossInspection.model_validate(data)
 

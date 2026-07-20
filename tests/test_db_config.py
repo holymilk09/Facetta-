@@ -185,6 +185,34 @@ def test_legacy_studio_job_integrity_upgrade_is_additive_and_idempotent():
         ), {"digest": "b" * 64})
 
 
+def test_legacy_image_attempt_diagnostics_upgrade_is_additive_and_idempotent():
+    engine = create_engine("sqlite://")
+    db.Base.metadata.create_all(engine)
+    with engine.begin() as connection:
+        connection.execute(text("DROP TABLE image_attempts"))
+        connection.execute(text(
+            "CREATE TABLE image_attempts ("
+            "id VARCHAR(32) PRIMARY KEY, run_id VARCHAR(32) NOT NULL, "
+            "attempt_number INTEGER NOT NULL, provider VARCHAR(32) NOT NULL, "
+            "model VARCHAR(80) NOT NULL, latency_ms INTEGER, cached BOOLEAN, "
+            "provider_request_id VARCHAR(160), qa_verdict VARCHAR(16), "
+            "qa_checks JSON, corrective_instruction TEXT, fallback_reason TEXT, "
+            "output_hash VARCHAR(64), usage JSON, cost FLOAT, "
+            "error_category VARCHAR(32), created_at DATETIME)"
+        ))
+
+    db._apply_additive_migrations(engine)
+    db._apply_additive_migrations(engine)
+
+    columns = {
+        column["name"] for column in inspect(engine).get_columns("image_attempts")
+    }
+    assert {
+        "prompt_hash", "cache_key", "error_code", "error_message",
+        "error_retryable", "retry_after_seconds",
+    } <= columns
+
+
 def test_concurrent_first_sessions_initialize_sqlite_once(monkeypatch, tmp_path):
     database_url = f"sqlite:///{tmp_path / 'concurrent.db'}"
     monkeypatch.setattr(

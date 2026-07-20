@@ -148,6 +148,7 @@ class AttemptError(_Contract):
     code: str
     message: str
     retryable: bool = True
+    retry_after_seconds: float | None = Field(default=None, ge=0)
 
 
 class ImageAttemptSummary(_Contract):

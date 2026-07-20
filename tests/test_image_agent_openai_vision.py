@@ -8,7 +8,7 @@ import io
 import httpx
 import pytest
 from PIL import Image
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
 from facetta.image_agent import (
     GrokPromptCreativeRenderInspector,
@@ -220,7 +220,7 @@ def test_quota_cooldown_bypasses_grok_for_single_and_pair_qa(monkeypatch):
     monkeypatch.setattr(
         quality_module,
         "openai_vision_json_pair",
-        lambda *_args: calls.append("pair") or {"pair": True},
+        lambda *_args, **_kwargs: calls.append("pair") or {"pair": True},
     )
     providers_module.note_xai_quota_exhausted()
 
@@ -266,9 +266,9 @@ def test_grok_qa_quota_failure_opens_shared_cooldown(monkeypatch):
         lambda *_args, **_kwargs: {"provider": "openai"},
     )
 
-    assert quality_module._qa_vision_json("system", b"image", "ask") == {
-        "provider": "openai",
-    }
+    recovered = quality_module._qa_vision_json("system", b"image", "ask")
+    assert recovered["provider"] == "openai"
+    assert "identical generated image" in recovered["notes"][0]
     assert providers_module.xai_quota_cooldown_active() is True
 
 
@@ -344,7 +344,7 @@ def test_grok_pair_qa_retries_openai_only_when_provider_is_unavailable(
         calls.append("grok")
         raise vision_module.VisionProviderUnavailable("xAI returned 403")
 
-    def inspect_openai(*_args):
+    def inspect_openai(*_args, **_kwargs):
         calls.append("openai")
         return _comparison_inspection_payload(preserved=True)
 
@@ -411,7 +411,7 @@ def test_grok_single_qa_retries_openai_only_when_provider_is_unavailable(
         RenderUnavailable("xAI response did not match the QA schema"),
     ],
 )
-def test_grok_qa_does_not_fallback_for_response_or_schema_failures(
+def test_grok_qa_recovers_response_or_schema_failures_on_identical_bytes(
     monkeypatch,
     failure,
 ):
@@ -427,10 +427,16 @@ def test_grok_qa_does_not_fallback_for_response_or_schema_failures(
         "vision_json_pair",
         lambda *_args: (_ for _ in ()).throw(failure),
     )
+    calls: list[tuple[bytes, bytes]] = []
+
+    def inspect_openai(_system, source, candidate, _ask, **_kwargs):
+        calls.append((source, candidate))
+        payload = _comparison_inspection_payload(preserved=True)
+        payload["notes"] = ["secondary reviewer completed the audit"]
+        return payload
+
     monkeypatch.setattr(
-        quality_module,
-        "openai_vision_json_pair",
-        lambda *_args: pytest.fail("contract failures must not change reviewer"),
+        quality_module, "openai_vision_json_pair", inspect_openai,
     )
     plan = build_image_plan(
         ImageOperation.REFERENCE_RENDER,
@@ -438,15 +444,16 @@ def test_grok_qa_does_not_fallback_for_response_or_schema_failures(
         source_image=b"source",
     )
 
-    with pytest.raises(RenderUnavailable) as caught:
-        quality_module.GrokCreativeRenderInspector().inspect_render(
-            plan, b"source", b"candidate",
-        )
+    result = quality_module.GrokCreativeRenderInspector().inspect_render(
+        plan, b"source", b"candidate",
+    )
 
-    assert caught.value is failure
+    assert result.source_design_preserved is True
+    assert calls == [(b"source", b"candidate")]
+    assert any("identical generated image" in note for note in result.notes)
 
 
-def test_grok_qa_does_not_fallback_after_typed_contract_validation_fails(
+def test_grok_qa_recovers_after_typed_contract_validation_fails(
     monkeypatch,
 ):
     monkeypatch.setattr(
@@ -464,7 +471,9 @@ def test_grok_qa_does_not_fallback_after_typed_contract_validation_fails(
     monkeypatch.setattr(
         quality_module,
         "openai_vision_json_pair",
-        lambda *_args: pytest.fail("typed validation must fail closed"),
+        lambda *_args, **_kwargs: _comparison_inspection_payload(
+            preserved=True
+        ),
     )
     plan = build_image_plan(
         ImageOperation.REFERENCE_RENDER,
@@ -472,10 +481,12 @@ def test_grok_qa_does_not_fallback_after_typed_contract_validation_fails(
         source_image=b"source",
     )
 
-    with pytest.raises(ValidationError):
-        quality_module.GrokCreativeRenderInspector().inspect_render(
-            plan, b"source", b"candidate",
-        )
+    result = quality_module.GrokCreativeRenderInspector().inspect_render(
+        plan, b"source", b"candidate",
+    )
+
+    assert result.source_design_preserved is True
+    assert any("identical generated image" in note for note in result.notes)
 
 
 class _FakeResponse:
@@ -718,11 +729,25 @@ def test_openai_pair_transport_sends_reference_before_candidate(monkeypatch):
     monkeypatch.setattr("httpx.post", post)
 
     result = vision_module.openai_vision_json_pair(
-        "Compare source and candidate.", b"source", b"candidate", "Audit.")
+        "Compare source and candidate.",
+        b"source",
+        b"candidate",
+        "Audit.",
+        response_schema={
+            "type": "object",
+            "properties": {
+                "change_applied": {"type": "boolean"},
+                "protected_regions_preserved": {"type": "boolean"},
+            },
+            "required": ["change_applied", "protected_regions_preserved"],
+        },
+    )
 
     content = captured["json"]["input"][1]["content"]
     assert result["protected_regions_preserved"] is True
     assert captured["json"]["max_output_tokens"] == 4000
+    assert captured["json"]["text"]["format"]["type"] == "json_schema"
+    assert captured["json"]["text"]["format"]["strict"] is True
     assert content[0]["type"] == "input_image"
     assert content[1]["type"] == "input_image"
     assert content[0]["image_url"] != content[1]["image_url"]
@@ -775,6 +800,7 @@ def test_source_fidelity_qa_ignores_annotations_present_only_in_source(
         _source: bytes,
         _candidate: bytes,
         _ask: str,
+        **_kwargs,
     ) -> dict:
         systems.append(system)
         return {
@@ -836,7 +862,7 @@ def test_comparison_angle_qa_allows_projection_but_not_design_drift(
 ):
     systems: list[str] = []
 
-    def inspect(system, source, candidate, ask):
+    def inspect(system, source, candidate, ask, **_kwargs):
         systems.append(system)
         assert source == _png((30, 120, 70))
         assert candidate == _png((40, 130, 80))
@@ -896,7 +922,7 @@ def test_ordinary_reference_render_does_not_use_comparison_angle_semantics(
 ):
     systems: list[str] = []
 
-    def inspect(system, _source, _candidate, _ask):
+    def inspect(system, _source, _candidate, _ask, **_kwargs):
         systems.append(system)
         return _comparison_inspection_payload(preserved=True)
 
@@ -919,7 +945,7 @@ def test_low_information_drawing_uses_interpretive_not_pixel_literal_qa(
 ):
     systems: list[str] = []
 
-    def inspect(system, _source, _candidate, _ask):
+    def inspect(system, _source, _candidate, _ask, **_kwargs):
         systems.append(system)
         return _comparison_inspection_payload(preserved=True)
 
@@ -949,7 +975,7 @@ def test_marked_region_qa_allows_requested_local_geometry_but_not_other_drift(
     systems: list[str] = []
     asks: list[str] = []
 
-    def inspect(system, _source, _candidate, ask):
+    def inspect(system, _source, _candidate, ask, **_kwargs):
         systems.append(system)
         asks.append(ask)
         return _comparison_inspection_payload(preserved=True)
@@ -999,7 +1025,7 @@ def test_described_visual_edit_qa_allows_all_named_changes_but_not_other_drift(
     systems: list[str] = []
     asks: list[str] = []
 
-    def inspect(system, _source, _candidate, ask):
+    def inspect(system, _source, _candidate, ask, **_kwargs):
         systems.append(system)
         asks.append(ask)
         return _comparison_inspection_payload(preserved=True)

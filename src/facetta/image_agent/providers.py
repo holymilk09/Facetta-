@@ -274,7 +274,7 @@ class RenderPrimitiveProvider:
 class RoutedImageProvider:
     """Dispatch canonical routes without exposing providers to product code."""
 
-    def __init__(self, *, openai_quality: str = "medium") -> None:
+    def __init__(self, *, openai_quality: str = "high") -> None:
         self._render = RenderPrimitiveProvider()
         self._openai: ImageProvider | None = None
         self._openai_quality = openai_quality

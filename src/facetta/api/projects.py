@@ -3363,20 +3363,6 @@ def create_project_from_prompt(
             terminal_error, image_run_id=failed_run_id,
         )
 
-    if request.comparison_views and generation_errors:
-        terminal_error = generation_errors[-1]
-        _observed_run_ids, failed_run_id = _persist_create_failure_evidence(
-            db,
-            studio_job=studio_job,
-            completed_results=tuple(generated),
-            created_by=request.owner,
-            error_code="creative_comparison_incomplete_direction_set",
-            errors=tuple(generation_errors),
-        )
-        return image_agent_error_response(
-            terminal_error, image_run_id=failed_run_id,
-        )
-
     def repair_prompt_main_view(
         index: int,
         audit: MainViewComparabilityAudit,
@@ -3466,7 +3452,12 @@ def create_project_from_prompt(
     comparison_results: list[list[tuple[str, ImageAgentResult]]] = [
         [] for _result in generated
     ]
-    completed_for_evidence = list(generated)
+    comparison_errors: list[list[ImageAgentError]] = [
+        [] for _result in generated
+    ]
+    rejected_comparisons: list[list[ImageAgentResult]] = [
+        [] for _result in generated
+    ]
     for candidate_index, primary in enumerate(generated):
         for view in request.comparison_views:
             instruction = _COMPARISON_VIEW_INSTRUCTIONS[view]
@@ -3479,41 +3470,13 @@ def create_project_from_prompt(
                     quality_source_image=primary.image_bytes,
                 )
             except ImageAgentError as exc:
-                observed_run_ids, failed_run_id = _persist_create_failure_evidence(
-                    db,
-                    studio_job=studio_job,
-                    completed_results=tuple(completed_for_evidence),
-                    created_by=request.owner,
-                    error_code=exc.code,
-                    error=exc,
-                    rejected_results=rejected_main_views,
-                )
-                response = image_agent_error_response(
-                    exc, image_run_id=failed_run_id)
-                if observed_run_ids:
-                    response.headers["X-Facetta-Completed-Run-Count"] = str(
-                        len(observed_run_ids))
-                return response
+                comparison_errors[candidate_index].append(exc)
+                continue
             except Exception:
-                observed_run_ids, _failed_run_id = _persist_create_failure_evidence(
-                    db,
-                    studio_job=studio_job,
-                    completed_results=tuple(completed_for_evidence),
-                    created_by=request.owner,
-                    error_code="unexpected_generation_failure",
-                    errors=tuple(generation_errors),
-                    rejected_results=rejected_main_views,
-                )
-                response = JSONResponse(status_code=500, content={
-                    "error_category": "internal_failure",
-                    "code": "unexpected_generation_failure",
-                    "detail": "creative comparison generation stopped unexpectedly",
-                })
-                if observed_run_ids:
-                    response.headers["X-Facetta-Completed-Run-Count"] = str(
-                        len(observed_run_ids)
-                    )
-                return response
+                # No provider plan exists to persist for an adapter crash. The
+                # absent companion remains visible as missing review evidence;
+                # the independently valid primary must still be reviewable.
+                continue
             contract_error = _comparison_view_contract_error(
                 comparison,
                 source_image=primary.image_bytes,
@@ -3521,26 +3484,9 @@ def create_project_from_prompt(
             )
             if contract_error is not None:
                 code, detail = contract_error
-                observed_run_ids, _failed_run_id = _persist_create_failure_evidence(
-                    db,
-                    studio_job=studio_job,
-                    completed_results=tuple(completed_for_evidence),
-                    created_by=request.owner,
-                    error_code=code,
-                    rejected_results=(*rejected_main_views, comparison),
-                    rejected_error_category="quality",
-                )
-                response = JSONResponse(status_code=422, content={
-                    "error_category": "quality_failure",
-                    "code": code,
-                    "detail": detail,
-                })
-                if observed_run_ids:
-                    response.headers["X-Facetta-Completed-Run-Count"] = str(
-                        len(observed_run_ids))
-                return response
+                rejected_comparisons[candidate_index].append(comparison)
+                continue
             comparison_results[candidate_index].append((view, comparison))
-            completed_for_evidence.append(comparison)
 
     persisted = persist_prompt_creative_project(
         db,
@@ -3554,6 +3500,8 @@ def create_project_from_prompt(
                 instruction=_COMPARISON_VIEW_INSTRUCTIONS[view],
                 image_run=comparison,
             ) for view, comparison in comparison_results[index]),
+            failed_comparison_errors=tuple(comparison_errors[index]),
+            rejected_comparison_results=tuple(rejected_comparisons[index]),
         ) for index, result in enumerate(generated)),
         reference_board=(
             SourceAssetInput(
@@ -3759,7 +3707,10 @@ def create_project_from_drawing(
             f"{board.instruction}"
         )
 
-    generated = []
+    generated: list[ImageAgentResult] = []
+    generation_errors: list[ImageAgentError] = []
+    rejected_primary_results: list[ImageAgentResult] = []
+    primary_rejection: tuple[int, str, str, str] | None = None
     for offset in range(request.variation_count):
         variant = request.starting_variant + offset
         try:
@@ -3774,40 +3725,17 @@ def create_project_from_drawing(
             else:
                 result = generate(render_source, effective_instruction, variant)
         except ImageAgentError as exc:
-            observed_run_ids, failed_run_id = _persist_create_failure_evidence(
-                db,
-                studio_job=studio_job,
-                completed_results=tuple(generated),
-                created_by=request.owner,
-                error_code=exc.code,
-                error=exc,
-            )
-            response = image_agent_error_response(
-                exc, image_run_id=failed_run_id)
-            if observed_run_ids:
-                response.headers["X-Facetta-Completed-Run-Count"] = str(
-                    len(observed_run_ids))
-            return response
+            generation_errors.append(exc)
+            continue
         if result.plan.operation.value != "REFERENCE_RENDER":
-            observed_run_ids, _failed_run_id = (
-                _persist_create_failure_evidence(
-                    db,
-                    studio_job=studio_job,
-                    completed_results=tuple(generated),
-                    created_by=request.owner,
-                    error_code="create_generator_operation_mismatch",
-                    rejected_result=result,
-                    rejected_error_category="evaluation",
-                )
+            rejected_primary_results.append(result)
+            primary_rejection = (
+                500,
+                "validation_failure",
+                "create_generator_operation_mismatch",
+                "creative generator returned the wrong operation",
             )
-            response = JSONResponse(status_code=500, content={
-                "error_category": "validation_failure",
-                "detail": "creative generator returned the wrong operation",
-            })
-            if observed_run_ids:
-                response.headers["X-Facetta-Completed-Run-Count"] = str(
-                    len(observed_run_ids))
-            return response
+            continue
         expected_source_hash = hashlib.sha256(render_source).hexdigest()
         source_binding_matches = result.plan.source_hash == expected_source_hash
         reference_contract_matches = (
@@ -3819,54 +3747,71 @@ def create_project_from_drawing(
             )
         )
         if not source_binding_matches or not reference_contract_matches:
+            rejected_primary_results.append(result)
             error_code = (
                 "create_render_source_binding_mismatch"
                 if not source_binding_matches
                 else "create_reference_binding_mismatch"
             )
-            observed_run_ids, _failed_run_id = (
-                _persist_create_failure_evidence(
-                    db,
-                    studio_job=studio_job,
-                    completed_results=tuple(generated),
-                    created_by=request.owner,
-                    error_code=error_code,
-                    rejected_result=result,
-                    rejected_error_category="evaluation",
-                )
+            primary_rejection = (
+                500,
+                "validation_failure",
+                error_code,
+                "creative generator did not bind the exact render source "
+                "and role-labeled reference contract",
             )
-            response = JSONResponse(status_code=500, content={
-                "error_category": "validation_failure",
-                "code": error_code,
-                "detail": (
-                    "creative generator did not bind the exact render source "
-                    "and role-labeled reference contract"
-                ),
-            })
-            if observed_run_ids:
-                response.headers["X-Facetta-Completed-Run-Count"] = str(
-                    len(observed_run_ids))
-            return response
+            continue
         if _uploaded_media_type(result.image_bytes) is None:
-            observed_run_ids, _failed_run_id = (
-                _persist_create_failure_evidence(
-                    db,
-                    studio_job=studio_job,
-                    completed_results=tuple(generated),
-                    created_by=request.owner,
-                    error_code="image_output_unsupported_format",
-                    rejected_result=result,
-                )
+            rejected_primary_results.append(result)
+            primary_rejection = (
+                422,
+                "quality_failure",
+                "image_output_unsupported_format",
+                "image agent returned an unsupported render format",
             )
-            response = JSONResponse(status_code=422, content={
-                "error_category": "quality_failure",
-                "detail": "image agent returned an unsupported render format",
-            })
-            if observed_run_ids:
-                response.headers["X-Facetta-Completed-Run-Count"] = str(
-                    len(observed_run_ids))
-            return response
+            continue
         generated.append(result)
+
+    if not generated:
+        error_code = (
+            generation_errors[-1].code
+            if generation_errors else (
+                primary_rejection[2]
+                if primary_rejection is not None
+                else "creative_primary_direction_invalid"
+            )
+        )
+        _observed_run_ids, failed_run_id = _persist_create_failure_evidence(
+            db,
+            studio_job=studio_job,
+            completed_results=(),
+            created_by=request.owner,
+            error_code=error_code,
+            errors=tuple(generation_errors),
+            rejected_results=tuple(rejected_primary_results),
+            rejected_error_category=(
+                "evaluation"
+                if primary_rejection is not None
+                and primary_rejection[1] == "validation_failure"
+                else "quality"
+            ),
+        )
+        if generation_errors:
+            return image_agent_error_response(
+                generation_errors[-1], image_run_id=failed_run_id,
+            )
+        if primary_rejection is not None:
+            status_code, category, code, detail = primary_rejection
+            return JSONResponse(status_code=status_code, content={
+                "error_category": category,
+                "code": code,
+                "detail": detail,
+            })
+        return JSONResponse(status_code=422, content={
+            "error_category": "quality_failure",
+            "code": error_code,
+            "detail": "no generated direction was valid enough to review",
+        })
 
     def repair_uploaded_main_view(
         index: int,
@@ -3970,7 +3915,12 @@ def create_project_from_drawing(
     comparison_results: list[list[tuple[str, ImageAgentResult]]] = [
         [] for _result in generated
     ]
-    completed_for_evidence = list(generated)
+    comparison_errors: list[list[ImageAgentError]] = [
+        [] for _result in generated
+    ]
+    rejected_comparisons: list[list[ImageAgentResult]] = [
+        [] for _result in generated
+    ]
     for candidate_index, primary in enumerate(generated):
         for view in request.comparison_views:
             instruction = _COMPARISON_VIEW_INSTRUCTIONS[view]
@@ -3983,21 +3933,8 @@ def create_project_from_drawing(
                     quality_source_image=primary.image_bytes,
                 )
             except ImageAgentError as exc:
-                observed_run_ids, failed_run_id = _persist_create_failure_evidence(
-                    db,
-                    studio_job=studio_job,
-                    completed_results=tuple(completed_for_evidence),
-                    created_by=request.owner,
-                    error_code=exc.code,
-                    error=exc,
-                    rejected_results=rejected_main_views,
-                )
-                response = image_agent_error_response(
-                    exc, image_run_id=failed_run_id)
-                if observed_run_ids:
-                    response.headers["X-Facetta-Completed-Run-Count"] = str(
-                        len(observed_run_ids))
-                return response
+                comparison_errors[candidate_index].append(exc)
+                continue
             contract_error = _comparison_view_contract_error(
                 comparison,
                 source_image=primary.image_bytes,
@@ -4005,26 +3942,9 @@ def create_project_from_drawing(
             )
             if contract_error is not None:
                 code, detail = contract_error
-                observed_run_ids, _failed_run_id = _persist_create_failure_evidence(
-                    db,
-                    studio_job=studio_job,
-                    completed_results=tuple(completed_for_evidence),
-                    created_by=request.owner,
-                    error_code=code,
-                    rejected_results=(*rejected_main_views, comparison),
-                    rejected_error_category="quality",
-                )
-                response = JSONResponse(status_code=422, content={
-                    "error_category": "quality_failure",
-                    "code": code,
-                    "detail": detail,
-                })
-                if observed_run_ids:
-                    response.headers["X-Facetta-Completed-Run-Count"] = str(
-                        len(observed_run_ids))
-                return response
+                rejected_comparisons[candidate_index].append(comparison)
+                continue
             comparison_results[candidate_index].append((view, comparison))
-            completed_for_evidence.append(comparison)
 
     persisted = persist_creative_project(
         db,
@@ -4062,13 +3982,19 @@ def create_project_from_drawing(
                 instruction=_COMPARISON_VIEW_INSTRUCTIONS[view],
                 image_run=comparison,
             ) for view, comparison in comparison_results[index]),
+            failed_comparison_errors=tuple(comparison_errors[index]),
+            rejected_comparison_results=tuple(rejected_comparisons[index]),
         ) for index, result in enumerate(generated)),
         owner=request.owner,
         title=request.title,
         collection=request.collection,
         tags=request.tags,
         studio_job=studio_job,
-        rejected_image_results=rejected_main_views,
+        failed_image_errors=tuple(generation_errors),
+        rejected_image_results=(
+            *tuple(rejected_primary_results),
+            *rejected_main_views,
+        ),
     )
     project = db.get(Project, persisted.root_id)
     if project is None:  # pragma: no cover - transaction invariant
@@ -5909,6 +5835,11 @@ def create_project_line_art(
         JewelryImageAgent,
         build_image_plan,
     )
+    from facetta.image_agent.providers import RoutedImageProvider
+    from facetta.provider_affinity import (
+        locked_edit_routes,
+        resolve_asset_provider_affinity,
+    )
 
     frozen = (
         (
@@ -5950,9 +5881,17 @@ def create_project_line_art(
             return JSONResponse(status_code=exc.status_code, content={
                 "code": exc.code, "detail": exc.detail,
             })
+    source_affinity = resolve_asset_provider_affinity(db, source)
+    locked_routes = (
+        locked_edit_routes(source_affinity.provider, source_affinity.model)
+        if source_affinity is not None else None
+    )
     try:
         result = JewelryImageAgent(
+            provider=RoutedImageProvider(openai_quality="high"),
             evaluator=ConfirmedLineArtQualityEvaluator(),
+            attempt_routes=locked_routes,
+            use_available_fallback=locked_routes is None,
         ).run(plan, source_image=source_control)
     except ImageAgentError as exc:
         run_id = persist_image_agent_failure(

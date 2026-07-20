@@ -36,6 +36,17 @@ def _attempt_row(run_id: str, attempt: ImageAttemptSummary) -> ImageAttempt:
         cost=attempt.cost,
         error_category=(attempt.error_category.value
                         if attempt.error_category else None),
+        error_code=(attempt.error.code if attempt.error is not None else None),
+        error_message=(
+            attempt.error.message if attempt.error is not None else None
+        ),
+        error_retryable=(
+            attempt.error.retryable if attempt.error is not None else None
+        ),
+        retry_after_seconds=(
+            attempt.error.retry_after_seconds
+            if attempt.error is not None else None
+        ),
     )
 
 

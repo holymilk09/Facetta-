@@ -1,4 +1,4 @@
-"""Direct GPT Image provider used for QA-gated fallback and comparisons.
+"""Direct GPT Image provider used for QA-gated generation, edits, and comparisons.
 
 Grok remains primary. FLUX is preferred when configured; GPT Image is the
 task-safe third-attempt replacement when FAL is unavailable. The same adapter
@@ -20,6 +20,8 @@ import io
 import json
 import math
 import os
+from email.utils import parsedate_to_datetime
+from datetime import datetime, timezone
 from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
@@ -52,10 +54,108 @@ class _Response(Protocol):
 PostCall = Callable[..., _Response]
 
 
+class _BufferedResponse:
+    """Small response adapter for a completed OpenAI image SSE stream."""
+
+    def __init__(self, *, headers: object, payload: JsonObject) -> None:
+        self.status_code = 200
+        self.headers = headers
+        self._payload = payload
+
+    def json(self) -> object:
+        return self._payload
+
+
+def _completed_stream_payload(lines: object) -> JsonObject:
+    """Return only the final image from an OpenAI image event stream.
+
+    Partial frames keep the connection active but are deliberately never
+    eligible for persistence. Facetta only accepts the provider's completed
+    event, preserving the same quality contract as the non-streaming endpoint.
+    """
+
+    completed: JsonObject | None = None
+    data_lines: list[str] = []
+    for raw_line in lines:
+        line = raw_line.decode() if isinstance(raw_line, bytes) else str(raw_line)
+        if line.startswith("data:"):
+            data_lines.append(line[5:].lstrip())
+            continue
+        if line or not data_lines:
+            continue
+        raw_data = "\n".join(data_lines)
+        data_lines = []
+        if raw_data == "[DONE]":
+            continue
+        try:
+            event = json.loads(raw_data)
+        except json.JSONDecodeError as exc:
+            raise ProviderCallError(
+                "OpenAI image stream returned malformed event data",
+                code="invalid_openai_image_stream",
+                retryable=True,
+            ) from exc
+        if isinstance(event, dict) and str(event.get("type", "")).endswith(
+            ".completed"
+        ):
+            completed = event
+    if data_lines:
+        # Be tolerant of a server that closes immediately after its final data
+        # line instead of writing one last blank SSE delimiter.
+        try:
+            event = json.loads("\n".join(data_lines))
+        except json.JSONDecodeError as exc:
+            raise ProviderCallError(
+                "OpenAI image stream returned malformed final event data",
+                code="invalid_openai_image_stream",
+                retryable=True,
+            ) from exc
+        if isinstance(event, dict) and str(event.get("type", "")).endswith(
+            ".completed"
+        ):
+            completed = event
+    encoded = completed.get("b64_json") if completed else None
+    if not isinstance(encoded, str) or not encoded:
+        raise ProviderCallError(
+            "OpenAI image stream ended without a completed image",
+            code="incomplete_openai_image_stream",
+            retryable=True,
+        )
+    payload: JsonObject = {"data": [{"b64_json": encoded}]}
+    usage = completed.get("usage") if completed else None
+    if isinstance(usage, dict):
+        payload["usage"] = usage
+    return payload
+
+
 def _default_post(url: str, **kwargs) -> _Response:
     import httpx
 
-    return httpx.post(url, **kwargs)
+    request_kwargs = dict(kwargs)
+    json_body = request_kwargs.get("json")
+    form_body = request_kwargs.get("data")
+    if isinstance(json_body, dict):
+        request_kwargs["json"] = {
+            **json_body,
+            "stream": True,
+            "partial_images": 1,
+        }
+    elif isinstance(form_body, dict):
+        request_kwargs["data"] = {
+            **form_body,
+            "stream": "true",
+            "partial_images": "1",
+        }
+    with httpx.stream("POST", url, **request_kwargs) as response:
+        if response.status_code >= 400:
+            response.read()
+            return response
+        content_type = response.headers.get("content-type", "")
+        if "text/event-stream" not in content_type:
+            response.read()
+            return response
+        payload = _completed_stream_payload(response.iter_lines())
+        return _BufferedResponse(headers=response.headers, payload=payload)
 
 
 def _png_bytes(image: Image.Image) -> bytes:
@@ -196,17 +296,17 @@ def openai_route_for_plan(plan: ImageAgentPlan) -> ImageRoute:
 class OpenAIImageProvider:
     """ImageProvider adapter for direct GPT Image 2 generation and edits.
 
-    Medium output quality is deliberate: this provider normally appears only
-    after two failed Grok attempts, where avoiding another unusable candidate
-    matters more than preview-level latency. Callers running cheap comparison
-    sweeps can still opt into ``quality="low"`` explicitly.
+    Production image work defaults to the provider's highest supported quality.
+    Callers running an explicitly labeled fast/low-cost experiment can still
+    opt into ``quality="low"`` or ``quality="medium"``; Studio's canonical
+    Create, Refine, Views, and Present paths must not silently downgrade it.
     """
 
     def __init__(
         self,
         *,
         model: str = OPENAI_IMAGE_MODEL,
-        quality: str = "medium",
+        quality: str = "high",
         size: str = "source",
         post: PostCall | None = None,
         cache_dir: Path | None = None,
@@ -427,11 +527,13 @@ class OpenAIImageProvider:
         if response.status_code >= 400:
             detail = self._safe_error_detail(response)
             retryable = response.status_code == 429 or response.status_code >= 500
+            retry_after_seconds = self._retry_after_seconds(response)
             raise ProviderCallError(
                 f"OpenAI image API returned HTTP {response.status_code}"
                 + (f": {detail}" if detail else ""),
                 code=f"openai_image_http_{response.status_code}",
                 retryable=retryable,
+                retry_after_seconds=retry_after_seconds,
             )
         body = response.json()
         if not isinstance(body, dict):
@@ -506,3 +608,25 @@ class OpenAIImageProvider:
             if key in error and isinstance(error[key], (str, int, float, bool))
         }
         return str(safe)[:800]
+
+    @staticmethod
+    def _retry_after_seconds(response: _Response) -> float | None:
+        headers = getattr(response, "headers", None)
+        if headers is None or not hasattr(headers, "get"):
+            return None
+        raw = headers.get("retry-after")
+        if not isinstance(raw, str) or not raw.strip():
+            return None
+        try:
+            return max(0.0, float(raw.strip()))
+        except ValueError:
+            try:
+                retry_at = parsedate_to_datetime(raw)
+                if retry_at.tzinfo is None:
+                    retry_at = retry_at.replace(tzinfo=timezone.utc)
+                return max(
+                    0.0,
+                    (retry_at - datetime.now(timezone.utc)).total_seconds(),
+                )
+            except (TypeError, ValueError, OverflowError):
+                return None

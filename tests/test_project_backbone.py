@@ -22,6 +22,7 @@ from facetta.db import (
     Design,
     DesignVersion,
     ImageAsset,
+    ImageAssetProviderAffinity,
     ImageAttempt,
     ImageRun,
     ImageRunReview,
@@ -34,6 +35,7 @@ from facetta.main import app
 from facetta.image_agent import (
     CheckSeverity,
     ImageOperation,
+    ImageRoute,
     ImageQualityFailure,
     ImageQualityReport,
     JewelryImageAgent,
@@ -593,6 +595,14 @@ def test_line_art_requires_confirmation_then_color_persists_as_derived(
     client, Session = project_client
     created = client.post("/projects/from-image", json=_image_request(example_spec))
     project = created.json()
+    with Session() as db:
+        db.add(ImageAssetProviderAffinity(
+            asset_id=project["active_asset_id"],
+            provider="openai",
+            model="gpt-image-2",
+            derivation="test_import_affinity",
+        ))
+        db.commit()
     source = _png()
     line_image = _png((248, 248, 248))
     colored_image = _png((20, 80, 140))
@@ -623,7 +633,11 @@ def test_line_art_requires_confirmation_then_color_persists_as_derived(
                     score=96,
                 )
 
-        return JewelryImageAgent(Provider(), Evaluator()).run(
+        return JewelryImageAgent(
+            Provider(),
+            Evaluator(),
+            attempt_routes=(ImageRoute.OPENAI_EDIT,),
+        ).run(
             plan, source_image=source_image)
 
     line_result = passing_result(source, line_image, "make line art")
@@ -633,8 +647,13 @@ def test_line_art_requires_confirmation_then_color_persists_as_derived(
         def run(self, _plan, *, source_image=None, **_kwargs):
             return line_result if source_image == source else color_result
 
-    monkeypatch.setattr("facetta.image_agent.JewelryImageAgent",
-                        lambda *_args, **_kwargs: FakeAgent())
+    agent_options: dict[str, object] = {}
+
+    def fake_agent(*_args, **kwargs):
+        agent_options.update(kwargs)
+        return FakeAgent()
+
+    monkeypatch.setattr("facetta.image_agent.JewelryImageAgent", fake_agent)
     line = client.post(f"/projects/{project['root_id']}/line-art", json={
         "created_by": "usr_ana",
         "expected_asset_id": project["active_asset_id"],
@@ -642,6 +661,9 @@ def test_line_art_requires_confirmation_then_color_persists_as_derived(
         "view": "three_quarter",
     })
     assert line.status_code == 202, line.text
+    assert agent_options["attempt_routes"] == (ImageRoute.OPENAI_EDIT,) * 3
+    assert agent_options["use_available_fallback"] is False
+    assert agent_options["provider"]._openai_quality == "high"
     line_body = line.json()
     assert line_body["status"] == "confirmation_required"
     assert line_body["quality_report"]["verdict"] == "pass"

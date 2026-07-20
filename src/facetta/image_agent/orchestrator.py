@@ -135,6 +135,8 @@ class JewelryImageAgent:
         *,
         attempt_routes: Sequence[ImageRoute] | None = None,
         use_available_fallback: bool | None = None,
+        retry_sleep=time.sleep,
+        maximum_retry_after_seconds: float = 2.0,
     ) -> None:
         using_default_provider = provider is None
         self.provider = provider or RoutedImageProvider()
@@ -149,6 +151,8 @@ class JewelryImageAgent:
             if use_available_fallback is None
             else use_available_fallback
         )
+        self.retry_sleep = retry_sleep
+        self.maximum_retry_after_seconds = maximum_retry_after_seconds
 
     def run(
         self,
@@ -337,6 +341,7 @@ class JewelryImageAgent:
                         code=exc.code,
                         message=exc.message,
                         retryable=exc.retryable,
+                        retry_after_seconds=exc.retry_after_seconds,
                     ),
                 ))
                 prior_provider_error = exc
@@ -359,8 +364,21 @@ class JewelryImageAgent:
                         forced_fallback_route = resolved_fallback
                         continue
                     break
-                if fast_fallback_attempt:
+                if (
+                    exc.retry_after_seconds is not None
+                    and exc.retry_after_seconds > self.maximum_retry_after_seconds
+                ):
+                    # A synchronous API request must not sleep through a long
+                    # provider cooldown. Preserve the provider's precise retry
+                    # deadline so the client or durable worker can resume later.
                     break
+                delay = (
+                    exc.retry_after_seconds
+                    if exc.retry_after_seconds is not None
+                    else min(0.1 * (2 ** (number - 1)), 0.5)
+                )
+                if delay > 0:
+                    self.retry_sleep(delay)
                 continue
             except Exception as exc:
                 wrapped = ProviderCallError(f"unexpected provider failure: {exc}")
@@ -504,7 +522,20 @@ class JewelryImageAgent:
             )
         message = (prior_provider_error.message if prior_provider_error else
                    "no usable image candidate was produced")
-        raise ImageProviderFailure(message, attempts=attempts, plan=plan)
+        raise ImageProviderFailure(
+            message,
+            code=(prior_provider_error.code if prior_provider_error else None),
+            retryable=(
+                prior_provider_error.retryable
+                if prior_provider_error is not None else True
+            ),
+            retry_after_seconds=(
+                prior_provider_error.retry_after_seconds
+                if prior_provider_error is not None else None
+            ),
+            attempts=attempts,
+            plan=plan,
+        )
 
     @staticmethod
     def _verify_inputs(

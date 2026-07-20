@@ -18,10 +18,8 @@ PairInspector = Callable[[str, bytes, bytes, str], dict]
 class VisionProviderUnavailable(RenderUnavailable):
     """A vision request could not run because its provider was unavailable.
 
-    This is intentionally narrower than ``RenderUnavailable``. Invalid JSON,
-    response-shape drift, and other evaluator-contract failures must stay on
-    the original provider path and fail closed instead of being reinterpreted
-    by a second reviewer.
+    This is intentionally narrower than ``RenderUnavailable`` so callers can
+    distinguish transport availability from evaluator-contract recovery.
     """
 
 
@@ -177,6 +175,7 @@ def openai_vision_json_pair(
     image_a: bytes,
     image_b: bytes,
     user_text: str,
+    response_schema: dict | None = None,
 ) -> dict:
     """Run one fail-closed OpenAI vision comparison over two images."""
     key = env_value("OPENAI_API_KEY")
@@ -217,7 +216,7 @@ def openai_vision_json_pair(
                         ],
                     },
                 ],
-                "text": {"format": {"type": "json_object"}},
+                "text": {"format": _openai_text_format(response_schema)},
                 # Pair audits can include a complete necklace component
                 # ledger, bilateral comparison, and repeated-motif evidence.
                 # Keep the ceiling aligned with single-image jewelry audits so

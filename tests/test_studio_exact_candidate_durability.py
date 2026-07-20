@@ -20,6 +20,7 @@ from facetta.db import (
     Design,
     DesignVersion,
     ImageAsset,
+    ImageAttempt,
     ImageRun,
     ImageRunReview,
     Project,
@@ -146,6 +147,20 @@ def _run(db, run_id: str, operation: str, spec_hash: str) -> None:
         variant=0,
         status="review_required",
         created_by=OWNER,
+    ))
+    db.flush()
+    candidate = _png(40)
+    db.add(ImageAttempt(
+        id=f"iat_{run_id}",
+        run_id=run_id,
+        attempt_number=1,
+        provider="openai",
+        model="gpt-image-2",
+        cached=False,
+        qa_verdict="warn",
+        qa_checks=[],
+        output_hash=hashlib.sha256(candidate).hexdigest(),
+        usage={},
     ))
     db.commit()
 

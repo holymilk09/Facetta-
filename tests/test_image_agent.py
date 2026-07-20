@@ -2463,6 +2463,46 @@ class TestClosedLoopRouting:
             result.run.attempts[2].corrective_instruction or ""
         )
 
+    def test_retryable_openai_transport_after_fast_quota_fallback_uses_attempt_three(
+        self,
+        monkeypatch,
+    ):
+        monkeypatch.setenv("XAI_KEY", "test-only")
+        monkeypatch.delenv("FAL_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "test-only")
+        quota_failure = _provider_call_error(
+            ImageRoute.GROK_GENERATE,
+            render_failure(403, "monthly spending limit reached"),
+        )
+        provider = FakeProvider(failures={
+            1: quota_failure,
+            2: ProviderCallError(
+                "OpenAI disconnected before returning a response",
+                code="openai_image_transport_failed",
+                retryable=True,
+            ),
+        })
+        plan = build_image_plan(
+            ImageOperation.CREATIVE_GENERATE,
+            "a symmetric aquamarine and diamond ring",
+        )
+
+        result = JewelryImageAgent(
+            provider,
+            SequenceEvaluator(report(QualityVerdict.PASS)),
+            use_available_fallback=True,
+            retry_sleep=lambda _seconds: None,
+        ).run(plan)
+
+        assert result.accepted is True
+        assert [call["route"] for call in provider.calls] == [
+            ImageRoute.GROK_GENERATE,
+            ImageRoute.OPENAI_GENERATE,
+            ImageRoute.OPENAI_GENERATE,
+        ]
+        assert result.run.attempts[1].error is not None
+        assert result.run.attempts[1].error.code == "openai_image_transport_failed"
+
     @pytest.mark.parametrize("status", [429, 500, 503])
     def test_transient_xai_failures_keep_same_provider_retry(
         self,
@@ -2667,6 +2707,65 @@ class TestClosedLoopRouting:
         assert all(a.error_category.value == "provider"
                    for a in caught.value.attempts)
         assert caught.value.attempts[-1].fallback_reason == "grok_provider_failed"
+
+    def test_long_retry_after_stops_without_blocking_and_preserves_terminal_cause(self):
+        provider = FakeProvider(failures={
+            1: ProviderCallError(
+                "provider rate limit",
+                code="openai_image_http_429",
+                retryable=True,
+                retry_after_seconds=37,
+            ),
+        })
+        slept: list[float] = []
+        plan = build_image_plan(
+            ImageOperation.CONCEPT_GENERATE,
+            "one restrained oval sapphire engagement ring",
+        )
+
+        with pytest.raises(ImageProviderFailure) as caught:
+            JewelryImageAgent(
+                provider,
+                SequenceEvaluator(),
+                attempt_routes=(ImageRoute.OPENAI_GENERATE,),
+                retry_sleep=slept.append,
+            ).run(plan)
+
+        assert len(caught.value.attempts) == 1
+        assert caught.value.code == "openai_image_http_429"
+        assert caught.value.retryable is True
+        assert caught.value.retry_after_seconds == 37
+        assert caught.value.attempts[0].error is not None
+        assert caught.value.attempts[0].error.retry_after_seconds == 37
+        assert slept == []
+
+    def test_short_retry_after_is_honored_before_same_provider_retry(self):
+        provider = FakeProvider(failures={
+            1: ProviderCallError(
+                "provider asks for a short retry",
+                code="openai_image_http_429",
+                retryable=True,
+                retry_after_seconds=0.25,
+            ),
+        })
+        slept: list[float] = []
+        plan = build_image_plan(
+            ImageOperation.CONCEPT_GENERATE,
+            "one restrained oval sapphire engagement ring",
+        )
+
+        result = JewelryImageAgent(
+            provider,
+            SequenceEvaluator(report(QualityVerdict.PASS)),
+            attempt_routes=(
+                ImageRoute.OPENAI_GENERATE,
+                ImageRoute.OPENAI_GENERATE,
+            ),
+            retry_sleep=slept.append,
+        ).run(plan)
+
+        assert result.accepted is True
+        assert slept == [0.25]
 
 
 def test_configured_fallback_provider_and_route_share_one_priority(
