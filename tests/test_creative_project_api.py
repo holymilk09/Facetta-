@@ -1383,12 +1383,11 @@ def test_create_applies_and_audits_one_shared_primary_view_contract(
         )
 
 
-def test_prompt_create_repairs_only_mismatched_later_direction_and_keeps_evidence(
+def test_prompt_create_keeps_mismatched_later_direction_without_repair(
     creative_client,
 ):
     client, Session = creative_client
     prompt_instructions: list[str] = []
-    prompt_outputs: list[bytes] = []
     repair_calls: list[tuple[bytes, str, int, bytes]] = []
     audits = iter((False, False, False, True))
 
@@ -1399,7 +1398,6 @@ def test_prompt_create_repairs_only_mismatched_later_direction_and_keeps_evidenc
             variant,
             color_offset=len(prompt_instructions) * 5,
         )
-        prompt_outputs.append(result.image_bytes)
         return result
 
     def repair(
@@ -1455,24 +1453,12 @@ def test_prompt_create_repairs_only_mismatched_later_direction_and_keeps_evidenc
 
     assert response.status_code == 201, response.text
     assert len(prompt_instructions) == 2
-    assert len(repair_calls) == 1
+    assert repair_calls == []
     assert all(
         MAIN_VIEW_REPAIR_CONTRACT not in instruction
         for instruction in prompt_instructions
     )
     rejected_bytes = _png((50, 95, 55))
-    (
-        repair_source,
-        repair_instruction,
-        repair_variant,
-        camera_reference,
-    ) = repair_calls[0]
-    assert repair_source == rejected_bytes
-    assert camera_reference == prompt_outputs[0]
-    assert camera_reference != repair_source
-    assert repair_variant == 5
-    assert MAIN_VIEW_REPAIR_CONTRACT in repair_instruction
-    assert "lower, tighter, and larger" in repair_instruction
     with Session() as db:
         job = db.get(StudioJobRecord, job_id)
         assert job is not None
@@ -1485,33 +1471,23 @@ def test_prompt_create_repairs_only_mismatched_later_direction_and_keeps_evidenc
             ImageAsset.capability == "CREATIVE_RENDER",
         )))
         assert len(candidates) == 2
-        assert all(bytes(row.image) != rejected_bytes for row in candidates)
+        assert any(bytes(row.image) == rejected_bytes for row in candidates)
         runs = list(db.scalars(select(ImageRun).order_by(ImageRun.created_at)))
-        assert len(runs) == 3
-        rejected = next(run for run in runs if run.status == "failed")
-        assert rejected.accepted_asset_id is None
-        assert rejected.project_root_id == response.json()["root_id"]
-        repaired = next(
-            run for run in runs
-            if run.status == "review_required"
-            and run.source_hash == hashlib.sha256(rejected_bytes).hexdigest()
-        )
-        repaired_checks = [
+        assert len(runs) == 2
+        assert all(run.status != "failed" for run in runs)
+        assert runs[1].status == "review_required"
+        review_checks = [
             check
             for attempt in db.scalars(select(ImageAttempt).where(
-                ImageAttempt.run_id == repaired.id,
+                ImageAttempt.run_id == runs[1].id,
             ))
             for check in attempt.qa_checks
         ]
         assert any(
-            check["code"] == "source_design_preserved"
-            and check["passed"] is True
-            for check in repaired_checks
-        )
-        assert any(
             check["code"] == "cross_direction_main_view_comparable"
-            and check["passed"] is True
-            for check in repaired_checks
+            and check["passed"] is False
+            and check["severity"] == "warning"
+            for check in review_checks
         )
 
 
@@ -1588,9 +1564,8 @@ def test_prompt_create_normalizes_framing_without_provider_repair(
         assert any(bytes(asset.image) == normalized for asset in assets)
         assert all(bytes(asset.image) != loose_lower for asset in assets)
         runs = list(db.scalars(select(ImageRun).order_by(ImageRun.created_at)))
-        assert len(runs) == 3
-        rejected = next(run for run in runs if run.status == "failed")
-        assert rejected.accepted_asset_id is None
+        assert len(runs) == 2
+        assert all(run.status != "failed" for run in runs)
         derivative = next(
             run for run in runs
             if run.status == "review_required" and run.variant == 5
@@ -2107,7 +2082,7 @@ def test_prompt_create_adjudicates_stochastic_camera_claim_before_normalizing(
         )
 
 
-def test_prompt_create_camera_disagreement_fails_without_image_repair(
+def test_prompt_create_camera_disagreement_is_reviewable_without_image_repair(
     creative_client,
 ):
     client, Session = creative_client
@@ -2155,18 +2130,14 @@ def test_prompt_create_camera_disagreement_fails_without_image_repair(
         "studio_job_id": job_id,
     })
 
-    assert response.status_code == 422, response.text
-    assert response.json()["code"] == (
-        "creative_main_view_comparability_uncertain"
-    )
-    assert "no camera repair was attempted" in response.json()["detail"]
+    assert response.status_code == 201, response.text
     assert repair_calls == 0
     with Session() as db:
-        assert db.scalar(select(func.count()).select_from(Project)) == 0
-        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        assert db.scalar(select(func.count()).select_from(Project)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 2
         job = db.get(StudioJobRecord, job_id)
         assert job is not None
-        assert job.status == "failed"
+        assert job.status == "reviewing"
         assert job.completed_outputs == job.charged_outputs == 0
         comparison = next(
             check
@@ -2179,7 +2150,7 @@ def test_prompt_create_camera_disagreement_fails_without_image_repair(
         )
 
 
-def test_prompt_create_rejects_untrusted_framing_normalization_without_save(
+def test_prompt_create_keeps_original_when_framing_normalization_is_untrusted(
     creative_client,
 ):
     client, Session = creative_client
@@ -2231,24 +2202,21 @@ def test_prompt_create_rejects_untrusted_framing_normalization_without_save(
         "studio_job_id": job_id,
     })
 
-    assert response.status_code == 422, response.text
-    assert response.json()["code"] == (
-        "creative_presentation_normalization_untrusted"
-    )
+    assert response.status_code == 201, response.text
     assert repair_calls == 0
     with Session() as db:
-        assert db.scalar(select(func.count()).select_from(Project)) == 0
-        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        assert db.scalar(select(func.count()).select_from(Project)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 2
         job = db.get(StudioJobRecord, job_id)
         assert job is not None
-        assert job.status == "failed"
+        assert job.status == "reviewing"
         assert job.completed_outputs == job.charged_outputs == 0
         runs = list(db.scalars(select(ImageRun)))
         assert len(runs) == 2
-        assert sum(run.status == "failed" for run in runs) == 1
+        assert sum(run.status == "failed" for run in runs) == 0
 
 
-def test_prompt_create_rejects_tampered_normalization_proof_without_reaudit(
+def test_prompt_create_keeps_original_when_normalization_proof_is_tampered(
     creative_client,
 ):
     client, Session = creative_client
@@ -2327,30 +2295,25 @@ def test_prompt_create_rejects_tampered_normalization_proof_without_reaudit(
             "studio_job_id": job_id,
         })
 
-    assert response.status_code == 422, response.text
-    assert response.json()["code"] == (
-        "creative_presentation_normalization_untrusted"
-    )
+    assert response.status_code == 201, response.text
     assert inspections == 1
     with Session() as db:
-        assert db.scalar(select(func.count()).select_from(Project)) == 0
-        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        assert db.scalar(select(func.count()).select_from(Project)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 2
         job = db.get(StudioJobRecord, job_id)
         assert job is not None
-        assert job.status == "failed"
+        assert job.status == "reviewing"
         assert job.completed_outputs == job.charged_outputs == 0
 
 
-def test_prompt_camera_repair_fails_closed_when_camera_role_is_dropped(
+def test_prompt_camera_mismatch_does_not_invoke_unbound_repair(
     creative_client,
 ):
     client, Session = creative_client
-    prompt_outputs: list[bytes] = []
     repair_camera_references: list[bytes] = []
 
     def generate(instruction: str, variant: int):
         result = _prompt_creative_result_for_instruction(instruction, variant)
-        prompt_outputs.append(result.image_bytes)
         return result
 
     def repair(
@@ -2392,19 +2355,16 @@ def test_prompt_camera_repair_fails_closed_when_camera_role_is_dropped(
         "studio_job_id": job_id,
     })
 
-    assert response.status_code == 500, response.text
-    assert response.json()["code"] == (
-        "creative_main_view_repair_camera_binding_mismatch"
-    )
-    assert repair_camera_references == [prompt_outputs[0]]
+    assert response.status_code == 201, response.text
+    assert repair_camera_references == []
     with Session() as db:
-        assert db.scalar(select(func.count()).select_from(Project)) == 0
-        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        assert db.scalar(select(func.count()).select_from(Project)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 2
         job = db.get(StudioJobRecord, job_id)
         assert job is not None
-        assert job.status == "failed"
+        assert job.status == "reviewing"
         assert job.completed_outputs == job.charged_outputs == 0
-        assert len(list(db.scalars(select(ImageRun)))) == 3
+        assert len(list(db.scalars(select(ImageRun)))) == 2
 
 
 def test_uploaded_create_repairs_from_exact_rejected_direction(
@@ -2482,7 +2442,7 @@ def test_uploaded_create_repairs_from_exact_rejected_direction(
         assert hashlib.sha256(rejected_direction).hexdigest() in source_hashes
 
 
-def test_camera_repair_cannot_bypass_identity_or_count_qa(
+def test_prompt_camera_mismatch_does_not_trigger_generative_repair(
     creative_client,
 ):
     client, Session = creative_client
@@ -2544,21 +2504,20 @@ def test_camera_repair_cannot_bypass_identity_or_count_qa(
         "studio_job_id": job_id,
     })
 
-    assert response.status_code == 422, response.text
-    assert response.json()["code"] == "creative_main_view_repair_qa_unconfirmed"
+    assert response.status_code == 201, response.text
     assert prompt_calls == 2
-    assert repair_calls == 1
+    assert repair_calls == 0
     with Session() as db:
-        assert db.scalar(select(func.count()).select_from(Project)) == 0
-        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        assert db.scalar(select(func.count()).select_from(Project)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 2
         job = db.get(StudioJobRecord, job_id)
         assert job is not None
-        assert job.status == "failed"
+        assert job.status == "reviewing"
         assert job.completed_outputs == job.charged_outputs == 0
-        assert len(list(db.scalars(select(ImageRun)))) == 3
+        assert len(list(db.scalars(select(ImageRun)))) == 2
 
 
-def test_create_fails_closed_when_primary_views_are_not_comparable(
+def test_create_keeps_valid_directions_when_primary_views_are_not_comparable(
     creative_client,
 ):
     client, Session = creative_client
@@ -2600,38 +2559,40 @@ def test_create_fails_closed_when_primary_views_are_not_comparable(
         "studio_job_id": job_id,
     })
 
-    assert response.status_code == 422, response.text
-    assert response.json()["code"] == "creative_main_views_incomparable"
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert len(body["creative_candidates"]) == 2
     with Session() as db:
         job = db.get(StudioJobRecord, job_id)
         assert job is not None
-        assert job.status == "failed"
+        assert job.status == "reviewing"
         assert job.completed_outputs == 0
         assert job.charged_outputs == 0
-        assert job.active_design_id is None
-        assert db.scalar(select(func.count()).select_from(Project)) == 0
-        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        assert job.active_design_id == body["root_id"]
+        assert db.scalar(select(func.count()).select_from(Project)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 2
         runs = list(db.scalars(select(ImageRun).order_by(ImageRun.created_at)))
-        assert len(runs) == 3
-        assert sum(run.status == "failed" for run in runs) == 2
-        assert all(
-            run.error_category == "quality"
-            for run in runs if run.status == "failed"
-        )
-        failed_checks = [
+        assert len(runs) == 2
+        assert runs[1].status == "review_required"
+        warning_checks = [
             check
-            for run in runs if run.status == "failed"
+            for run in runs
             for attempt in db.scalars(select(ImageAttempt).where(
                 ImageAttempt.run_id == run.id,
             ))
             for check in attempt.qa_checks
             if check["code"] == "cross_direction_main_view_comparable"
         ]
-        assert len(failed_checks) == 2
-        assert all(check["passed"] is False for check in failed_checks)
+        assert len(warning_checks) == 1
+        assert warning_checks[0]["passed"] is False
+        assert warning_checks[0]["severity"] == "warning"
+        assert (
+            warning_checks[0]["evidence"]["audit"]["review_scale_matches"]
+            is False
+        )
         assert all(
             check["evidence"]["audit"]["review_scale_matches"] is False
-            for check in failed_checks
+            for check in warning_checks
         )
 
 

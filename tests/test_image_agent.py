@@ -2571,6 +2571,9 @@ class TestClosedLoopRouting:
         self,
         monkeypatch,
     ):
+        # A developer's ignored .env.local must not supply a fallback to this
+        # deliberately no-fallback routing case.
+        monkeypatch.setattr("facetta.config.DEFAULT_ENV_FILES", ())
         monkeypatch.setenv("XAI_KEY", "xai-key")
         monkeypatch.delenv("FAL_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)

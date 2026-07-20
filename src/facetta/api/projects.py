@@ -2719,6 +2719,7 @@ def _result_with_main_view_audit(
     decision: MainViewComparabilityDecision,
     audited_reference_image: bytes,
     audited_candidate_image: bytes | None = None,
+    review_mismatch: bool = False,
 ) -> ImageAgentResult:
     """Bind request-level comparability evidence to the candidate image run."""
 
@@ -2734,7 +2735,10 @@ def _result_with_main_view_audit(
     check = QualityCheck(
         code="cross_direction_main_view_comparable",
         passed=passed,
-        severity=CheckSeverity.HARD,
+        severity=(
+            CheckSeverity.WARNING
+            if review_mismatch and not passed else CheckSeverity.HARD
+        ),
         message=(
             "primary direction uses the shared request camera and framing"
             if passed else
@@ -2756,23 +2760,41 @@ def _result_with_main_view_audit(
     attempts = tuple(
         attempt.model_copy(update={
             "qa_checks": (*attempt.qa_checks, check),
-            **({"qa_verdict": QualityVerdict.FAIL} if not passed else {}),
+            **({
+                "qa_verdict": (
+                    QualityVerdict.WARN
+                    if review_mismatch else QualityVerdict.FAIL
+                )
+            } if not passed else {}),
         })
         if attempt.attempt_number == selected_attempt else attempt
         for attempt in result.run.attempts
     )
     quality = result.quality.model_copy(update={
         "checks": (*result.quality.checks, check),
-        **({"verdict": QualityVerdict.FAIL} if not passed else {}),
+        **({
+            "verdict": (
+                QualityVerdict.WARN
+                if review_mismatch else QualityVerdict.FAIL
+            )
+        } if not passed else {}),
     })
     run = result.run.model_copy(update={
         "attempts": attempts,
-        **({"verdict": QualityVerdict.FAIL} if not passed else {}),
+        **({
+            "verdict": (
+                QualityVerdict.WARN
+                if review_mismatch else QualityVerdict.FAIL
+            )
+        } if not passed else {}),
     })
     return result.model_copy(update={
         "run": run,
         "quality": quality,
-        **({"accepted": False, "review_required": False} if not passed else {}),
+        **({
+            "accepted": False,
+            "review_required": review_mismatch,
+        } if not passed else {}),
     })
 
 
@@ -2798,6 +2820,7 @@ def _audit_primary_main_view_set(
     validate_repair: MainViewRepairValidator | None = None,
     normalize_presentation: MainViewPresentationNormalizer | None = None,
     maximum_repair_attempts: int = 1,
+    review_mismatches: bool = False,
 ) -> tuple[
     list[ImageAgentResult], tuple[ImageAgentResult, ...], JSONResponse | None
 ]:
@@ -2866,8 +2889,12 @@ def _audit_primary_main_view_set(
                 audit=audit,
                 decision=decision,
                 audited_reference_image=reference.image_bytes,
+                review_mismatch=review_mismatches,
             )
             if decision.uncertain:
+                if review_mismatches:
+                    audited[index] = audited_candidate
+                    break
                 rejected_evidence.append(audited_candidate)
                 completed = tuple(audited[:index])
                 terminal_rejections = (
@@ -2903,7 +2930,8 @@ def _audit_primary_main_view_set(
                 audited[index] = audited_candidate
                 break
 
-            rejected_evidence.append(audited_candidate)
+            if not review_mismatches:
+                rejected_evidence.append(audited_candidate)
             if (
                 audit.framing_only_mismatch
                 and normalize_presentation is not None
@@ -2922,6 +2950,9 @@ def _audit_primary_main_view_set(
                         audit,
                     )
                 except PresentationNormalizationError as exc:
+                    if review_mismatches:
+                        audited[index] = audited_candidate
+                        break
                     completed = tuple(audited[:index])
                     terminal_rejections = (
                         *rejected_evidence,
@@ -2969,6 +3000,15 @@ def _audit_primary_main_view_set(
                     audited_reference_image=reference.image_bytes,
                     audited_candidate_image=candidate.image_bytes,
                 )
+                break
+
+            if review_mismatches:
+                # Prompt directions are independent design options. Camera,
+                # crop, and scale consistency improve comparison, but must not
+                # erase otherwise valid jewelry concepts. Preserve the exact
+                # audit as a review warning and skip a stochastic repair that
+                # can redesign or discard a usable direction.
+                audited[index] = audited_candidate
                 break
 
             if (
@@ -3418,6 +3458,7 @@ def create_project_from_prompt(
         validate_repair=validate_prompt_main_view_repair,
         normalize_presentation=normalize_main_view_result,
         maximum_repair_attempts=1,
+        review_mismatches=True,
     ))
     if main_view_error is not None:
         return main_view_error
