@@ -543,7 +543,6 @@ export function StudioCreateWorkspace({
             })),
           }),
           variation_count: submittedDraft.candidateCount,
-          comparison_views: ['three_quarter'],
           owner: requestOwner,
           title,
         })
@@ -558,7 +557,6 @@ export function StudioCreateWorkspace({
             media_type: reference.mediaType,
           })),
           variation_count: submittedDraft.candidateCount,
-          comparison_views: ['three_quarter'],
           owner: requestOwner,
           title,
         });

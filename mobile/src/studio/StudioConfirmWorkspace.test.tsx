@@ -291,7 +291,7 @@ test('a save failure stays on Starting facts and does not navigate', async () =>
   await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
   await fireEvent.press(screen.getByLabelText('I reviewed these starting facts'));
   await fireEvent.press(screen.getByText('Save starting facts'));
-  await waitFor(() => expect(screen.getByText(/could not connect/i)).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(/temporarily unavailable/i)).toBeTruthy());
   expect(onSaved).not.toHaveBeenCalled();
   expect(screen.queryByText(/provider detail/i)).toBeNull();
   expect(screen.getByText('Save starting facts')).toBeTruthy();

@@ -6,6 +6,7 @@ import base64
 import copy
 import hashlib
 import io
+import threading
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -3164,6 +3165,32 @@ def test_from_prompt_persists_independent_candidates_without_source_or_spec(
             "CREATIVE_GENERATE", "CREATIVE_GENERATE", "CREATIVE_GENERATE"]
         assert [run.variant for run in runs] == [4, 5, 6]
         assert all(run.source_asset_id is None for run in runs)
+
+
+def test_from_prompt_generates_independent_directions_concurrently(
+    creative_client,
+):
+    client, _Session = creative_client
+    rendezvous = threading.Barrier(3, timeout=2)
+    worker_ids: set[int] = set()
+    worker_lock = threading.Lock()
+
+    def generate(_instruction: str, variant: int):
+        with worker_lock:
+            worker_ids.add(threading.get_ident())
+        rendezvous.wait()
+        return _prompt_creative_result(variant)
+
+    app.dependency_overrides[get_creative_prompt_generator] = lambda: generate
+
+    response = client.post(
+        "/projects/from-prompt",
+        json=_prompt_request(variation_count=3),
+    )
+
+    assert response.status_code == 201, response.text
+    assert len(worker_ids) == 3
+    assert len(response.json()["creative_candidates"]) == 3
 
 
 def test_from_prompt_keeps_valid_directions_when_another_direction_fails(

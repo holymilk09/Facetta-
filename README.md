@@ -60,7 +60,27 @@ Both `.env` and `.env.local` are gitignored. When both exist, `.env.local` wins;
 exported environment variables override either file. Never commit provider keys,
 database credentials, access tokens, or Supabase service-role credentials.
 
-### 1. Start the API
+### Start the complete local preview
+
+Use the supervised runner from the repository root. It supplies the required
+local auth settings, waits for API readiness before starting Studio, and stops
+both services if either one fails. This prevents a cached browser bundle from
+looking healthy after its API or Metro process has exited.
+
+```sh
+uv run python scripts/run_local_preview.py
+```
+
+Facetta is ready when the runner prints `http://127.0.0.1:8081/`. Check an
+already-running stack with:
+
+```sh
+uv run python scripts/run_local_preview.py --check
+```
+
+The two-terminal commands below remain useful when debugging one service.
+
+### 1. Start only the API
 
 From the repository root:
 
@@ -79,7 +99,7 @@ Development OpenAPI documentation is available at
 `http://127.0.0.1:8000/docs`. Production deliberately hides it and exposes only
 the allowlisted Studio surface in `src/facetta/main.py`.
 
-### 2. Start the Studio preview
+### 2. Start only the Studio preview
 
 In a second terminal:
 

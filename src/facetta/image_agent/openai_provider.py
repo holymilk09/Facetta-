@@ -41,7 +41,8 @@ from facetta.json_types import JsonObject
 OPENAI_IMAGE_MODEL = "gpt-image-2"
 OPENAI_GENERATION_URL = "https://api.openai.com/v1/images/generations"
 OPENAI_EDIT_URL = "https://api.openai.com/v1/images/edits"
-OPENAI_PROVIDER_CONTRACT = "openai-image-provider.v2-inward-mask-feather"
+OPENAI_PROVIDER_CONTRACT = "openai-image-provider.v4-progressive-stream-completion"
+OPENAI_STREAM_PARTIAL_IMAGES = 3
 
 
 class _Response(Protocol):
@@ -55,107 +56,103 @@ PostCall = Callable[..., _Response]
 
 
 class _BufferedResponse:
-    """Small response adapter for a completed OpenAI image SSE stream."""
+    """Small response adapter shared by JSON and completed SSE calls."""
 
-    def __init__(self, *, headers: object, payload: JsonObject) -> None:
-        self.status_code = 200
+    def __init__(self, *, status_code: int, headers: object, body: object) -> None:
+        self.status_code = status_code
         self.headers = headers
-        self._payload = payload
+        self._body = body
 
     def json(self) -> object:
-        return self._payload
-
-
-def _completed_stream_payload(lines: object) -> JsonObject:
-    """Return only the final image from an OpenAI image event stream.
-
-    Partial frames keep the connection active but are deliberately never
-    eligible for persistence. Facetta only accepts the provider's completed
-    event, preserving the same quality contract as the non-streaming endpoint.
-    """
-
-    completed: JsonObject | None = None
-    data_lines: list[str] = []
-    for raw_line in lines:
-        line = raw_line.decode() if isinstance(raw_line, bytes) else str(raw_line)
-        if line.startswith("data:"):
-            data_lines.append(line[5:].lstrip())
-            continue
-        if line or not data_lines:
-            continue
-        raw_data = "\n".join(data_lines)
-        data_lines = []
-        if raw_data == "[DONE]":
-            continue
-        try:
-            event = json.loads(raw_data)
-        except json.JSONDecodeError as exc:
-            raise ProviderCallError(
-                "OpenAI image stream returned malformed event data",
-                code="invalid_openai_image_stream",
-                retryable=True,
-            ) from exc
-        if isinstance(event, dict) and str(event.get("type", "")).endswith(
-            ".completed"
-        ):
-            completed = event
-    if data_lines:
-        # Be tolerant of a server that closes immediately after its final data
-        # line instead of writing one last blank SSE delimiter.
-        try:
-            event = json.loads("\n".join(data_lines))
-        except json.JSONDecodeError as exc:
-            raise ProviderCallError(
-                "OpenAI image stream returned malformed final event data",
-                code="invalid_openai_image_stream",
-                retryable=True,
-            ) from exc
-        if isinstance(event, dict) and str(event.get("type", "")).endswith(
-            ".completed"
-        ):
-            completed = event
-    encoded = completed.get("b64_json") if completed else None
-    if not isinstance(encoded, str) or not encoded:
-        raise ProviderCallError(
-            "OpenAI image stream ended without a completed image",
-            code="incomplete_openai_image_stream",
-            retryable=True,
-        )
-    payload: JsonObject = {"data": [{"b64_json": encoded}]}
-    usage = completed.get("usage") if completed else None
-    if isinstance(usage, dict):
-        payload["usage"] = usage
-    return payload
+        return self._body
 
 
 def _default_post(url: str, **kwargs) -> _Response:
     import httpx
 
+    # Complex GPT Image renders may legitimately run for two minutes. A silent
+    # JSON request can be closed by an intermediary near the one-minute mark,
+    # while buffering an SSE response until EOF loses a completed image when
+    # the peer closes immediately afterward. Request the maximum supported
+    # progress cadence, consume the stream incrementally, and return only the
+    # provider's final completed image. Partial frames are transport keepalive
+    # evidence, never accepted candidates or saved design assets.
     request_kwargs = dict(kwargs)
     json_body = request_kwargs.get("json")
-    form_body = request_kwargs.get("data")
     if isinstance(json_body, dict):
         request_kwargs["json"] = {
             **json_body,
             "stream": True,
-            "partial_images": 1,
+            "partial_images": OPENAI_STREAM_PARTIAL_IMAGES,
         }
-    elif isinstance(form_body, dict):
+    form_body = request_kwargs.get("data")
+    if isinstance(form_body, dict):
         request_kwargs["data"] = {
             **form_body,
             "stream": "true",
-            "partial_images": "1",
+            "partial_images": str(OPENAI_STREAM_PARTIAL_IMAGES),
         }
-    with httpx.stream("POST", url, **request_kwargs) as response:
-        if response.status_code >= 400:
-            response.read()
-            return response
-        content_type = response.headers.get("content-type", "")
-        if "text/event-stream" not in content_type:
-            response.read()
-            return response
-        payload = _completed_stream_payload(response.iter_lines())
-        return _BufferedResponse(headers=response.headers, payload=payload)
+
+    # HTTP/2 avoids HTTP/1.1 chunk framing as another failure boundary during
+    # long high-quality renders. The timeout remains per-call and bounded.
+    timeout = request_kwargs.pop("timeout", 180.0)
+    with httpx.Client(http2=True, timeout=timeout) as client:
+        with client.stream("POST", url, **request_kwargs) as response:
+            if response.status_code >= 400:
+                response.read()
+                try:
+                    body: object = response.json()
+                except Exception:
+                    body = {}
+                return _BufferedResponse(
+                    status_code=response.status_code,
+                    headers=response.headers,
+                    body=body,
+                )
+
+            content_type = response.headers.get("content-type", "")
+            if "text/event-stream" not in content_type.lower():
+                response.read()
+                return _BufferedResponse(
+                    status_code=response.status_code,
+                    headers=response.headers,
+                    body=response.json(),
+                )
+
+            for line in response.iter_lines():
+                if not line.startswith("data:"):
+                    continue
+                raw_event = line.removeprefix("data:").strip()
+                if not raw_event or raw_event == "[DONE]":
+                    continue
+                try:
+                    event = json.loads(raw_event)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(event, dict):
+                    continue
+                event_type = event.get("type")
+                if event_type not in {
+                    "image_generation.completed",
+                    "image_edit.completed",
+                }:
+                    continue
+                encoded = event.get("b64_json")
+                if not isinstance(encoded, str) or not encoded:
+                    raise RuntimeError(
+                        "OpenAI image stream completed without final image data"
+                    )
+                usage = event.get("usage")
+                return _BufferedResponse(
+                    status_code=response.status_code,
+                    headers=response.headers,
+                    body={
+                        "data": [{"b64_json": encoded}],
+                        "usage": usage if isinstance(usage, dict) else {},
+                    },
+                )
+
+    raise RuntimeError("OpenAI image stream ended before the completed image")
 
 
 def _png_bytes(image: Image.Image) -> bytes:
@@ -434,7 +431,10 @@ class OpenAIImageProvider:
                         "n": 1,
                         "size": request_size,
                         "quality": self.quality,
-                        "output_format": "png",
+                        # OpenAI documents JPEG as the faster transfer format.
+                        # Facetta normalizes it back to PNG before persistence.
+                        "output_format": "jpeg",
+                        "output_compression": 95,
                         "background": "opaque",
                     },
                     headers={**headers, "Content-Type": "application/json"},
@@ -569,7 +569,11 @@ class OpenAIImageProvider:
             )
         else:
             try:
-                Image.open(io.BytesIO(image)).verify()
+                normalized = ImageOps.exif_transpose(
+                    Image.open(io.BytesIO(image))
+                ).convert("RGB")
+                normalized.load()
+                image = _png_bytes(normalized)
             except Exception as exc:
                 raise ProviderCallError(
                     "OpenAI image API returned an undecodable image",

@@ -1237,7 +1237,7 @@ test('Views opens its starting-facts prerequisite and resumes after one save act
 });
 
 test.each([
-  ['network', { code: 'NETWORK_ERROR', category: 'network', status: 0, retryable: true }, /could not connect/i],
+  ['network', { code: 'NETWORK_ERROR', category: 'network', status: 0, retryable: true }, /temporarily unavailable/i],
   ['auth', { code: 'AUTHENTICATION_REQUIRED', category: 'authentication', status: 401, retryable: false }, /session is missing or expired/i],
   ['not-found', { code: 'NOT_FOUND', category: 'not_found', status: 404, retryable: false }, /could not open that saved work/i],
 ] as const)('project hydration exposes recoverable %s errors and Retry', async (_kind, error, message) => {

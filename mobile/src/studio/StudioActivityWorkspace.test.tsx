@@ -96,7 +96,9 @@ describe('StudioActivityWorkspace', () => {
     });
     const view = await render(<StudioActivityWorkspace api={client} owner="usr_designer" />);
 
-    expect(await view.findByText('Facetta could not connect. Check your connection and try again.')).toBeTruthy();
+    expect(await view.findByText(
+      'Facetta is temporarily unavailable. This request was not started. Try again shortly.',
+    )).toBeTruthy();
     expect(view.queryByText('Nothing is running yet')).toBeNull();
   });
 

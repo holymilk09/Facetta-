@@ -22,7 +22,10 @@ test('designer errors give specific safe recovery guidance', () => {
     designerErrorMessage({ category: 'evaluation', status: 502 }, 'create'),
     'Facetta could not verify the generated result, so nothing was saved or charged. Try again.',
   );
-  assert.match(designerErrorMessage({ category: 'network', status: 0 }, 'activity'), /connection/);
+  assert.equal(
+    designerErrorMessage({ category: 'network', status: 0 }, 'activity'),
+    'Facetta is temporarily unavailable. This request was not started. Try again shortly.',
+  );
   assert.match(designerErrorMessage({ category: 'validation', status: 422 }, 'create'), /reference/);
   assert.match(designerErrorMessage({ category: 'authentication', status: 401 }, 'confirm'), /Sign in again/);
   assert.match(designerErrorMessage({ category: 'authorization', status: 403 }, 'confirm'), /signed-in account/);

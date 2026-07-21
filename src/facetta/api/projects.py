@@ -14,6 +14,7 @@ import math
 import secrets
 from collections import Counter
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Annotated, Literal
 
@@ -3243,19 +3244,38 @@ def create_project_from_prompt(
         f"{with_jewelry_symmetry_contract(request.prompt)}\n\n"
         f"{MAIN_VIEW_CONTRACT}"
     )
-    for offset in range(request.variation_count):
-        variant = request.starting_variant + offset
-        try:
-            result = (
-                generate(
-                    effective_prompt,
-                    variant,
-                    reference_board=advisory_board.image,
-                    reference_instruction=advisory_board.instruction,
-                )
-                if advisory_board is not None
-                else generate(effective_prompt, variant)
+    def generate_prompt_variant(variant: int) -> ImageAgentResult:
+        return (
+            generate(
+                effective_prompt,
+                variant,
+                reference_board=advisory_board.image,
+                reference_instruction=advisory_board.instruction,
             )
+            if advisory_board is not None
+            else generate(effective_prompt, variant)
+        )
+
+    variants = tuple(
+        request.starting_variant + offset
+        for offset in range(request.variation_count)
+    )
+    # Independent directions do not depend on one another. Running them in
+    # parallel keeps a four-direction request near the latency of one provider
+    # render instead of multiplying the designer's wait by four. Results are
+    # still evaluated and persisted in deterministic variant order below.
+    with ThreadPoolExecutor(
+        max_workers=request.variation_count,
+        thread_name_prefix="facetta-create-prompt",
+    ) as executor:
+        variant_futures = tuple(
+            (variant, executor.submit(generate_prompt_variant, variant))
+            for variant in variants
+        )
+
+    for variant, future in variant_futures:
+        try:
+            result = future.result()
         except ImageAgentError as exc:
             generation_errors.append(exc)
             continue
@@ -3711,19 +3731,33 @@ def create_project_from_drawing(
     generation_errors: list[ImageAgentError] = []
     rejected_primary_results: list[ImageAgentResult] = []
     primary_rejection: tuple[int, str, str, str] | None = None
-    for offset in range(request.variation_count):
-        variant = request.starting_variant + offset
+    def generate_drawing_variant(variant: int) -> ImageAgentResult:
+        if decoded_references:
+            return invoke_creative_render_generator(
+                generate,
+                render_source,
+                effective_instruction,
+                variant,
+                quality_source_image=quality_source,
+            )
+        return generate(render_source, effective_instruction, variant)
+
+    variants = tuple(
+        request.starting_variant + offset
+        for offset in range(request.variation_count)
+    )
+    with ThreadPoolExecutor(
+        max_workers=request.variation_count,
+        thread_name_prefix="facetta-create-drawing",
+    ) as executor:
+        variant_futures = tuple(
+            (variant, executor.submit(generate_drawing_variant, variant))
+            for variant in variants
+        )
+
+    for variant, future in variant_futures:
         try:
-            if decoded_references:
-                result = invoke_creative_render_generator(
-                    generate,
-                    render_source,
-                    effective_instruction,
-                    variant,
-                    quality_source_image=quality_source,
-                )
-            else:
-                result = generate(render_source, effective_instruction, variant)
+            result = future.result()
         except ImageAgentError as exc:
             generation_errors.append(exc)
             continue

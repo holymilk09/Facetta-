@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 
 import pytest
 from PIL import Image, ImageDraw
@@ -27,7 +28,8 @@ from facetta.image_agent import (
 from facetta.image_agent.openai_provider import (
     OPENAI_EDIT_URL,
     OPENAI_GENERATION_URL,
-    _completed_stream_payload,
+    OPENAI_STREAM_PARTIAL_IMAGES,
+    _default_post,
 )
 from facetta.image_agent.providers import RoutedImageProvider
 from facetta.image_agent.prompts import compile_initial_prompt
@@ -97,37 +99,78 @@ class SequenceEvaluator:
         )
 
 
-def test_image_stream_uses_completed_frame_and_ignores_partial() -> None:
-    partial = base64.b64encode(b"partial").decode()
-    completed = base64.b64encode(_png((12, 34, 56))).decode()
+def test_default_transport_returns_completed_stream_before_disconnect(
+    monkeypatch,
+) -> None:
+    image = _png((11, 22, 33))
+    calls: list[tuple[str, str, dict[str, object]]] = []
 
-    payload = _completed_stream_payload([
-        "event: image_generation.partial_image",
-        f'data: {{"type":"image_generation.partial_image","b64_json":"{partial}","partial_image_index":0}}',
-        "",
-        "event: image_generation.completed",
-        f'data: {{"type":"image_generation.completed","b64_json":"{completed}","usage":{{"total_tokens":321}}}}',
-        "",
-    ])
+    class StreamResponse:
+        status_code = 200
+        headers = {
+            "content-type": "text/event-stream",
+            "x-request-id": "req_stream",
+        }
 
-    assert payload == {
-        "data": [{"b64_json": completed}],
-        "usage": {"total_tokens": 321},
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def iter_lines(self):
+            yield "event: image_generation.partial_image"
+            yield "data: " + json.dumps({
+                "type": "image_generation.partial_image",
+                "b64_json": "not-the-final-image",
+                "partial_image_index": 0,
+            })
+            yield "event: image_generation.completed"
+            yield "data: " + json.dumps({
+                "type": "image_generation.completed",
+                "b64_json": base64.b64encode(image).decode(),
+                "usage": {"total_tokens": 123},
+            })
+            raise RuntimeError("peer closed after completed event")
+
+    class Client:
+        def __init__(self, **kwargs):
+            assert kwargs == {"http2": True, "timeout": 180.0}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def stream(self, method: str, url: str, **kwargs):
+            calls.append((method, url, kwargs))
+            return StreamResponse()
+
+    monkeypatch.setattr("httpx.Client", Client)
+    payload = {"model": "gpt-image-2", "quality": "high"}
+
+    response = _default_post(
+        OPENAI_GENERATION_URL,
+        json=payload,
+        timeout=180.0,
+    )
+
+    assert response.status_code == 200
+    assert response.headers["x-request-id"] == "req_stream"
+    assert response.json() == {
+        "data": [{"b64_json": base64.b64encode(image).decode()}],
+        "usage": {"total_tokens": 123},
     }
-
-
-def test_image_stream_rejects_partial_without_completed_frame() -> None:
-    partial = base64.b64encode(b"partial").decode()
-
-    with pytest.raises(ProviderCallError, match="without a completed image") as exc:
-        _completed_stream_payload([
-            "event: image_edit.partial_image",
-            f'data: {{"type":"image_edit.partial_image","b64_json":"{partial}","partial_image_index":0}}',
-            "",
-        ])
-
-    assert exc.value.code == "incomplete_openai_image_stream"
-    assert exc.value.retryable is True
+    assert calls == [("POST", OPENAI_GENERATION_URL, {
+            "json": {
+                **payload,
+                "stream": True,
+                "partial_images": OPENAI_STREAM_PARTIAL_IMAGES,
+            },
+        })]
+    assert "stream" not in payload
+    assert "partial_images" not in payload
 
 
 def test_routed_provider_can_use_low_quality_for_interactive_previews(
@@ -196,7 +239,8 @@ def test_generation_uses_gpt_image_json_contract_and_decodes_base64(
         "n": 1,
         "size": "1024x1024",
         "quality": "high",
-        "output_format": "png",
+        "output_format": "jpeg",
+        "output_compression": 95,
         "background": "opaque",
     }
 

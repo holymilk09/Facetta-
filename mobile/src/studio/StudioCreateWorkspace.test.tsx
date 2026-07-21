@@ -291,7 +291,6 @@ test('submits two variations by default so a rough idea yields a real choice', a
   await waitFor(() => expect(createFromPrompt).toHaveBeenCalledWith({
     prompt: composeCreateBalanceInstruction('A simple gold ring.', 'symmetrical', false),
     variation_count: 2,
-    comparison_views: ['three_quarter'],
     owner: 'designer_1',
     title: 'A simple gold ring.',
   }));
@@ -435,7 +434,6 @@ test('keeps every other previewed direction automatically and recomputes sibling
       'A sculptural aquamarine collar.', 'symmetrical', false,
     ),
     variation_count: 4,
-    comparison_views: ['three_quarter'],
     owner: 'designer_1',
     title: 'A sculptural aquamarine collar.',
   }));
@@ -1110,14 +1108,18 @@ test('starting another brief clears the previous review error and collapses adva
   await fireEvent.press(screen.getByText('Generate'));
   await loadDirection(1);
   await fireEvent.press(screen.getByText('Save & refine Direction 1'));
-  expect(await screen.findByText('Facetta could not connect. Check your connection and try again.'))
+  expect(await screen.findByText(
+    'Facetta is temporarily unavailable. This request was not started. Try again shortly.',
+  ))
     .toBeTruthy();
 
   await fireEvent.press(screen.getByText('Start over'));
   expect(screen.getByText('Clear these results?')).toBeTruthy();
   await fireEvent.press(screen.getByText('Clear canvas'));
 
-  expect(screen.queryByText('Facetta could not connect. Check your connection and try again.'))
+  expect(screen.queryByText(
+    'Facetta is temporarily unavailable. This request was not started. Try again shortly.',
+  ))
     .toBeNull();
   expect(screen.getAllByText('Optional guidance')).toHaveLength(1);
   expect(screen.getByLabelText('Optional guidance').props.accessibilityState)
@@ -1231,7 +1233,6 @@ test('sends every enabled role with the master geometry input', async () => {
       media_type: 'image/jpeg',
     }],
     variation_count: 2,
-    comparison_views: ['three_quarter'],
     owner: 'designer_1',
     title: 'Preserve the silhouette and make it feel lighter.',
   }));
@@ -1287,7 +1288,6 @@ test('accepts role-labeled advisory guidance after a sentence without requiring 
       media_type: 'image/jpeg',
     }],
     variation_count: 2,
-    comparison_views: ['three_quarter'],
     owner: 'designer_1',
     title: 'A broad sculptural gold cuff with one clean opening.',
   }));
@@ -1367,7 +1367,6 @@ test('starts from a master image without forcing a sentence', async () => {
     ),
     references: [],
     variation_count: 2,
-    comparison_views: ['three_quarter'],
     owner: 'designer_1',
     title: 'Pendant photograph',
   }));
@@ -1694,7 +1693,6 @@ test('maps material, detail, and brand choices into advisory-only provider guida
   await waitFor(() => expect(createFromPrompt).toHaveBeenCalledWith({
     prompt: submittedPrompt,
     variation_count: 2,
-    comparison_views: ['three_quarter'],
     owner: 'designer_1',
     title: 'A simple three-stone ring.',
   }));

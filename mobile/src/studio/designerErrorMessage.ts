@@ -57,7 +57,7 @@ export function designerErrorMessage(
     return "Facetta's image service could not complete this request. Try again shortly. Nothing was saved or charged.";
   }
   if (category === 'network' || category === 'unavailable' || error.status === 0) {
-    return 'Facetta could not connect. Check your connection and try again.';
+    return 'Facetta is temporarily unavailable. This request was not started. Try again shortly.';
   }
   if (category === 'evaluation') {
     return 'Facetta could not verify the generated result, so nothing was saved or charged. Try again.';
